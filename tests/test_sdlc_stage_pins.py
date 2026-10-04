@@ -134,8 +134,14 @@ class StagePinTests(unittest.TestCase):
                 self.assertEqual(text.count('## Skills'), 1)
                 self.assertIn(name, text)
                 self.assertIn(f'tink library fetch .tink/skillsets/{name}.json', text)
-                self.assertRegex(text, rf'tink use {name} --snapshot runs/<slug>/{stage}\b')
-                self.assertIn('NEW session', text)
+                if stage == '04-test':
+                    self.assertIn('Continue verification in the stage-3 build session', text)
+                    self.assertIn('sdlc.py skills tink -- mount <skill> --json --payload', text)
+                    self.assertNotIn('sdlc.py stage <slug> 4', text)
+                    self.assertNotIn('NEW session', text)
+                else:
+                    self.assertRegex(text, rf'tink use {name} --snapshot runs/<slug>/{stage}\b')
+                    self.assertIn('NEW session', text)
                 self.assertIn('tink-route --receipt runs/<slug>/skills.jsonl "<what you need>"', text)
                 self.assertNotIn('tink-route --skillset', text)
                 self.assertIn('searches the whole library', text)

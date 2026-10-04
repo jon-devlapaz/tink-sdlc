@@ -656,6 +656,7 @@ class WorktreeMode(StageBase):
         self.assertEqual(self.route_log.read_text().strip(), '--pick --json --anywhere')
         self.assertEqual(Path(str(self.route_log) + '.doc').read_text(), brief)
         self.assertIn('Stage-open skill pick: control-cli (confidence 0.91)', result.stdout)
+        self.assertIn('tink mount control-cli --json --payload', result.stdout)
         self.assertIn('Stage-open skill pick: control-cli', result.stdout.splitlines()[-1])
         receipt = self.pick_receipt('r', 3, root=self.root.parent / 'proj-r')
         self.assertEqual((receipt['status'], receipt['winner'], receipt['confidence']), ('routed', 'control-cli', 0.91))

@@ -1119,7 +1119,7 @@ def stage_pick(path, run, n, check):
         if code == 0 and picked.get('status') == 'routed' and picked.get('winner'):
             receipt.update(status='routed', winner=picked['winner'], confidence=picked.get('confidence'))
             sentence = (f" Stage-open skill pick: {picked['winner']} (confidence {picked.get('confidence')}); "
-                        f"read it before relying on it: tink mount {picked['winner']} --payload.")
+                        f"read it before relying on it: tink mount {picked['winner']} --json --payload.")
         elif code == 1:
             receipt['status'] = 'none'
             line = 'skill pick: no specialist skill applies'
