@@ -18,6 +18,8 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
+API_VERSION = 1
+API_CAPABILITIES = ['status-json', 'verify', 'mark', 'log-file']
 ITEM_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
 ITEM_KEYS = {'id', 'description', 'verify'}
 CHECK_KEYS = {'argv', 'timeout_seconds'}
@@ -395,14 +397,18 @@ def describe(error):
     return f"{error}{getattr(error, 'sdlc_hint', '')}"
 
 
+def verification_files(path):
+    output = path / '04-test/output'
+    return output / 'verification.json', output / 'test-log.md'
+
+
 def verify(args):
     path = run_path(args.run)
     require_run(path)
     with locked(path / '.writer-lock'):
-        output = path / '04-test/output'
-        log_hint = f' (output: {(output / "test-log.md").relative_to(ROOT)})'
-        output.mkdir(parents=True, exist_ok=True)
-        receipt = output / 'verification.json'
+        receipt, log_path = verification_files(path)
+        log_hint = f' (output: {log_path.relative_to(ROOT)})'
+        receipt.parent.mkdir(parents=True, exist_ok=True)
         write_json(receipt, {'result': 'running'})
         try:
             ready(path)
@@ -413,7 +419,7 @@ def verify(args):
             checks = list(config['checks'])
             if config['require_tink']:
                 checks.insert(0, {'argv': ['tink', 'skill', 'check'], 'timeout_seconds': 120})
-            with (output / 'test-log.md').open('w') as log:
+            with log_path.open('w') as log:
                 for check in checks:
                     log.write(f"\n$ {json.dumps(check['argv'])}\n")
                     log.flush()
@@ -453,7 +459,7 @@ def verify(args):
                     raise ValueError(f"Checklist incomplete: {', '.join(missing)} "
                                      f'(mark them with: sdlc.py mark {args.run} <id> passed --evidence "...")')
                 proof = {'checklist_items': {item['id']: 'proven' if 'check' in item else 'attested' for item in items}}
-            write_json(receipt, {'result': 'passed', **before, **proof, 'log': digest((output / 'test-log.md').read_bytes())})
+            write_json(receipt, {'result': 'passed', **before, **proof, 'log': digest(log_path.read_bytes())})
         except Exception as error:
             write_json(receipt, {'result': 'failed', 'error': describe(error)})
             raise
@@ -503,45 +509,48 @@ def mark(args):
     print(f'Recorded {args.result} receipt for {args.item}.')
 
 
-def print_checklist(path, verified=False):
+def checklist_view(path, verified=False):
     try:
         items = load_checklist(path)
-    except ValueError as error:
-        print(f'Checklist: invalid ({error})')
-        return
+    except (ValueError, TypeError) as error:
+        return {'state': 'invalid', 'items': [], 'error': str(error)}
     if items is None:
         decision = latest(path, 3)
-        print('Checklist: MISSING (deleted after approval)' if decision and decision.get('has_checklist')
-              else 'Checklist: none (legacy run)')
-        return
-    if not items:
-        print('Checklist: no items defined')
-        return
+        return {'state': 'missing' if decision and decision.get('has_checklist') else 'legacy', 'items': []}
     try:
-        tree = snapshot()['tree']
+        tree = snapshot()['tree'] if items else None
     except (ValueError, OSError, subprocess.SubprocessError):
         tree = None
     marked = marks(path, items)
-    lines = []
-    passed = 0
+    result = []
     for item in items:
         record = marked.get(item['id'])
-        if 'check' in item:
-            if verified:
-                passed += 1
-            else:
-                lines.append(f"  - {item['id']}: pending (proved by verify)")
-        elif record is None:
-            lines.append(f"  - {item['id']}: pending")
-        elif record['result'] != 'passed':
-            lines.append(f"  - {item['id']}: failed")
-        else:
-            passed += 1
-            if tree is not None and record.get('candidate') != tree:
-                lines.append(f"  - {item['id']}: attested before the latest changes; re-check it only if the change affects it")
-    proven = sum('check' in item for item in items)
-    summary = f'Checklist: {passed}/{len(items)} passed ({proven} proven by check, {len(items) - proven} attested)'
-    print('\n'.join([summary] + lines))
+        automatic = 'check' in item
+        state = ('passed' if verified else 'pending') if automatic else (record['result'] if record else 'pending')
+        result.append({**item, 'status': state, 'automatic': automatic,
+                       'proof': 'automated' if automatic else 'attested',
+                       'mark': {key: record.get(key) for key in ('item', 'result', 'evidence', 'candidate', 'time_ns')} if record else None,
+                       'needs_recheck': bool(not automatic and record and state == 'passed'
+                                             and tree is not None and record.get('candidate') != tree)})
+    return {'state': 'defined' if items else 'empty', 'items': result}
+
+
+def checklist_text(view):
+    messages = {'missing': 'MISSING (deleted after approval)', 'legacy': 'none (legacy run)',
+                'empty': 'no items defined', 'invalid': f"invalid ({view.get('error')})"}
+    if view['state'] in messages:
+        return 'Checklist: ' + messages[view['state']]
+    items = view['items']
+    passed = sum(item['status'] == 'passed' for item in items)
+    proven = sum(item['automatic'] for item in items)
+    lines = [f'Checklist: {passed}/{len(items)} passed ({proven} proven by check, {len(items) - proven} attested)']
+    for item in items:
+        if item['status'] != 'passed':
+            suffix = ' (proved by verify)' if item['automatic'] else ''
+            lines.append(f"  - {item['id']}: {item['status']}{suffix}")
+        elif item['needs_recheck']:
+            lines.append(f"  - {item['id']}: attested before the latest changes; re-check it only if the change affects it")
+    return '\n'.join(lines)
 
 
 def evidence_matches(record, current):
@@ -551,40 +560,217 @@ def evidence_matches(record, current):
             and all(record.get(key) == value for key, value in current.items() if key != 'candidate'))
 
 
-def status(args):
-    if not args.run:
-        directory = ROOT / 'runs'
-        print('\n'.join(p.name for p in sorted(directory.iterdir()) if p.is_dir() and not p.name.startswith('.')) if directory.exists() else 'No runs.')
-        return
-    path = run_path(args.run)
-    require_run(path)
-    blocked = False
+def verification_matches(path, record):
+    _, log = verification_files(path)
+    return (record.get('result') == 'passed' and evidence_matches(record, evidence_inputs(path))
+            and record['log'] == digest(log.read_bytes()))
+
+
+def writer_active(path):
+    lock = path / '.writer-lock'
+    if not lock.exists():
+        return False
+    fd = os.open(lock, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError('Writer lock must be a regular file.')
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return False
+        except BlockingIOError:
+            return True
+    finally:
+        os.close(fd)
+
+
+def status_state(path):
+    """One calculation for the human CLI and machine clients; never an approval."""
+    meta = require_run(path)
+    if not isinstance(meta, dict) or meta.get('profile') not in ('light', 'full'):
+        raise ValueError('Run profile must be light or full.')
+    if not isinstance(meta.get('kind', 'feature'), str):
+        raise ValueError('Run kind must be a string.')
+    gates, blocked = [], False
     for stage in stages(path):
         state = gate(path, stage)
-        print(f'Stage {stage}: {state}' + (' (blocked by upstream gate)' if blocked else ''))
-        if state != 'approved' and not blocked:
-            print(f'Next: revise/review stage {stage}; record the human decision.')
-            print('After human review, fill in this command from the scaffold root '
-                  '(DECISION: approved or changes-requested):')
-            print(f"  python3 _system/scripts/sdlc.py decide {args.run} {stage} DECISION "
-                  "--reviewer 'REVIEWER' --source 'SOURCE' --reason 'REASON'")
-            blocked = True
-    record_path = path / '04-test/output/verification.json'
+        if state not in ('approved', 'pending', 'stale', 'changes-requested'):
+            raise ValueError(f'Unknown gate state: {state}')
+        gates.append({'stage': stage, 'status': state, 'blocked': blocked})
+        blocked = blocked or state != 'approved'
+    record_path, _ = verification_files(path)
     record = read_json(record_path) if record_path.exists() else None
-    verified = False
-    if record is not None and record.get('result') == 'passed':
-        try:
-            verified = evidence_matches(record, evidence_inputs(path)) and record['log'] == digest((record_path.parent / 'test-log.md').read_bytes())
-        except (ValueError, OSError, subprocess.SubprocessError, KeyError):
-            pass
-    print_checklist(path, verified)
     if record is not None:
-        print('Verification: ' + ('current' if verified and not blocked else 'failed, stale, or blocked'))
+        if not isinstance(record, dict) or record.get('result') not in ('passed', 'failed', 'running'):
+            raise ValueError('Unrecognized verification receipt.')
+        for key in ('error', 'log'):
+            if record.get(key) is not None and not isinstance(record[key], str):
+                raise ValueError(f'Verification {key} must be a string or null.')
+        identity = record.get('candidate')
+        if identity is not None and (not isinstance(identity, dict) or not all(
+                isinstance(identity.get(key), str) and identity[key] for key in ('head', 'tree'))):
+            raise ValueError('Verification candidate must contain nonempty head and tree strings.')
+    active = writer_active(path)
+    verified = False
+    if not blocked and not active and record is not None:
+        try:
+            verified = verification_matches(path, record)
+        except (ValueError, OSError, subprocess.SubprocessError, KeyError, TypeError):
+            pass
+    if active:
+        state = 'running'
+    elif blocked:
+        state = 'blocked'
+    elif verified:
+        state = 'current'
+    elif record is None:
+        state = 'not-run'
     else:
-        print('Verification: not run (implementation may be pending; a text log is not passing evidence)')
-    if not blocked:
-        print('Next: independent PR review and release checks.' if verified else 'Next: implement the approved brief, then run verification.')
-    print('Deployment: not inferred from local review files; consult the deployment system.')
+        state = {'passed': 'stale', 'failed': 'failed', 'running': 'interrupted'}[record['result']]
+    checklist = checklist_view(path, verified)
+    errors = []
+    try:
+        config = checks_config()
+    except (ValueError, OSError, TypeError, AttributeError) as error:
+        config = None
+        errors.append(str(error))
+    try:
+        test_lock(path)
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        errors.append(str(error))
+    if checklist['state'] == 'invalid':
+        errors.append(checklist['error'])
+    first_gate = next((g for g in gates if g['status'] != 'approved'), None)
+    gate_reason = f"revise/review stage {first_gate['stage']}; record the human decision." if first_gate else ''
+    unavailable = 'A writer already owns this run.' if active else gate_reason
+    verify_reason = unavailable or (errors[0] if errors else '')
+    manual = any(not item['automatic'] for item in checklist['items'])
+    mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
+    checks = (config['checks'] if config else []) + [i['check'] for i in checklist['items'] if i['automatic']]
+    timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
+    next_action = unavailable or (errors[0] if errors else '') or {
+        'current': 'independent PR review and release checks.',
+        'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
+        'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
+        'failed': str(record.get('error', 'Verification failed. Inspect the log, then rerun it.')) if record else '',
+    }.get(state, 'implement the approved brief, then run verification.')
+    return {'slug': path.name, 'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
+            'gates': gates, 'verification_status': state, 'has_lock': active,
+            'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
+            'checklist': checklist['items'], 'checklist_state': checklist['state'],
+            'checklist_text': checklist_text(checklist), 'next_action': next_action, 'errors': errors,
+            'verification_config': config,
+            'actions': {'verify': {'allowed': not verify_reason, 'reason': verify_reason,
+                                   'timeout_seconds': timeout if not verify_reason else None},
+                        'mark': {'allowed': not mark_reason, 'reason': mark_reason}}}
+
+
+def status_text(view):
+    lines = []
+    for gate_info in view['gates']:
+        stage, state, blocked = gate_info['stage'], gate_info['status'], gate_info['blocked']
+        lines.append(f'Stage {stage}: {state}' + (' (blocked by upstream gate)' if blocked else ''))
+        if state != 'approved' and not blocked:
+            lines.extend([f'Next: revise/review stage {stage}; record the human decision.',
+                          'After human review, fill in this command from the scaffold root (DECISION: approved or changes-requested):',
+                          f"  python3 _system/scripts/sdlc.py decide {view['slug']} {stage} DECISION "
+                          "--reviewer 'REVIEWER' --source 'SOURCE' --reason 'REASON'"])
+    lines.append(view['checklist_text'])
+    if view['verification'] is not None:
+        lines.append('Verification: ' + ('current' if view['verification_status'] == 'current' else 'failed, stale, or blocked'))
+    else:
+        lines.append('Verification: not run (implementation may be pending; a text log is not passing evidence)')
+    if all(g['status'] == 'approved' for g in view['gates']):
+        lines.append('Next: independent PR review and release checks.' if view['verification_status'] == 'current'
+                     else 'Next: implement the approved brief, then run verification.')
+    lines.append('Deployment: not inferred from local review files; consult the deployment system.')
+    return '\n'.join(lines)
+
+
+def regular_evidence(path):
+    if path.is_symlink() or path.resolve() != path.absolute():
+        raise ValueError(f'Symlinked evidence is not supported: {path.relative_to(ROOT)}')
+    if path.exists() and not path.is_file():
+        raise ValueError(f'Evidence must be a regular file: {path.relative_to(ROOT)}')
+    return path
+
+
+def run_view(slug):
+    path = run_path(slug)
+    if not (path / 'run.json').is_file():
+        raise FileNotFoundError(f"Run '{slug}' not found.")
+    names = {'brief': 'brief.md', 'intent': ARTIFACTS[0], 'spec': ARTIFACTS[1], 'plan': ARTIFACTS[2]}
+    receipt, log = verification_files(path)
+    evidence = [path / name for name in ['run.json', 'checklist.json', 'test-lock.json', '.writer-lock']]
+    evidence += [receipt, log] + [path / name for name in names.values()] + [ROOT / '_system/verification.json']
+    evidence += list((path / 'decisions').glob('*.json')) + list((path / 'marks').glob('*.json'))
+    for file in evidence:
+        regular_evidence(file)
+    view = status_state(path)
+    artifacts = {'brief': names['brief']} if view['meta']['profile'] == 'light' else {k: v for k, v in names.items() if k != 'brief'}
+    view['artifacts'] = {key: (path / name).read_text() for key, name in artifacts.items() if (path / name).exists()}
+    decisions = []
+    for file in sorted((path / 'decisions').glob('*.json')):
+        identity = re.fullmatch(r'([1-6])-(\d+)-[a-zA-Z0-9]+', file.stem)
+        if not identity:
+            raise ValueError(f'Unrecognized decision receipt name: {file.name}')
+        record = read_json(file)
+        if not isinstance(record, dict) or record.get('decision') not in ('approved', 'changes-requested'):
+            raise ValueError(f'Unrecognized decision receipt: {file.name}')
+        for key in ('reviewer', 'source', 'reason'):
+            if record.get(key) is not None and not isinstance(record[key], str):
+                raise ValueError(f'Decision {key} must be a string or null: {file.name}')
+        decisions.append({'id': file.stem, 'stage': int(identity[1]), 'timestamp_ns': int(identity[2]),
+                          **{key: record.get(key) for key in ('decision', 'reviewer', 'source', 'reason')}})
+    view['decisions'] = decisions
+    text, truncated = '', False
+    if log.exists():
+        with log.open('rb') as stream:
+            size = os.fstat(stream.fileno()).st_size
+            truncated = size > 262144
+            stream.seek(max(0, size - 262144))
+            text = stream.read(262144).decode('utf-8', errors='replace')
+    view['log'] = {'path': str(log.relative_to(ROOT)), 'text': text, 'truncated': truncated}
+    view['cli_status'] = status_text(view)
+    del view['checklist_text']
+    return view
+
+
+def machine_output(value):
+    print(json.dumps({'protocol': 'tink-sdlc', 'api_version': API_VERSION, 'workspace': str(ROOT), **value}))
+
+
+def capabilities(args):
+    if args.json:
+        machine_output({'capabilities': API_CAPABILITIES})
+    else:
+        print(f'tink-sdlc API {API_VERSION}: ' + ', '.join(API_CAPABILITIES))
+
+
+def status(args):
+    if args.run:
+        if getattr(args, 'json', False):
+            machine_output({'run': run_view(args.run)})
+        else:
+            print(status_text(status_state(run_path(args.run))))
+        return
+    directory = ROOT / 'runs'
+    names = [p.name for p in sorted(directory.iterdir()) if p.is_dir() and not p.name.startswith('.')] if directory.exists() else []
+    if not getattr(args, 'json', False):
+        print('\n'.join(names) if directory.exists() else 'No runs.')
+        return
+    runs = []
+    for name in names:
+        try:
+            view = run_view(name)
+            runs.append({'slug': name, **view['meta'], 'verification_status': view['verification_status'],
+                         'next_action': view['next_action'], 'has_lock': view['has_lock'],
+                         'checklist_summary': {'total': len(view['checklist']),
+                                               'passed': sum(i['status'] == 'passed' for i in view['checklist'])}})
+        except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
+            runs.append({'slug': name, 'verification_status': 'invalid', 'error': str(error),
+                         'checklist_summary': {'total': 0, 'passed': 0}})
+    machine_output({'runs': runs})
 
 
 TOOL_ACCEPTABLE_CODES = {
@@ -920,12 +1106,10 @@ def stage_entry_gates(path, run, n):
             raise ValueError(f'cannot open stage {n}: the stage {stage} approval is {state}; record it with: '
                              f'sdlc.py decide {run} {stage} approved --reviewer NAME --source REF --reason TEXT')
     if n == 5:
-        record_path = path / '04-test/output/verification.json'
+        record_path, _ = verification_files(path)
         current = False
         try:
-            record = read_json(record_path)
-            current = (record.get('result') == 'passed' and evidence_matches(record, evidence_inputs(path))
-                       and record['log'] == digest((record_path.parent / 'test-log.md').read_bytes()))
+            current = verification_matches(path, read_json(record_path))
         except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
             pass
         if not current:
@@ -1290,6 +1474,9 @@ def main():
     new.add_argument('--kind', choices=['feature', 'bug'], default='feature')
     state = commands.add_parser('status')
     state.add_argument('run', nargs='?')
+    state.add_argument('--json', action='store_true', help='read-only versioned machine interface')
+    protocol = commands.add_parser('capabilities', help='report the supported machine interface')
+    protocol.add_argument('--json', action='store_true')
     decision = commands.add_parser('decide')
     decision.add_argument('run')
     decision.add_argument('stage', type=int, choices=[1, 2, 3])
@@ -1323,9 +1510,13 @@ def main():
     lint.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
-        {'new': create, 'status': status, 'decide': decide, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'walk': walk}[args.command](args)
-    except (ValueError, OSError, KeyError, subprocess.SubprocessError) as error:
-        print(f'Error: {describe(error)}', file=sys.stderr)
+        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'walk': walk}[args.command](args)
+    except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
+        if args.command in ('status', 'capabilities') and args.json:
+            machine_output({'error': {'code': 'not-found' if isinstance(error, FileNotFoundError) else 'invalid-state',
+                                      'message': describe(error)}})
+        else:
+            print(f'Error: {describe(error)}', file=sys.stderr)
         return 1
     return 0
 

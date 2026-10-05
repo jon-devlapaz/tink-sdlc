@@ -43,6 +43,14 @@ intent, spec, and implementation plan; the light profile uses one reviewed brief
 Local status accepts unchanged candidate content after an evidence-only commit.
 A release still needs CI for the actual merge revision and independent forge approval.
 
+## Machine clients
+
+Scaffold 1.19.0 introduces API 1: `sdlc.py capabilities --json` and
+`sdlc.py status [run] --json`. Human and JSON status share one calculation. Clients
+consume normalized run state, available actions, and declared log references rather
+than parsing prose or receipt internals. The versioning and field contract lives in
+`assets/_system/SDLC.md`; API versions are independent of package versions.
+
 ## Maintain this package
 
 `assets/` is the canonical distributable scaffold in this repository. Do not update
@@ -64,3 +72,8 @@ and 3.14.
 The manifest records payload content hashes, not publisher authenticity. Tests use
 isolated temporary repositories and synthetic review fixtures, never real approvals.
 The package intentionally has one runtime implementation; tests execute that payload.
+`tests/test_sdlc_protocol.py` is part of the release suite: preserve API 1 fields and
+meaning across compatible releases, and use a new API major for breaking changes.
+Cockpit integration tests can consume an unpublished candidate directly through
+`SDLC_RUNTIME_SOURCE=/path/to/this/assets/_system/scripts/sdlc.py` with
+`SDLC_EXPECT_API=1`; no package copy or production scaffold upgrade is needed.
