@@ -681,8 +681,7 @@ def status_text(view):
     else:
         lines.append('Verification: not run (implementation may be pending; a text log is not passing evidence)')
     if all(g['status'] == 'approved' for g in view['gates']):
-        lines.append('Next: independent PR review and release checks.' if view['verification_status'] == 'current'
-                     else 'Next: implement the approved brief, then run verification.')
+        lines.append(f"Next: {view['next_action']}")
     lines.append('Deployment: not inferred from local review files; consult the deployment system.')
     return '\n'.join(lines)
 
