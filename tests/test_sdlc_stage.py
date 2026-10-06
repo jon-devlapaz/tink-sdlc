@@ -843,5 +843,135 @@ class WorktreeMode(StageBase):
         self.assertEqual(self.tink_calls(), [])
 
 
+class DeliveryWarning(StageBase):
+    """Stages 3 and 5 warn, without refusing, when a PR cannot be delivered from this checkout."""
+    MARKER = 'warning: PR delivery may not be possible'
+    SECRET = 'ghp_SECRET_TOKEN_VALUE'
+
+    def setUp(self):
+        super().setUp()
+        self.gh_log = self.base / 'gh.log'
+        self.env['PATH'] = f"{self.bin}:{self.base / 'tools'}"  # no host PATH, so a real gh cannot leak in
+        self.env['GH_LOG'] = str(self.gh_log)
+
+    def gh(self, body='exit 0'):
+        shim = self.bin / 'gh'
+        shim.write_text(f'#!/bin/sh\necho "$*" >> "$GH_LOG"\necho {self.SECRET}\necho {self.SECRET} >&2\n{body}\n')
+        shim.chmod(0o755)
+
+    def origin(self, url):
+        self.git('remote', 'add', 'origin', url)
+
+    def gh_calls(self):
+        return self.gh_log.read_text().splitlines() if self.gh_log.exists() else []
+
+    def opened(self, result):
+        self.assertIn('Launch prompt', result.stdout)
+        self.assertNotIn(self.SECRET, result.stdout + result.stderr)
+        self.assertTrue((self.base / 'work' / 'proj-r').is_dir() or (self.base / 'work' / 'proj-review-r').is_dir())
+
+    def assert_commands(self, out):
+        self.assertIn('git push -u origin r', out)
+        self.assertIn('gh pr create --fill', out)
+
+    def test_no_origin_warns_and_the_stage_still_opens(self):
+        self.new_run('r')
+        result = self.stage('r', 3, env=IDENT)
+        self.assertEqual(result.stdout.count(self.MARKER), 1)
+        self.assertIn('no `origin` remote', result.stdout)
+        self.assert_commands(result.stdout)
+        self.opened(result)
+
+    def test_github_origin_without_gh_warns(self):
+        self.origin('https://github.com/o/r.git')
+        self.new_run('r')
+        result = self.stage('r', 3, env=IDENT)
+        self.assertEqual(result.stdout.count(self.MARKER), 1)
+        self.assertIn('`gh` is not installed', result.stdout)
+        self.assert_commands(result.stdout)
+        self.opened(result)
+
+    def test_github_origin_forms_are_all_recognized(self):
+        for url in ('https://github.com/o/r', 'git@github.com:o/r.git', 'ssh://git@github.com/o/r.git',
+                    'https://user:token@github.com/o/r.git'):
+            with self.subTest(url=url):
+                self.setUp()
+                self.origin(url)
+                self.new_run('r')
+                result = self.stage('r', 3, env=IDENT)
+                self.assertIn('`gh` is not installed', result.stdout)
+                self.assertNotIn('token', result.stdout + result.stderr)
+
+    def test_gh_auth_failure_warns_with_exit_status_only(self):
+        self.origin('git@github.com:o/r.git')
+        self.gh('exit 1')
+        self.new_run('r')
+        result = self.stage('r', 3, env=IDENT)
+        self.assertEqual(result.stdout.count(self.MARKER), 1)
+        self.assertIn('`gh auth status` exited 1', result.stdout)
+        self.assert_commands(result.stdout)
+        self.assertEqual(self.gh_calls(), ['auth status'])
+        self.opened(result)
+
+    def test_gh_auth_timeout_says_it_could_not_confirm(self):
+        self.origin('https://github.com/o/r.git')
+        self.gh('exec /bin/sleep 30')
+        self.new_run('r')
+        result = self.stage('r', 3, env=IDENT)
+        self.assertIn('could not confirm', result.stdout)
+        self.assertNotIn('not signed in', result.stdout)
+        self.assert_commands(result.stdout)
+        self.opened(result)
+
+    def test_signed_in_gh_is_quiet(self):
+        self.origin('https://github.com/o/r.git')
+        self.gh('exit 0')
+        self.new_run('r')
+        result = self.stage('r', 3, env=IDENT)
+        self.assertNotIn(self.MARKER, result.stdout)
+        self.assertEqual(self.gh_calls(), ['auth status'])
+        self.opened(result)
+
+    def test_other_forge_is_not_probed(self):
+        for url in ('https://gitlab.com/o/r.git', 'https://github.com.example.org/o/r.git', 'git@example.com:github.com/r.git'):
+            with self.subTest(url=url):
+                self.setUp()
+                self.origin(url)
+                self.gh('exit 1')
+                self.new_run('r')
+                result = self.stage('r', 3, env=IDENT)
+                self.assertNotIn(self.MARKER, result.stdout)
+                self.assertEqual(self.gh_calls(), [])
+                self.opened(result)
+
+    def test_stage_five_warns_and_opens(self):
+        self.set_checks([PASSING])
+        self.new_run('r')
+        self.commit_run()
+        self.run_cmd([PYTHON, str(self.root / '_system/scripts/sdlc.py'), 'verify', 'r'], cwd=self.root)
+        result = self.stage('r', 5, env=IDENT)
+        self.assertEqual(result.stdout.count(self.MARKER), 1)
+        self.assert_commands(result.stdout)
+        self.opened(result)
+
+    def test_check_prints_the_warning_and_writes_nothing(self):
+        self.new_run('r')
+        self.commit_run()
+        before = self.snapshot_state()
+        result = self.stage('r', 3, '--check', env=IDENT)
+        self.assertEqual(result.stdout.count(self.MARKER), 1)
+        self.assert_commands(result.stdout)
+        self.assertEqual(self.snapshot_state(), before)
+
+    def test_other_stages_do_not_warn(self):
+        self.new_run('f', profile='full', approve=False)
+        self.assertNotIn(self.MARKER, self.stage('f', 1, '--check', env=IDENT).stdout)
+        self.decide('f', 1)
+        self.assertNotIn(self.MARKER, self.stage('f', 2, '--check', env=IDENT).stdout)
+        self.decide('f', 2)
+        self.decide('f', 3)
+        self.assertNotIn(self.MARKER, self.stage('f', 6, '--check', env=IDENT).stdout)
+
+
 if __name__ == '__main__':
     unittest.main()

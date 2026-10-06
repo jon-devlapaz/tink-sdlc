@@ -1249,6 +1249,36 @@ def tink_route_warning():
             f'upgrade: pipx install --force git+https://github.com/jon-devlapaz/tink-route.git')
 
 
+DELIVERY_TIMEOUT = 5
+GITHUB_REMOTE = re.compile(r'^(?:[a-z+]+://)?(?:[^@/]+@)?github\.com[:/]', re.I)
+
+
+def delivery_warning(run):
+    """One warning when a PR cannot be delivered from this checkout; never prints remote URLs or command output."""
+    remote = run_git(ROOT, 'remote', 'get-url', 'origin')
+    url = remote.stdout.strip()
+    if remote.returncode or not url:
+        missing = 'there is no `origin` remote'
+    elif not GITHUB_REMOTE.match(url):
+        return None
+    elif not shutil.which('gh'):
+        missing = '`origin` is on GitHub but `gh` is not installed'
+    else:
+        try:
+            auth = subprocess.run(['gh', 'auth', 'status'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL, timeout=DELIVERY_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            missing = f'could not confirm `gh` is signed in (`gh auth status` did not finish in {DELIVERY_TIMEOUT}s)'
+        except OSError:
+            missing = '`origin` is on GitHub but `gh` could not be run'
+        else:
+            if auth.returncode == 0:
+                return None
+            missing = f'`gh` is not signed in (`gh auth status` exited {auth.returncode})'
+    return (f'warning: PR delivery may not be possible from this checkout: {missing}. If this is still true at the end, '
+            f'hand the owner these commands instead of stopping silently: git push -u origin {run}; gh pr create --fill')
+
+
 PICK_LIMIT = 120000
 PICK_TIMEOUT = 120
 
@@ -1449,6 +1479,8 @@ def stage(args):
         print(notice)
     if warning:
         print(warning)
+    if n in (3, 5) and (undeliverable := delivery_warning(run)):
+        print(undeliverable)
     if pick_line and not args.check:
         print(pick_line)
     if not args.check and (stale_route := tink_route_warning()):

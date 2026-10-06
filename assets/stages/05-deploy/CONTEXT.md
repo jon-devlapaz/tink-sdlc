@@ -6,6 +6,10 @@ Output: `runs/<slug>/05-deploy/output/REVIEW-findings.md` and a PR when requeste
 Open (or confirm) the PR from the verified, committed candidate; the agent may open it, only a human merges it.
 If code changes after the PR is open, run verify again before the review continues.
 
+Manual delivery recipe: `git push -u origin <slug>`, then `gh pr create --fill`.
+If `stage <slug> 5` printed a delivery warning (no `origin`, or `gh` missing or not signed in), do not stop silently:
+finish the review, then hand the owner these commands at the end.
+
 Check logic, security boundaries, and acceptance criteria. Use separate review
 passes for risk that warrants them; a model review is not human approval.
 Important findings return to stage 03 and require renewed verification.
