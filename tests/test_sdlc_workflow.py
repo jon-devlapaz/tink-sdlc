@@ -541,6 +541,16 @@ class WorkflowTests(unittest.TestCase):
         self.mark('alpha')
         self.assertIn('Checklist: 1/1 passed', self.cli('status', 'example'))
 
+    def test_status_text_reports_incomplete_checklist_after_failed_verify(self):
+        self.checklist_ready(('alpha',))
+        out = self.cli('verify', 'example', ok=False)
+        self.assertIn('Checklist incomplete: alpha', out)
+        text = self.cli('status', 'example')
+        view = json.loads(self.cli('status', 'example', '--json'))['run']
+        self.assertIn('Checklist incomplete: alpha', view['next_action'])
+        self.assertIn(f"Next: {view['next_action']}", text)
+        self.assertNotIn('implement the approved brief', text)
+
     def test_orphan_marks_ignored(self):
         self.checklist_ready(('alpha', 'beta'))
         self.mark('beta')
