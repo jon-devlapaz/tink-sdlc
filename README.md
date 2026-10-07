@@ -5,6 +5,10 @@ Editable Markdown holds intent and plans; JSON receipts track local decisions an
 verification evidence. CI, authenticated approval, deployment, and monitoring remain
 project integrations. Content hashes detect changes; they are not signatures.
 
+The stages follow Anthropic's [AI-Native SDLC Playbook](references/ai-native-sdlc/README.md).
+Earlier proposals, evaluations and dogfood seeds were removed from the tree after they
+were superseded; they remain in Git history before the `lean-orphan-docs` merge.
+
 ## Install and configure
 
 From this skill collection:
