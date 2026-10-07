@@ -6,8 +6,9 @@ init.py <target> --check             preview an install / validate an existing o
 init.py <target> --upgrade [--check] adopt this package over an older install; --check previews
                                      and writes nothing. Managed files you customized block the
                                      upgrade unless --overwrite-customized is given (keep them in
-                                     git first). Project-owned files (_system/verification.json and
-                                     .tink/skillsets/*.json) are never overwritten. Only the router
+                                     git first). Project-owned files (_system/verification.json,
+                                     .tink/skillsets/*.json, .tink/pool.lock.json, .tink/pool-overlay.json,
+                                     stages/*/TRIGGERS.json and their locks) are never overwritten. Only the router
                                      block of AGENTS.md is replaced. runs/ is never modified.
                                      The receipt _system/scaffold.json is written last, so an
                                      interrupted upgrade is safe to rerun.

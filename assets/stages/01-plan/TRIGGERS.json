@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "stage": "01-plan",
+  "triggers": [
+    {
+      "id": "existing-codebase",
+      "why": "Planning a change to code that already exists: size its reach before committing to scope.",
+      "need": "we need to know how many other modules this change could break",
+      "expect": "blast-radius",
+      "when": {
+        "profile": [
+          "existing-codebase"
+        ]
+      }
+    }
+  ]
+}

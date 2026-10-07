@@ -28,4 +28,4 @@ Skillset: `maintenance-skillset` (pin: `.tink/skillsets/maintenance-skillset.jso
 
 Stage skills (always for this stage; `tink use` compiles the same set):
 - `principle-prove-it-works`: Before declaring done: run the real artifact and show its output; a green build or "it compiles" is not proof.
-When one of these triggers fires, or the stage-open pick (`runs/<slug>/skills/stage-<n>-pick.json`) names a skill, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.
+At stage open the launcher checks `stages/06-maintain/TRIGGERS.json` against the run's diff and tags and writes the pull sheet `runs/<slug>/skills/stage-6-pulls.json`. When one of these triggers fires, or the pull sheet names a skill, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.

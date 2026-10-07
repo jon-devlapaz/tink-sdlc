@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "stage": "05-deploy",
+  "triggers": [
+    {
+      "id": "ui-pr",
+      "why": "Two or more UI files changed: reviewers need to see the change, not read it.",
+      "need": "the pull request has UI changes and reviewers need to see them",
+      "expect": "visual-pr",
+      "when": {
+        "paths": "\\.(tsx|jsx|css|scss|html|vue|svelte)$",
+        "min_files": 2
+      }
+    },
+    {
+      "id": "wide-change",
+      "why": "Five or more top-level folders touched: what else could this break downstream?",
+      "need": "what could this release break downstream",
+      "expect": "blast-radius",
+      "when": {
+        "dirs_min": 5
+      }
+    },
+    {
+      "id": "narrating-comments",
+      "why": "The diff adds a lot of comment lines; agents narrate the obvious.",
+      "need": "one agent comment says what the code obviously does; strip those",
+      "expect": "no-comments",
+      "when": {
+        "added": "^\\s*(#|//|/\\*|\\*)\\s*\\w",
+        "added_min": 25
+      }
+    }
+  ]
+}

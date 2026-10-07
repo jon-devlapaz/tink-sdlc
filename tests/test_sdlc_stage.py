@@ -440,6 +440,7 @@ class WorktreeMode(StageBase):
 
     def test_no_commit_when_nothing_changed(self):
         self.new_run('r')
+        self.assertEqual(self.sdlc('pull', 'r', '3').returncode, 0)  # the stage-3 pull sheet is already recorded
         self.commit_run()
         before = self.git('log', '--oneline').stdout
         out = self.stage('r', 3, '--check').stdout
@@ -632,133 +633,6 @@ class WorktreeMode(StageBase):
                 self.assertIn('Verification: failed, stale, or blocked', status)
                 self.commit_run()
                 self.refuses('r', 5, message='run verify first', env=IDENT)
-
-    def pick_shim(self):
-        shim = self.bin / 'tink-route'
-        shim.write_text('#!/bin/sh\ncase "$1" in --version) echo "tink-route 0.9.0"; exit 0;; esac\n'
-                        'echo "$1 $2 $3" >> "$ROUTE_LOG"\nprintf %s "$4" > "$ROUTE_LOG.doc"\n'
-                        'printf %s "$ROUTE_OUT"\nexit ${ROUTE_EXIT:-0}\n')
-        shim.chmod(0o755)
-        self.route_log = self.base / 'route.log'
-        return {**IDENT, 'ROUTE_LOG': str(self.route_log)}
-
-    def routed(self, winner='control-cli', confidence=0.91):
-        return json.dumps({'status': 'routed', 'winner': winner, 'confidence': confidence})
-
-    def pick_receipt(self, run, n, root=None):
-        return json.loads(((root or self.root) / f'runs/{run}/skills/stage-{n}-pick.json').read_text())
-
-    def test_stage_open_pick_routes_the_whole_input_document_and_records_it(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        brief = (self.root / 'runs/r/brief.md').read_text()
-        result = self.stage('r', 3, env={**env, 'ROUTE_OUT': self.routed()})
-        self.assertEqual(self.route_log.read_text().strip(), '--pick --json --anywhere')
-        self.assertEqual(Path(str(self.route_log) + '.doc').read_text(), brief)
-        self.assertIn('Stage-open skill pick: control-cli (confidence 0.91)', result.stdout)
-        self.assertIn('tink mount control-cli --json --payload', result.stdout)
-        self.assertIn('Stage-open skill pick: control-cli', result.stdout.splitlines()[-1])
-        receipt = self.pick_receipt('r', 3, root=self.root.parent / 'proj-r')
-        self.assertEqual((receipt['status'], receipt['winner'], receipt['confidence']), ('routed', 'control-cli', 0.91))
-        self.assertEqual(receipt['sha256'], hashlib.sha256(brief.encode()).hexdigest())
-        self.assertEqual((receipt['document'], receipt['chars']), ('runs/r/brief.md', len(brief)))
-
-    def test_stage_open_pick_no_specialist_is_recorded_and_not_suggested(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        result = self.stage('r', 3, env={**env, 'ROUTE_OUT': '{"status":"none"}', 'ROUTE_EXIT': '1'})
-        self.assertIn('skill pick: no specialist skill applies', result.stdout)
-        self.assertNotIn('Stage-open skill pick', result.stdout)
-        self.assertEqual(self.pick_receipt('r', 3)['status'], 'none')
-
-    def test_stage_open_pick_failure_never_blocks_the_stage(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        result = self.stage('r', 3, env={**env, 'ROUTE_OUT': 'garbage', 'ROUTE_EXIT': '2'})
-        self.assertIn('skill pick: skipped (router exited 2)', result.stdout)
-        self.assertIn('Launch prompt', result.stdout)
-        self.assertEqual(self.pick_receipt('r', 3)['status'], 'error')
-        self.assertNotIn('reason', self.pick_receipt('r', 3))
-
-    def test_stage_open_pick_failure_keeps_the_router_reason(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        out = '{"contract_version": 1, "status": "error", "reason": "no_api_key"}'
-        result = self.stage('r', 3, env={**env, 'ROUTE_OUT': out, 'ROUTE_EXIT': '2'})
-        self.assertIn('skill pick: skipped (router exited 2: no_api_key)', result.stdout)
-        self.assertIn('Launch prompt', result.stdout)
-        self.assertEqual({k: self.pick_receipt('r', 3)[k] for k in ('status', 'reason')},
-                         {'status': 'error', 'reason': 'no_api_key'})
-
-    def test_stage_open_pick_reason_is_one_short_line(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        out = json.dumps({'status': 'error', 'reason': 'bad\nkey ' + 'x' * 500})
-        result = self.stage('r', 3, env={**env, 'ROUTE_OUT': out, 'ROUTE_EXIT': '2'})
-        reason = self.pick_receipt('r', 3)['reason']
-        self.assertEqual(reason, ('bad key ' + 'x' * 500)[:120])
-        self.assertIn(f'skill pick: skipped (router exited 2: {reason})', result.stdout)
-
-    def test_stage_open_pick_reason_drops_control_characters(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        out = json.dumps({'status': 'error', 'reason': 'no\x1b[31m_key\x07'})
-        result = self.stage('r', 3, env={**env, 'ROUTE_OUT': out, 'ROUTE_EXIT': '2'})
-        self.assertEqual(self.pick_receipt('r', 3)['reason'], 'no [31m_key')
-        self.assertNotIn('\x1b', result.stdout)
-
-    def test_stage_open_pick_non_object_output_never_blocks(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        result = self.stage('r', 3, env={**env, 'ROUTE_OUT': '["routed"]', 'ROUTE_EXIT': '0'})
-        self.assertIn('skill pick: skipped (router output unreadable)', result.stdout)
-        self.assertIn('Launch prompt', result.stdout)
-        self.assertEqual(self.pick_receipt('r', 3)['status'], 'error')
-
-    def test_stage_open_pick_skips_documents_over_the_size_limit(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        (self.root / 'runs/r/brief.md').write_text('x' * 130000)
-        self.decide('r', 3)
-        result = self.stage('r', 3, env={**env, 'ROUTE_OUT': self.routed()})
-        self.assertFalse(self.route_log.exists())
-        self.assertIn('skill pick: skipped (document is 130000 characters; limit 120000)', result.stdout)
-        self.assertEqual(self.pick_receipt('r', 3)['status'], 'skipped')
-
-    def test_stage_open_pick_check_calls_nothing_and_writes_nothing(self):
-        env = self.pick_shim()
-        self.new_run('r')
-        out = self.stage('r', 3, '--check', env={**env, 'ROUTE_OUT': self.routed()}).stdout
-        self.assertFalse(self.route_log.exists())
-        self.assertIn('Would pick a skill from runs/r/brief.md', out)
-        self.assertFalse((self.root / 'runs/r/skills').exists())
-
-    def test_stage_open_pick_without_a_router_is_silent(self):
-        self.new_run('r')
-        result = self.stage('r', 3, env=IDENT)
-        self.assertNotIn('skill pick', result.stdout)
-        self.assertFalse((self.root / 'runs/r/skills').exists())
-
-    def test_stage_open_pick_documents_per_stage(self):
-        env = {**self.pick_shim(), 'ROUTE_OUT': self.routed('architect', 0.7)}
-        self.new_run('f', profile='full')
-        (self.root / 'runs/f/01-plan/output/intent.md').write_text('intent text\n')
-        self.decide('f', 1)
-        self.stage('f', 2, env=env)
-        self.assertEqual(Path(str(self.route_log) + '.doc').read_text(), 'intent text\n')
-        self.assertEqual(self.pick_receipt('f', 2)['document'], 'runs/f/01-plan/output/intent.md')
-        self.new_run('p', approve=False)
-        self.route_log.unlink()
-        target = self.base / 'contract.md'
-        target.write_text('seed contract\n')
-        self.stage('p', 1, '--seed-contract', str(target), env=env)
-        self.assertEqual(Path(str(self.route_log) + '.doc').read_text(), 'seed contract\n')
-        self.assertEqual(self.pick_receipt('p', 1)['document'], 'runs/p/seed-contract.md')
-        self.route_log.unlink()
-        self.new_run('q', approve=False)
-        self.stage('q', 1, env=env)
-        self.assertFalse(self.route_log.exists())
-        self.assertFalse((self.root / 'runs/q/skills').exists())
 
     def route_shim(self, version):
         shim = self.bin / 'tink-route'

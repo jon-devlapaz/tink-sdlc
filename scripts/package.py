@@ -7,6 +7,9 @@ from pathlib import Path
 import re
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets'
+# Files a project edits for itself: installed once, never overwritten by an upgrade.
+PROJECT_OWNED = {'_system/verification.json', '.tink/pool.lock.json', '.tink/pool-overlay.json'}
+PROJECT_OWNED_PATTERNS = [r'\.tink/skillsets/[^/]+\.json', r'stages/[^/]+/TRIGGERS(\.lock)?\.json']
 
 
 def parse_version(text):
@@ -37,8 +40,7 @@ def main():
         if not path.is_file() or path == manifest_path or '__pycache__' in path.parts or path.suffix == '.pyc':
             continue
         files[str(path.relative_to(ASSETS))] = hashlib.sha256(path.read_bytes()).hexdigest()
-    owned = sorted(name for name in files if name == '_system/verification.json'
-                   or (name.startswith('.tink/skillsets/') and name.count('/') == 2 and name.endswith('.json')))
+    owned = sorted(name for name in files if name in PROJECT_OWNED or any(re.fullmatch(p, name) for p in PROJECT_OWNED_PATTERNS))
     manifest = {'version': version, 'files': files, 'projectOwned': owned}
     if args.check:
         if manifest != old:
