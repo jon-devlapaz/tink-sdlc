@@ -305,6 +305,10 @@ def changed_report(before_files, after_files):
     tracked = tracked_paths()
     if any(name in tracked and (Path(name).suffix in {'.pyc', '.pyo'} or '__pycache__' in Path(name).parts) for name in shown):
         text += ' Hint: tracked bytecode files change during test runs; untrack them and ignore __pycache__'
+    created = [name for name in shown if name not in before_files and name not in tracked]
+    if created:
+        text += (' Hint: a check created these untracked files. Add generated output to .gitignore; '
+                 'if the file is meant to be committed, commit it and rerun verification.')
     return text
 
 
@@ -500,9 +504,40 @@ def lock_tests(args):
             if target.resolve() != target.absolute() or not target.is_file() or not target.is_relative_to(ROOT) or '..' in Path(name).parts:
                 raise ValueError('Lock only regular files inside the checkout.')
             files[str(target.relative_to(ROOT))] = digest(target.read_bytes())
+        reproduction = run_reproduction(args.reproduce, path / 'reproduction-log.md') if args.reproduce else None
         write_json(record, {'files': files, 'candidate': snapshot(), 'review_source': args.source,
-                            'failure_evidence': args.failure_evidence})
-    print('Local test baseline recorded. CI must independently validate the failing reproduction and protect the baseline.')
+                            'failure_evidence': args.failure_evidence, **({'reproduction': reproduction} if reproduction else {})})
+    if reproduction:
+        print(f"Reproduction failed with exit {reproduction['exit_code']} on this tree, as a bug baseline must. "
+              'Local test baseline recorded. CI must still validate it and protect the baseline.')
+    else:
+        print('Local test baseline recorded. The failing reproduction was NOT run here (pass --reproduce to run it now); '
+              'CI must independently validate it and protect the baseline.')
+
+
+REPRODUCE_TIMEOUT = 120
+
+
+def run_reproduction(raw, log_path):
+    """Run the reproduction command now; a bug baseline is only real if it fails on the unfixed code."""
+    try:
+        argv = json.loads(raw)
+    except ValueError as error:
+        raise ValueError(f'--reproduce must be a JSON argv array, e.g. \'["python3","-m","unittest","tests.test_x"]\': {error}') from error
+    validate_check({'argv': argv, 'timeout_seconds': REPRODUCE_TIMEOUT})
+    with log_path.open('w') as log:
+        log.write(f'$ {json.dumps(argv)}\n')
+        log.flush()
+        try:
+            result = subprocess.run(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=REPRODUCE_TIMEOUT)
+        except (subprocess.TimeoutExpired, OSError) as error:
+            log.write(f'{type(error).__name__}: {error}\n')
+            raise ValueError(f'Reproduction could not run to completion ({type(error).__name__}); see {log_path.relative_to(ROOT)}') from error
+    if result.returncode == 0:
+        log_path.unlink()
+        raise ValueError('Reproduction passed on the current tree. A bug baseline must fail before the fix; '
+                         'fix the test (or the reproduction command) and lock again.')
+    return {'argv': argv, 'exit_code': result.returncode, 'log': digest(log_path.read_bytes())}
 
 
 def mark(args):
@@ -659,6 +694,13 @@ def status_state(path):
         test_lock(path)
     except (ValueError, OSError, KeyError, TypeError) as error:
         errors.append(str(error))
+    reproduction = None
+    if (path / 'test-lock.json').is_file():
+        try:
+            recorded = read_json(path / 'test-lock.json').get('reproduction')
+            reproduction = {'executed': True, 'argv': recorded['argv'], 'exit_code': recorded['exit_code']} if recorded else {'executed': False}
+        except (ValueError, OSError, KeyError, TypeError, AttributeError):
+            pass
     if checklist['state'] == 'invalid':
         errors.append(checklist['error'])
     first_gate = next((g for g in gates if g['status'] != 'approved'), None)
@@ -680,6 +722,7 @@ def status_state(path):
             'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
             'checklist': checklist['items'], 'checklist_state': checklist['state'],
             'checklist_text': checklist_text(checklist), 'next_action': next_action, 'errors': errors,
+            'reproduction': reproduction,
             'verification_config': config,
             'actions': {'verify': {'allowed': not verify_reason, 'reason': verify_reason,
                                    'timeout_seconds': timeout if not verify_reason else None},
@@ -697,6 +740,11 @@ def status_text(view):
                           f"  python3 _system/scripts/sdlc.py decide {view['slug']} {stage} DECISION "
                           "--reviewer 'REVIEWER' --source 'SOURCE' --reason 'REASON'"])
     lines.append(view['checklist_text'])
+    repro = view.get('reproduction')
+    if repro is not None:
+        lines.append(f"Reproduction: failed with exit {repro['exit_code']} when locked ({' '.join(repro['argv'])})" if repro['executed'] else
+                     'Reproduction: recorded from review evidence, not run locally; CI must confirm it fails on the unfixed code '
+                     '(lock-tests --reproduce runs it at lock time).')
     if view['verification'] is not None:
         lines.append('Verification: ' + ('current' if view['verification_status'] == 'current' else 'failed, stale, or blocked'))
     else:
@@ -893,11 +941,16 @@ def walk_w1(root, agents_text):
         if size > GENERATED_BYTE_LIMIT:
             problems.append(f'AGENTS.md:{start + 1}: generated block is {size} bytes (limit {GENERATED_BYTE_LIMIT})')
     outside = len(lines) - len(generated)
-    if outside > ENTRY_LINE_LIMIT:
-        problems.append(f'AGENTS.md: {outside} lines outside generated blocks (limit {ENTRY_LINE_LIMIT})')
+    router_lines = end - begin + 1 if begin is not None and end is not None and end >= begin else outside
+    if router_lines > ENTRY_LINE_LIMIT:
+        problems.append(f'AGENTS.md: the SDLC router is {router_lines} lines (limit {ENTRY_LINE_LIMIT})')
     info = f'{outside} lines outside generated blocks; ' + (f'generated block {sizes[0]} bytes (cap {GENERATED_BYTE_LIMIT})' if sizes else 'no generated block')
     if problems:
         return walk_result('W1', name, 'fail', 'entry file breaks the router contract', info, problems)
+    if outside > ENTRY_LINE_LIMIT:
+        return walk_result('W1', name, 'warn', f'AGENTS.md carries {outside - router_lines} lines of project instructions beside the router',
+                           info + f'; install keeps existing AGENTS.md text, but an entry file past {ENTRY_LINE_LIMIT} lines is slow to orient from. '
+                           'Consider moving detail into docs/ and linking it.', [f'AGENTS.md: {outside} lines outside generated blocks (soft limit {ENTRY_LINE_LIMIT})'])
     return walk_result('W1', name, 'pass', f'AGENTS.md is a router ({info})', info)
 
 
@@ -1590,6 +1643,8 @@ def main():
     baseline.add_argument('paths', nargs='+')
     baseline.add_argument('--source', required=True)
     baseline.add_argument('--failure-evidence', required=True)
+    baseline.add_argument('--reproduce', metavar='ARGV_JSON',
+                          help='run this command now (JSON argv array) and require it to fail on the unfixed code')
     skill = commands.add_parser('skills')
     skill.add_argument('tool', choices=list(TOOL_ACCEPTABLE_CODES))
     skill.add_argument('arguments', nargs=argparse.REMAINDER)

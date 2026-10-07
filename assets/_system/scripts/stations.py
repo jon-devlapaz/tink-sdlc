@@ -34,6 +34,7 @@ ROUTE_TIMEOUT = 120
 DEFAULT_MAX_PULLS = 5
 DEFAULT_MAX_SRC_FILES = 40
 DEFAULT_IGNORE = [r'(^|/)(\.agents|\.claude|\.tink|runs|node_modules|vendor|docs|dist|build)/', r'\.lock$',
+                  r'^(_system|_shared)/', r'^stages/0[1-6]-[a-z]+/',  # the scaffold's own files are not the project's change
                   r'lock\.json$', r'SKILL\.md$']
 STAGE_KEYS = {'version', 'stage', 'max_pulls', 'max_src_files', 'ignore', 'triggers'}
 TRIGGER_KEYS = {'id', 'why', 'need', 'expect', 'when'}
