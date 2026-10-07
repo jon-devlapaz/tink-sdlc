@@ -30,4 +30,4 @@ Skillset: `planning-skillset` (pin: `.tink/skillsets/planning-skillset.json`).
 
 Stage skills (always for this stage; `tink use` compiles the same set):
 - `principle-build-the-lever`: Non-trivial work: build the script or tool that does or proves it, so a reviewer can rerun it, instead of doing it by hand.
-When one of these triggers fires, or the stage-open pick (`runs/<slug>/skills/stage-<n>-pick.json`) names a skill, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.
+At stage open the launcher checks `stages/01-plan/TRIGGERS.json` against the run's diff and tags and writes the pull sheet `runs/<slug>/skills/stage-1-pulls.json`. When one of these triggers fires, or the pull sheet names a skill, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.

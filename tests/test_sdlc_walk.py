@@ -110,24 +110,24 @@ class FreshScaffold(WalkBase):
     def test_fresh_scaffold_has_no_warnings_or_failures(self):
         code, data = self.walk()
         self.assertEqual(code, 0)
-        self.assertEqual(data['summary'], {'pass': 7, 'warn': 0, 'fail': 0}, json.dumps(data, indent=1))
+        self.assertEqual(data['summary'], {'pass': 8, 'warn': 0, 'fail': 0}, json.dumps(data, indent=1))
 
-    def test_all_seven_ids_present_in_order(self):
+    def test_all_eight_ids_present_in_order(self):
         _, data = self.walk()
-        self.assertEqual([c['id'] for c in data['checks']], ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7'])
+        self.assertEqual([c['id'] for c in data['checks']], ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'])
         self.assertEqual([c['name'] for c in data['checks']],
                          ['entry-file', 'pointers-resolve', 'stage-contracts', 'token-budget',
-                          'skillsets-consistent', 'status-derivable', 'rules-block-current'])
+                          'skillsets-consistent', 'status-derivable', 'rules-block-current', 'triggers-locked'])
 
     def test_human_output_shape(self):
         result = self.sdlc('walk')
         self.assertEqual(result.returncode, 0, result.stderr)
         lines = result.stdout.splitlines()
         self.assertTrue(lines[0].startswith('PASS W1 entry-file: '), lines[0])
-        self.assertEqual(sum(1 for l in lines if l.startswith('PASS W')), 7)
+        self.assertEqual(sum(1 for l in lines if l.startswith('PASS W')), 8)
         for stage in STAGES:
             self.assertEqual(sum(1 for l in lines if stage in l and 'tokens' in l), 1, stage)
-        self.assertEqual(lines[-1], 'Walk: 7 passed, 0 warned, 0 failed')
+        self.assertEqual(lines[-1], 'Walk: 8 passed, 0 warned, 0 failed')
 
     def test_json_schema(self):
         _, data = self.walk()
@@ -140,7 +140,7 @@ class FreshScaffold(WalkBase):
             self.assertIsInstance(c['detail'], str)
             self.assertIsInstance(c['items'], list)
         self.assertEqual(set(data['summary']), {'pass', 'warn', 'fail'})
-        self.assertEqual(sum(data['summary'].values()), 7)
+        self.assertEqual(sum(data['summary'].values()), 8)
 
     def test_token_numbers_per_stage(self):
         _, data = self.walk()

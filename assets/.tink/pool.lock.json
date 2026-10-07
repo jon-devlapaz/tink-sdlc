@@ -1,0 +1,431 @@
+{
+ "skills": {
+  "animate": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "7e2be075000beecaf857ef67a99bccc26b5fe20ee43a52b53a8db7758f7ad895",
+   "path": "skills/animate",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "animate-expo": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "83879713a792d9e1b9e25287f4d59f066ed108f3f5baf5f3dd7fdc4c55e55ece",
+   "path": "skills/animate-expo",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "animation-vocabulary": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "6ac7c5c1cc9a674dc7c3555634bb0090b6b1610ed45047eaf9b5be13220ef339",
+   "path": "skills/animation-vocabulary",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "apple-design": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "79b75afd2538d394256f38f54b6b3815bb8e26bd5e3b33dbef8e858fd8ecbebf",
+   "path": "skills/apple-design",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "architect": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "3151b63e91998821e4bcb479344292debb19f61aee497e0f1137795dff26a15e",
+   "path": "pstack/skills/architect",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "arena": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "eb95b61ac868c984d6b635b60e170c22f021ab3974ff72f17c50adfa2668bbda",
+   "path": "pstack/skills/arena",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "ask-sonner": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "3b0a56217f25ec077cdd60e460fa0df0cd08d39d2d4abd6af24d104cdcb25967",
+   "path": "skills/ask-sonner",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "automate-me": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "b5483c07846e01aecd2517a8743da4ae539a8ede98b2011acd9cb027cd75b88f",
+   "path": "pstack/skills/automate-me",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "benchmark-checklist": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "be11df2214b4d566e4c0193253a2a37567fc5fe2d69a99f2781ac11fb291b925",
+   "path": "pstack/skills/benchmark-checklist",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "blast-radius": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "b7a89ce84164a9900d6f6a52e82cc5eb070bb08e0648bdb16d967a130c19e167",
+   "path": "pstack/skills/blast-radius",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "break-ui": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "7cfa3cc21210099fa7ab9b2e7968b9f8674cac8f0f495240715f2561b0846883",
+   "path": "skills/break-ui",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "bro": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "a333dd2281770dcc9fb2317b066bd0dbefd780aa9abfd6b19f7d31db3ad3f007",
+   "path": "pstack/skills/bro",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "build-iterated-agentic-loop": {
+   "commit": "ca7c8088db69e315a8b2deea43820270457f8f3c",
+   "digest": "0feda401798e9abcc01706023df2e42d74ab742cf3857de0f29b2daae6f7f5ec",
+   "path": "plugins/build-iterated-agentic-loop/skills/build-iterated-agentic-loop",
+   "source": "https://github.com/humanlayer/skills"
+  },
+  "correct": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "86f88ec0adda98bcede119d3861312c362d17bc91829c73eb4caa5f1208a9791",
+   "path": "pstack/skills/correct",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "create-verification-skill": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "9c70cd61ec5e6e016a95bad46f9b75abd7354db73435eda5fb724eb3e3418d00",
+   "path": "pstack/skills/create-verification-skill",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "design-control-loop": {
+   "commit": "ca7c8088db69e315a8b2deea43820270457f8f3c",
+   "digest": "4777041576b85f282e31cd90cfd752f3ec14bf455d14ab4cfdd4ae2c46149ffd",
+   "path": "plugins/design-control-loop/skills/design-control-loop",
+   "source": "https://github.com/humanlayer/skills"
+  },
+  "emil-design-eng": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "a993a1e593a9ac53e0c72b319ff4ef273dcfe17569a2da510fab68deb070e273",
+   "path": "skills/emil-design-eng",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "figure-it-out": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "c18453a07c9f46f8d2a9f7edb47191a9c256e7cfcefaf7643b4638681d69e14b",
+   "path": "pstack/skills/figure-it-out",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "find-animation-opportunities": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "423427212a66d9d1ea2648399c9bd9d7fc7003c196e8c250f9578a8409abd184",
+   "path": "skills/find-animation-opportunities",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "how": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "b2bb93ac4d010f1f0feaa60f817e9cef87b5dab88b3d41dbdbd16a9d33f382cc",
+   "path": "pstack/skills/how",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "improve-animations": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "a2195202b98259e09cd87dce0bdf7a2bee2c156aa03ed66d2d52e7b9d056be74",
+   "path": "skills/improve-animations",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "improve-claude-md": {
+   "commit": "ca7c8088db69e315a8b2deea43820270457f8f3c",
+   "digest": "b23dea67c7e3d1ed9b6beacd73f45904db630bd4a1f1d9d7517508128b52660b",
+   "path": "plugins/improve-claude-md/skills/improve-claude-md",
+   "source": "https://github.com/humanlayer/skills"
+  },
+  "interrogate": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "29c78641ecccdd769c4b61bb1561934de6238f576b7d68a5c608b9dd6ea4791a",
+   "path": "pstack/skills/interrogate",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "maintain-verification-skill": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "0d58a5b503197681a39404d0cbac0ae3b9969123e32028e7e5cb43298f94e5f5",
+   "path": "pstack/skills/maintain-verification-skill",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "make-bot-ui": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "5fa5eac756cbf35e67f99f0442b9f956a0f9e48e9a9f3aaae50308a94764147f",
+   "path": "pstack/skills/make-bot-ui",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "mobile-native": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "952dad47a2f9683f93f3afc47bf24b2d4fd11bbca60432667b18d76383fa07b2",
+   "path": "skills/mobile-native",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "narrow-react-prop-types": {
+   "commit": "ca7c8088db69e315a8b2deea43820270457f8f3c",
+   "digest": "a541d67219cffcbf040a9c25ef2607e4f3a9933a36c7ab5664ab17765d9b215b",
+   "path": "plugins/narrow-react-prop-types/skills/narrow-react-prop-types",
+   "source": "https://github.com/humanlayer/skills"
+  },
+  "no-comments": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "117448f50f5e0cf8f52f737fd9e5a1fcfbb026ceb0a7b7b32fac267f9c2e7028",
+   "path": "pstack/skills/no-comments",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "pick-ui-library": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "2fadb0aa9dc8d11763a161b4360993c70976c1092339e0f50f069481e9cda9f5",
+   "path": "skills/pick-ui-library",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "poteto-help": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "dd5bedccdbc39cb6606c31d0cd1cb63b0221802cdf7d91f7ece2cb93ca865ead",
+   "path": "pstack/skills/poteto-help",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "poteto-mode": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "3e90ba360a73576abb86692954cd8e46b1d69c6bc31978804a65d5760487fdfa",
+   "path": "pstack/skills/poteto-mode",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-attack-the-premise": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "4d7616448ba38512be9a05bba2b2a5eb9ae5497d89f3d1454c46a33b0ad99f2d",
+   "path": "pstack/skills/principle-attack-the-premise",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-boundary-discipline": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "55d63ee9d377c4a518339a648526878d27133f305ca00d519be95a729c8dbd44",
+   "path": "pstack/skills/principle-boundary-discipline",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-build-the-lever": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "048f9a2ce932b49f1f644b0ba9f67b4aa058b57c20769ea27339c33b7c8c70ee",
+   "path": "pstack/skills/principle-build-the-lever",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-encode-lessons-in-structure": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "1ea3c30cfdd72ead5d6607d49e2b940dfe2451298b3be501acbf6cf0821b347f",
+   "path": "pstack/skills/principle-encode-lessons-in-structure",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-exhaust-the-design-space": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "f88881a656aedc92579b3ccad3f6c0e5420be480ab6838e59a4a33e89a69b2e2",
+   "path": "pstack/skills/principle-exhaust-the-design-space",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-experience-first": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "3755ab3288a053dd3bf42f4851a605f8ab4a734ca37ac8345148bdff67fba511",
+   "path": "pstack/skills/principle-experience-first",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-explain-the-number": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "f50b8fd5d0f8952eb7019872acc3a7dddf921c67036a77e91fb556cb8aec7b24",
+   "path": "pstack/skills/principle-explain-the-number",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-fix-root-causes": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "7751feaf5ee319bd3f2fce39d08cb10bde88dc00bce3f6fbd7665726ace4085f",
+   "path": "pstack/skills/principle-fix-root-causes",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-foundational-thinking": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "1d23c9a69f71d4b49a77cff4f3460faf589a0822a44f163ddabbe70fc3815a79",
+   "path": "pstack/skills/principle-foundational-thinking",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-guard-the-context-window": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "4821d7945b748058c3a9bd474052b6dcfe96f4a41fc10807947c842cc37352ff",
+   "path": "pstack/skills/principle-guard-the-context-window",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-laziness-protocol": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "c564e2925269cb40dc6a76bd6d1ef9b9b5fa595c4b4e3ca63a5918f692e722e4",
+   "path": "pstack/skills/principle-laziness-protocol",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-make-operations-idempotent": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "ef75b4d6320cb41d71a53052bc76e3154d1d26dc2be61728cfd2db2fadd56d89",
+   "path": "pstack/skills/principle-make-operations-idempotent",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-migrate-callers-then-delete-legacy-apis": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "d7f71a042febde66835f46e8359276008745ac9e4273c24e1c05c15a2de08527",
+   "path": "pstack/skills/principle-migrate-callers-then-delete-legacy-apis",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-minimize-reader-load": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "dfdb3518545f5d7010155de12a64c4100bf2e14b1628f2a277d9b60764e0b4c6",
+   "path": "pstack/skills/principle-minimize-reader-load",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-model-the-domain": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "b9bfe568c32df5df198e34a70e856f8874bca072409bb3baa435e532181be469",
+   "path": "pstack/skills/principle-model-the-domain",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-never-block-on-the-human": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "f966763e1f4d7aea663e7107166da8bee17d9ab6513a23e484ad99f776c5dbc6",
+   "path": "pstack/skills/principle-never-block-on-the-human",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-outcome-oriented-execution": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "234c15fa31f1184c078936e45b3097f5b917882eb877201de62003638626c571",
+   "path": "pstack/skills/principle-outcome-oriented-execution",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-prove-it-works": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "e411e390703f8dfa987dc8a19ecde9b4dc14a623b5543d76f65b6c4a94bde1e1",
+   "path": "pstack/skills/principle-prove-it-works",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-redesign-from-first-principles": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "52aede457a6aecc5a1a4c9672f189875f3e74daaf6b5c5622bcc1767d8b25007",
+   "path": "pstack/skills/principle-redesign-from-first-principles",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-separate-before-serializing-shared-state": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "d44b58f1b770b1855326864a5502ce8e627de278ac2f65edabea5aa1d14b5ba9",
+   "path": "pstack/skills/principle-separate-before-serializing-shared-state",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-sequence-verifiable-units": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "d1719c7e3d8b4b9a2fd0a8561ca36a5d7c708f8d248b8b02dca664b59bfc74c4",
+   "path": "pstack/skills/principle-sequence-verifiable-units",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-subtract-before-you-add": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "67dd6dacc9b3b6e21e34528e556f4111f91b2e6ed6065350ce7c6fbbf03e9e15",
+   "path": "pstack/skills/principle-subtract-before-you-add",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-test-behavior-not-implementation": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "074f151f5a7374d87139a310b0f35cde7a999e285d5a0ee30b9af665a396fa73",
+   "path": "pstack/skills/principle-test-behavior-not-implementation",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "principle-type-system-discipline": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "d05e0de14c21842995167a7bac675073c14fd9b10ae2aff874d87c1b66f52bfc",
+   "path": "pstack/skills/principle-type-system-discipline",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "prototype": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "3787e7b2e94c91fe0f80fa362d636c48c1b1fc93a817f71f347edd332a657c71",
+   "path": "skills/prototype",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "recall": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "0ec3a3641e552a4d03263b2d6136a59ee3e51a20fc1bc592716c70077de120a5",
+   "path": "pstack/skills/recall",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "reflect": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "97ae2684fe2da6866b9b2a377cebcf14061ddcb1795aada0c28a56dd146999d5",
+   "path": "pstack/skills/reflect",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "review-animations": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "50ba5cd273ab0def08d140fd1329319b23b42bd0165c8f67644c590d3b57bbc6",
+   "path": "skills/review-animations",
+   "source": "https://github.com/emilkowalski/skills"
+  },
+  "setup-pstack": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "176133648f53184705e327aad75a0480a52e2e15f5f61fd53b9bf15d7cf388af",
+   "path": "pstack/skills/setup-pstack",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "show-me": {
+   "commit": "ca7c8088db69e315a8b2deea43820270457f8f3c",
+   "digest": "ca28e76c6560586b69d2225f8e6fd57aa4969259a6e77488f860fbba7ad451f6",
+   "path": "plugins/show-me/skills/show-me",
+   "source": "https://github.com/humanlayer/skills"
+  },
+  "show-me-your-work": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "c1bfc460cdbe8172d688c4cf5dc7024bfc94050996e78cd160ab4b20c01e0650",
+   "path": "pstack/skills/show-me-your-work",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "swarm": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "943d82cdca01cc5b2668d0e4b054eec140380bcfe4cc547ecdcff639e1fad033",
+   "path": "pstack/skills/swarm",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "tdd": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "5cb44876b687184a55d1e4355a830374ccd5e0e4c361d19e8f5928d3496704b1",
+   "path": "pstack/skills/tdd",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "teach": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "26ac0702abb065f8808d81ceb51d869dc9e5f7b432372d8af284fca1f4e894e4",
+   "path": "pstack/skills/teach",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "technical-writing": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "d67110528acd1213f9fa40f35a24e3dbd2f9726f83fe8dae30ddd40b36739d54",
+   "path": "pstack/skills/technical-writing",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "typescript-best-practices": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "f2fb0d49e467ea061231caffc715a004b607613837cff1b901434b11fc40906c",
+   "path": "pstack/skills/typescript-best-practices",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "unslop": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "0aefd15e0b73e3963ead74723fe0a23e8fb282b0f472dac75ad661049e8a6c4c",
+   "path": "pstack/skills/unslop",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "visual-pr": {
+   "commit": "ca7c8088db69e315a8b2deea43820270457f8f3c",
+   "digest": "55f232e3a808899b690abde140101ad1504568ddbf6e584722ec9e9106bacfee",
+   "path": "plugins/visual-pr/skills/visual-pr",
+   "source": "https://github.com/humanlayer/skills"
+  },
+  "why": {
+   "commit": "9f451cf875ad1239912762f67741e8e5ba6ac0f1",
+   "digest": "e89ae32859c3177278fe9b956b91388ba26ba22ea3a7ab35e9609a5ca72b4a71",
+   "path": "pstack/skills/why",
+   "source": "https://github.com/cursor/plugins"
+  },
+  "write-swift": {
+   "commit": "e8a175de22ae1e49370fc144c1f3bb9aeedf988d",
+   "digest": "0a46a8bf742e630f5b1ca2ac6ecb9e50dadf944072a70adbef6640621afd3ce1",
+   "path": "skills/write-swift",
+   "source": "https://github.com/emilkowalski/skills"
+  }
+ },
+ "version": 1
+}

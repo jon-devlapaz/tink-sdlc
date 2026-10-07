@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "stage": "02-design",
+  "triggers": [
+    {
+      "id": "web-ui",
+      "why": "A web UI is being designed: choose the component library deliberately instead of by habit.",
+      "need": "pick between several UI component libraries for a new React screen",
+      "expect": "pick-ui-library",
+      "when": {
+        "profile": [
+          "web-ui"
+        ]
+      }
+    },
+    {
+      "id": "ui-motion",
+      "why": "The interface has motion: decide timing and easing at design time.",
+      "need": "the interface needs enter and exit transitions that feel right",
+      "expect": "animate",
+      "when": {
+        "profile": [
+          "ui-motion"
+        ]
+      }
+    },
+    {
+      "id": "agent-loop",
+      "why": "An autonomous agent loop is being designed: design its feedback loop before building it.",
+      "need": "design the feedback loop that keeps an autonomous agent on track",
+      "expect": "design-control-loop",
+      "when": {
+        "profile": [
+          "agent-loop"
+        ]
+      }
+    }
+  ]
+}
