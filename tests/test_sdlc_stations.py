@@ -370,6 +370,21 @@ class PullTests(ToolBase):
         self.assertEqual(j['pulls'], ['break-ui', 'visual-pr'])
         self.assertIn('3 source files deleted', next(r for r in j['sheet'] if r['id'] == 'removal')['evidence'])
 
+    def test_scaffold_files_do_not_count_as_top_level_folders(self):
+        def change(d):
+            d['triggers'] = [{'id': 'wide', 'why': 'w', 'need': 'the pull request has UI changes', 'expect': 'visual-pr',
+                              'when': {'dirs_min': 3}}]
+        self.edited(change)
+        lock = json.loads(self.lock_file().read_text())
+        lock['entries'] = {'wide': lock['entries']['ui-pr']}
+        self.lock_file().write_text(json.dumps(lock))
+        self.commit({'_system/a.py': 'x\n', '_shared/b.md': 'x\n', 'stages/01-plan/CONTEXT.md': 'x\n', 'src/c.py': 'x\n'})
+        j, _ = self.pull()
+        self.assertEqual(j['pulls'], [])  # only src/ is the project's
+        self.commit({'stages/order/rules.md': 'x\n', 'lib/d.py': 'x\n'})  # a project's own stages/ folder does count
+        j, _ = self.pull(base=('--base', 'main~2'))
+        self.assertEqual(j['pulls'], ['visual-pr'])
+
     def test_bulk_diff_skips_diff_triggers_but_keeps_tags_and_always(self):
         self.commit({f'f{i}.html': '<input>\n' for i in range(8)})
         j, _ = self.pull('--tags', 'ios')

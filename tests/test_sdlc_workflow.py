@@ -394,6 +394,45 @@ class WorkflowTests(unittest.TestCase):
         (self.root / 'regression.py').write_text('weakened')
         self.cli('verify', 'example', ok=False)
 
+    def test_lock_reproduce_requires_a_failing_run_and_records_it(self):
+        self.create_ready('--kind', 'bug')
+        (self.root / 'regression.py').write_text('assert True')
+        passing = '["python3", "regression.py"]'
+        out = self.cli('lock-tests', 'example', 'regression.py', '--source', 's', '--failure-evidence', 'e',
+                       '--reproduce', passing, ok=False)
+        self.assertIn('Reproduction passed on the current tree', out)
+        self.assertFalse((self.root / 'runs/example/test-lock.json').exists())
+        (self.root / 'regression.py').write_text('raise SystemExit("still broken")')
+        out = self.cli('lock-tests', 'example', 'regression.py', '--source', 's', '--failure-evidence', 'e', '--reproduce', passing)
+        self.assertIn('Reproduction failed with exit 1', out)
+        recorded = json.loads((self.root / 'runs/example/test-lock.json').read_text())['reproduction']
+        self.assertEqual((recorded['argv'], recorded['exit_code']), (['python3', 'regression.py'], 1))
+        self.assertIn('Reproduction: failed with exit 1 when locked (python3 regression.py)', self.cli('status', 'example'))
+        self.assertEqual(json.loads(self.cli('status', 'example', '--json'))['run']['reproduction']['executed'], True)
+
+    def test_lock_without_reproduce_says_it_was_not_run_and_status_repeats_it(self):
+        self.create_ready('--kind', 'bug')
+        (self.root / 'regression.py').write_text('assert True')
+        out = self.cli('lock-tests', 'example', 'regression.py', '--source', 's', '--failure-evidence', 'e')
+        self.assertIn('NOT run here', out)
+        self.assertIn('Reproduction: recorded from review evidence, not run locally', self.cli('status', 'example'))
+
+    def test_lock_reproduce_rejects_a_malformed_command(self):
+        self.create_ready('--kind', 'bug')
+        (self.root / 'regression.py').write_text('x')
+        out = self.cli('lock-tests', 'example', 'regression.py', '--source', 's', '--failure-evidence', 'e',
+                       '--reproduce', 'python3 regression.py', ok=False)
+        self.assertIn('--reproduce must be a JSON argv array', out)
+
+    def test_first_run_that_creates_untracked_output_gets_a_gitignore_hint(self):
+        self.create_ready()
+        self.config([{'argv': ['python3', '-c', 'from pathlib import Path; Path("out").mkdir(exist_ok=True); Path("out/r.json").write_text("{}")'],
+                      'timeout_seconds': 5}])
+        out = self.cli('verify', 'example', ok=False)
+        self.assertIn('changed: out/r.json', out)
+        self.assertIn('Add generated output to .gitignore', out)
+        self.cli('verify', 'example')  # the file now exists unchanged, so a rerun is stable
+
     def test_symlink_run_rejected(self):
         (self.root / 'runs').mkdir()
         (self.root / 'runs/link').symlink_to(self.root, target_is_directory=True)

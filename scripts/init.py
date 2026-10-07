@@ -257,14 +257,26 @@ def install(root, check=False, upgrade_mode=False, overwrite_customized=False, t
         runs = safe(root, 'runs')
         if runs.exists() and (not runs.is_dir() or any(runs.iterdir())):
             conflicts.append('runs (existing work)')
-        for top in ['stages', '_shared', '_system']:
+        for top in ['_shared', '_system']:
             entry = safe(root, top)
             if entry.exists() and (not entry.is_dir() or any(entry.iterdir())):
                 conflicts.append(f'{top} (existing content outside this package)')
+        # The project may use stages/ for itself; only the scaffold's own stage folders (stages/01-plan, ...) must be free.
+        stages = safe(root, 'stages')
+        if stages.exists() and not stages.is_dir():
+            conflicts.append('stages (not a directory)')
+        for stage_dir in sorted({name.split('/')[1] for name in files if name.startswith('stages/')}):
+            entry = safe(root, f'stages/{stage_dir}')
+            if entry.exists() and (not entry.is_dir() or any(entry.iterdir())):
+                conflicts.append(f'stages/{stage_dir} (existing content outside this package)')
+        shared_stages = sorted(entry.name for entry in stages.iterdir()
+                               if entry.name not in {name.split('/')[1] for name in files if name.startswith('stages/')}) if stages.is_dir() else []
         if tmp_agents.exists():
             conflicts.append(f'{tmp_agents.name} (stale installer temp file)')
         if conflicts or '<!-- AI-Native SDLC Router -->' in text:
             raise ValueError('Unmanaged or partial scaffold exists; no files changed. Review migration separately: ' + ', '.join(conflicts or ['AGENTS.md router']))
+        if shared_stages:
+            print('Note: stages/ already holds project content (' + ', '.join(shared_stages[:5]) + '); it is left in place beside the scaffold stages.')
         print('Create: ' + ', '.join(sorted(files)))
         print('Append SDLC router to AGENTS.md; preserve existing instructions.')
         if check:

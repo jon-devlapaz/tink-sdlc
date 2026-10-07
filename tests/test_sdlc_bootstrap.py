@@ -74,6 +74,26 @@ class BootstrapTests(unittest.TestCase):
         self.run_init(ok=False)
         self.assertEqual(before, self.contents())
 
+    def test_project_content_in_stages_is_kept_beside_the_scaffold(self):
+        (self.root / 'stages').mkdir()
+        (self.root / 'stages/order.md').write_text('listed -> paid -> shipped -> complete')
+        (self.root / 'stages/payment').mkdir()
+        (self.root / 'stages/payment/rules.md').write_text('app rules')
+        result = self.run_init()
+        self.assertIn('stages/ already holds project content (order.md, payment)', result.stdout)
+        self.assertEqual((self.root / 'stages/order.md').read_text(), 'listed -> paid -> shipped -> complete')
+        self.assertEqual((self.root / 'stages/payment/rules.md').read_text(), 'app rules')
+        self.assertTrue((self.root / 'stages/01-plan/CONTEXT.md').is_file())
+        self.run_init('--check')  # idempotent preview on the installed tree
+
+    def test_project_content_inside_a_scaffold_stage_folder_is_refused(self):
+        (self.root / 'stages/03-build').mkdir(parents=True)
+        (self.root / 'stages/03-build/notes.md').write_text('mine')
+        before = self.contents()
+        result = self.run_init(ok=False)
+        self.assertIn('stages/03-build (existing content outside this package)', result.stderr + result.stdout)
+        self.assertEqual(before, self.contents())
+
     def test_upgrade_refused(self):
         self.run_init()
         path = self.root / '_system/scaffold.json'

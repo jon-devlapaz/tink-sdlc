@@ -63,7 +63,7 @@ sheet is the ticket on the rail, and the pool lock is the pantry inventory.
 | `stage` | Required, the stage directory name. |
 | `max_pulls` | Optional, at most this many skills per pull (default 5). Earlier triggers win. |
 | `max_src_files` | Optional, a diff touching more source files skips diff triggers (default 40; guards bulk imports). Tag and `always` triggers still run. |
-| `ignore` | Optional regexes of paths that never count (default: `.agents .claude .tink runs node_modules vendor docs dist build` folders, `*.lock`, `lock.json`, `SKILL.md`). |
+| `ignore` | Optional regexes of paths that never count (default: `.agents .claude .tink runs node_modules vendor docs dist build` folders, `*.lock`, `lock.json`, `SKILL.md`, and the scaffold's own `_system/`, `_shared/` and `stages/0N-*/` files, so installing it on a branch does not count as a wide change). |
 | `triggers[].id` | Lowercase-with-dashes, unique in the file. |
 | `triggers[].why` | One sentence a stranger can read. |
 | `triggers[].need` | What Jev is asked, 8 to 200 characters, about the capability. |

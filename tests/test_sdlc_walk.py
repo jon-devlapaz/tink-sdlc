@@ -200,12 +200,21 @@ class W1EntryFile(WalkBase):
         self.write('AGENTS.md', self.read('AGENTS.md').replace(ROUTER_END, ''))
         self.assertEqual(self.status_of('W1')['status'], 'fail')
 
-    def test_sixty_lines_pass_sixty_one_fail(self):
+    def test_sixty_lines_pass_sixty_one_warn(self):
         n = len(self.read('AGENTS.md').splitlines())
         self.append('AGENTS.md', 'filler\n' * (60 - n))
         self.assertEqual(self.status_of('W1')['status'], 'pass')
         self.append('AGENTS.md', 'one more\n')
-        self.assertEqual(self.status_of('W1')['status'], 'fail')
+        c = self.status_of('W1')
+        self.assertEqual(c['status'], 'warn')  # preserved project instructions are not the router's fault
+        self.assertIn('project instructions', c['title'])
+
+    def test_a_router_over_sixty_lines_fails(self):
+        text = self.read('AGENTS.md').replace(ROUTER_END, 'filler\n' * 60 + ROUTER_END)
+        self.write('AGENTS.md', text)
+        c = self.status_of('W1')
+        self.assertEqual(c['status'], 'fail')
+        self.assertIn('router is', ' '.join(map(str, c['items'])))
 
     def test_generated_block_lines_not_counted(self):
         n = len(self.read('AGENTS.md').splitlines())
