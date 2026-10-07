@@ -350,14 +350,16 @@ def git(repo, *args):
 
 
 def default_base(repo):
-    """(merge-base commit, label) of HEAD and the default branch (origin/HEAD, else main), or (None, reason)."""
+    """(merge-base commit, label) of HEAD and the default branch (origin/HEAD, else main, else master), or (None, reason)."""
     ref = subprocess.run(['git', '-C', str(repo), 'symbolic-ref', '-q', '--short', 'refs/remotes/origin/HEAD'],
                          capture_output=True, text=True)
-    branch = ref.stdout.strip() if ref.returncode == 0 and ref.stdout.strip() else 'main'
-    base = subprocess.run(['git', '-C', str(repo), 'merge-base', 'HEAD', branch], capture_output=True, text=True)
-    if base.returncode or not base.stdout.strip():
-        return None, f'no merge-base of HEAD and {branch}'
-    return base.stdout.strip(), branch
+    remote = ref.stdout.strip() if ref.returncode == 0 else ''
+    branches = [remote] if remote else ['main', 'master']
+    for branch in branches:
+        base = subprocess.run(['git', '-C', str(repo), 'merge-base', 'HEAD', branch], capture_output=True, text=True)
+        if base.returncode == 0 and base.stdout.strip():
+            return base.stdout.strip(), branch
+    return None, f"no merge-base of HEAD and {' or '.join(branches)}"
 
 
 def changes(repo, base, head, ignore):
@@ -598,7 +600,7 @@ def main(argv=None):
             s.add_argument('--library', help='skill library directory (default $TINK_HOME/skills or ~/.tink-library/skills)')
     s = sub.add_parser('pull')
     s.add_argument('file')
-    s.add_argument('--base', help='diff base (default: merge-base of HEAD and origin/HEAD, else main)')
+    s.add_argument('--base', help='diff base (default: merge-base of HEAD and origin/HEAD, else main, else master)')
     s.add_argument('--head', default='HEAD')
     s.add_argument('--tags', help='comma-separated run tags')
     s.add_argument('--out')

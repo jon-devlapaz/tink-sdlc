@@ -226,7 +226,13 @@ def ready(path):
 
 
 def git(*args):
-    return subprocess.check_output(['git', '-C', str(ROOT), *args], stderr=subprocess.PIPE)
+    result = subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True)
+    if result.returncode:
+        lines = [line for line in result.stderr.decode('utf-8', 'replace').splitlines() if line.strip()]
+        reason = next((line for line in lines if line.startswith(('fatal:', 'error:'))), lines[0] if lines else f'exit {result.returncode}')
+        raise ValueError(f"git {' '.join(args)} failed ({reason}); "
+                         'verification needs the scaffold inside a git repository with at least one commit')
+    return result.stdout
 
 
 def strip_generated_rules(data):
@@ -558,10 +564,10 @@ def checklist_text(view):
     items = view['items']
     passed = sum(item['status'] == 'passed' for item in items)
     proven = sum(item['automatic'] for item in items)
-    lines = [f'Checklist: {passed}/{len(items)} passed ({proven} proven by check, {len(items) - proven} attested)']
+    lines = [f'Checklist: {passed}/{len(items)} passed ({proven} with a check, {len(items) - proven} attested)']
     for item in items:
         if item['status'] != 'passed':
-            suffix = ' (proved by verify)' if item['automatic'] else ''
+            suffix = ' (its check runs in verify)' if item['automatic'] else ''
             lines.append(f"  - {item['id']}: {item['status']}{suffix}")
         elif item['needs_recheck']:
             lines.append(f"  - {item['id']}: attested before the latest changes; re-check it only if the change affects it")
@@ -1385,8 +1391,10 @@ def write_pull_sheet(path, run, n, result, lines):
     lines.append(f'pull sheet: {sheet}')
     if not result['pulls']:
         return None
-    return (f" Pulled skills for this stage ({sheet}): {', '.join(result['pulls'])}; read each in full before "
-            'acting on it: tink mount <skill> --json --payload.')
+    named = f" Pulled skills for this stage ({sheet}): {', '.join(result['pulls'])}"
+    if not shutil.which('tink'):
+        return named + '; tink is not installed here, so continue without them.'
+    return named + '; read each in full before acting on it: tink mount <skill> --json --payload.'
 
 
 def pull(args):
@@ -1535,8 +1543,12 @@ def stage(args):
         print('\n'.join(pull_lines))
     if not args.check and (stale_route := tink_route_warning()):
         print(stale_route)
-    print(f'Checkout: {target}')
-    print('Launch prompt (start a NEW session there):')
+    if args.check and make_worktree:
+        print('Checkout: none yet (--check creates nothing; the real run creates the worktree above)')
+        print('Launch prompt (start a NEW session in that checkout):')
+    else:
+        print(f'Checkout: {target}')
+        print('Launch prompt (start a NEW session there):')
     print(prompt)
 
 
