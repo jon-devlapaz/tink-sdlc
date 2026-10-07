@@ -31,7 +31,7 @@ sheet is the ticket on the rail, and the pool lock is the pantry inventory.
   table, or any other failure, prints one `pulls: skipped (...)` line and the stage still opens.
 - **Stage 4**, which has no stage open, and any re-run: `python3 _system/scripts/sdlc.py pull <run> <n>`.
 - **The diff** is the committed change from the merge-base of `HEAD` and the default branch (`origin/HEAD`, else
-  `main`) to `HEAD`. When no merge-base can be found, diff triggers are skipped with one line saying so; tag and
+  `main`, else `master`) to `HEAD`. When no merge-base can be found, diff triggers are skipped with one line saying so; tag and
   `always` triggers still run.
 - **Tags** are facts a human states when creating the run: `sdlc.py new <run> --tag web-ui --tag ios`. They are
   stored in `run.json`. A tag that no table uses is refused with the list of known tags (the union of all

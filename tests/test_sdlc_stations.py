@@ -419,6 +419,15 @@ class PullTests(ToolBase):
         self.assertEqual(j['base'], 'main')
         self.assertIn('merge-base with main', out)
 
+    def test_master_is_the_default_when_there_is_no_main(self):
+        git(self.repo, 'branch', '-m', 'main', 'master')
+        git(self.repo, 'checkout', '-q', '-b', 'feature')
+        self.commit({'a.html': '<input>\n'})
+        j, out = self.pull(base=(), head=())
+        self.assertIn('break-ui', j['pulls'])
+        self.assertEqual(j['base'], 'master')
+        self.assertIn('merge-base with master', out)
+
     def test_no_default_branch_skips_diff_triggers_and_keeps_the_rest(self):
         git(self.repo, 'branch', '-m', 'main', 'trunk')
         self.commit({'a.html': '<input>\n'})
@@ -427,6 +436,7 @@ class PullTests(ToolBase):
         self.assertEqual(sum('diff triggers skipped' in line for line in out.splitlines()), 1)
         self.assertEqual(self.status(j, 'form-input'), 'skipped: no diff base')
         self.assertIsNone(j['base'])
+        self.assertTrue(any('no merge-base of HEAD and main or master' in line for line in out.splitlines()), out)
 
 
 class PoolTests(unittest.TestCase):
@@ -566,6 +576,9 @@ class StageOpenTests(ScaffoldBase):
         self.assertIn('pull sheet: runs/r/skills/stage-3-pulls.json', result.stdout)
         prompt = result.stdout.splitlines()[-1]
         self.assertIn('Pulled skills for this stage (runs/r/skills/stage-3-pulls.json): write-swift', prompt)
+        self.assertIn('Pulled skills for this stage (runs/r/skills/stage-3-pulls.json): write-swift', prompt)
+        self.assertIn('tink is not installed here, so continue without them', prompt)  # never tell the session to mount what it cannot
+        self.assertNotIn('tink mount', prompt)
         sheet = self.sheet('r', 3, root=self.root.parent / 'proj-r')  # committed and carried into the worktree
         self.assertEqual((sheet['stage'], sheet['pulls'], sheet['tags']), ('03-build', ['write-swift'], ['ios']))
         self.assertEqual(self.router_calls(), [])

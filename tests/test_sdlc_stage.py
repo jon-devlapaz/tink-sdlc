@@ -400,6 +400,24 @@ class HereMode(StageBase):
         self.assertIn('Would run: tink use build-skillset --snapshot runs/r/03-build', out)
         self.assertEqual(out.splitlines()[-1], 'Begin stage 3 (build) of SDLC run `r`.')
 
+    def test_check_names_no_checkout_it_does_not_create(self):
+        self.new_run('r')
+        out = self.stage('r', 3, '--check', env=IDENT).stdout
+        self.assertNotIn(f'Checkout: {self.root.parent}', out)
+        self.assertIn('Checkout: none yet', out)
+        self.assertFalse((self.root.parent / 'proj-r').exists())
+
+    def test_prompt_mentions_tink_mount_only_when_tink_is_installed(self):
+        self.new_run('r')
+        self.sdlc('new', 'r2', '--tag', 'ios')
+        out = self.sdlc('pull', 'r2', '3').stdout
+        self.assertIn('write-swift; read each in full before acting on it: tink mount', out)
+        dirs = {str(Path(PYTHON).parent), str(Path(GIT).parent)}
+        if not any((Path(d) / 'tink').exists() for d in dirs):
+            out = self.sdlc('pull', 'r2', '3', env={'PATH': ':'.join(sorted(dirs))}).stdout
+            self.assertIn('write-swift; tink is not installed here, so continue without them.', out)
+            self.assertNotIn('tink mount', out)
+
     def test_check_here_and_without_tink(self):
         self.new_run('r', approve=False)
         out = self.stage('r', 1, '--check').stdout

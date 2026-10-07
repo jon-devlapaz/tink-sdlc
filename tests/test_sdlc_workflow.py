@@ -632,7 +632,7 @@ class WorkflowTests(unittest.TestCase):
     def test_status_checklist_lines(self):
         self.checklist_ready(('alpha', 'beta', 'gamma'))
         out = self.cli('status', 'example')
-        self.assertIn('Checklist: 0/3 passed (0 proven by check, 3 attested)\n  - alpha: pending\n  - beta: pending\n  - gamma: pending\n', out)
+        self.assertIn('Checklist: 0/3 passed (0 with a check, 3 attested)\n  - alpha: pending\n  - beta: pending\n  - gamma: pending\n', out)
         self.assertLess(out.index('Stage 3'), out.index('Checklist:'))
         self.assertLess(out.index('Checklist:'), out.index('Verification'))
         self.mark('alpha')
@@ -655,6 +655,18 @@ class WorkflowTests(unittest.TestCase):
         shutil.rmtree(self.root / '.git')
         out = self.cli('status', 'example')
         self.assertIn('Checklist: 1/1 passed', out)
+
+    def test_verify_without_a_commit_names_the_requirement_and_git_stderr(self):
+        self.create_ready()
+        shutil.rmtree(self.root / '.git')
+        subprocess.run(['git', 'init', '-q', str(self.root)], check=True)  # a repository with no commit yet
+        out = self.cli('verify', 'example', ok=False)
+        self.assertIn('at least one commit', out)
+        self.assertNotIn('non-zero exit status', out)
+        shutil.rmtree(self.root / '.git')
+        out = self.cli('verify', 'example', ok=False)
+        self.assertIn('not a git repository', out)
+        self.assertIn('at least one commit', out)
 
     def test_verify_requires_all_items_passed(self):
         self.checklist_ready(('alpha', 'beta'))
@@ -786,11 +798,11 @@ class WorkflowTests(unittest.TestCase):
     def test_check_passes_only_after_real_work(self):
         self.checked_ready()
         self.assertIn('Checklist check failed: gate', self.cli('verify', 'example', ok=False))
-        self.assertIn('  - gate: pending (proved by verify)', self.cli('status', 'example'))
+        self.assertIn('  - gate: pending (its check runs in verify)', self.cli('status', 'example'))
         (self.root / 'proof.txt').write_text('done')
         self.cli('verify', 'example')
         out = self.cli('status', 'example')
-        self.assertIn('Checklist: 1/1 passed (1 proven by check, 0 attested)', out)
+        self.assertIn('Checklist: 1/1 passed (1 with a check, 0 attested)', out)
         self.assertNotIn('  - gate:', out)
         self.assertIn('Verification: current', out)
 
@@ -836,15 +848,15 @@ class WorkflowTests(unittest.TestCase):
     def test_status_counts_and_pending_lines(self):
         self.checked_ready(('gate', 'gate2'), ('note',))
         out = self.cli('status', 'example')
-        self.assertIn('Checklist: 0/3 passed (2 proven by check, 1 attested)\n', out)
-        self.assertIn('  - gate: pending (proved by verify)', out)
-        self.assertIn('  - gate2: pending (proved by verify)', out)
+        self.assertIn('Checklist: 0/3 passed (2 with a check, 1 attested)\n', out)
+        self.assertIn('  - gate: pending (its check runs in verify)', out)
+        self.assertIn('  - gate2: pending (its check runs in verify)', out)
         self.assertIn('  - note: pending', out)
         self.mark('note')
         (self.root / 'proof.txt').write_text('done')
         self.cli('verify', 'example')
         out = self.cli('status', 'example')
-        self.assertIn('Checklist: 3/3 passed (2 proven by check, 1 attested)', out)
+        self.assertIn('Checklist: 3/3 passed (2 with a check, 1 attested)', out)
 
     def test_code_change_after_verify_relists_checked_items_pending(self):
         self.checked_ready()
@@ -853,8 +865,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('Checklist: 1/1 passed', self.cli('status', 'example'))
         (self.root / 'code.py').write_text('changed after verify')
         out = self.cli('status', 'example')
-        self.assertIn('Checklist: 0/1 passed (1 proven by check, 0 attested)', out)
-        self.assertIn('  - gate: pending (proved by verify)', out)
+        self.assertIn('Checklist: 0/1 passed (1 with a check, 0 attested)', out)
+        self.assertIn('  - gate: pending (its check runs in verify)', out)
 
     def test_editing_check_argv_after_approval_stales_stage_three(self):
         self.checked_ready()
@@ -952,7 +964,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('  - alpha: attested before the latest changes; re-check it only if the change affects it', out)
         self.assertNotIn('older candidate', out)
         self.assertNotIn('re-mark', out)
-        self.assertIn('Checklist: 1/1 passed (0 proven by check, 1 attested)', out)
+        self.assertIn('Checklist: 1/1 passed (0 with a check, 1 attested)', out)
 
     def test_clarity_empty_checklist_approval_says_where_to_edit(self):
         self.cli('new', 'example')
