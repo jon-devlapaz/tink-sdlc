@@ -223,6 +223,7 @@ Preview, then apply (the receipt `_system/scaffold.json` is the trust baseline):
 - Managed files (stages, `_shared/`, `_system/` except `verification.json`) are updated
   when unmodified, restored when missing, removed when dropped upstream and unmodified.
 - Project-owned files (`_system/verification.json`, `.tink/skillsets/*.json`) are never overwritten; locally changed ones are kept and reported. New upstream pins are created.
+- Files a release retires are removed only when they are unchanged copies of what was installed; edited ones are kept and reported. From 1.22.0 this retires the stations files (`stages/*/TRIGGERS*.json`, `.tink/pool.lock.json`, `.tink/pool-overlay.json`, `_system/scripts/stations.py`).
 - A managed file you customized blocks the upgrade: nothing is written, and the plan lists
   each file with a `diff` to compare. Merge your changes by hand, or commit them and rerun
   with `--overwrite-customized` to take the package version (git keeps your old copy).

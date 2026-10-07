@@ -1480,7 +1480,7 @@ def stage(args):
 class ShortErrorParser(argparse.ArgumentParser):
     def error(self, message):
         self.exit(2, f'sdlc.py: error: {message}\n'
-                     'Commands: new, status, decide, verify, mark, lock-tests, skills, stage, pull, walk. See _system/SDLC.md.\n')
+                     'Commands: new, status, decide, verify, mark, lock-tests, skills, stage, walk. See _system/SDLC.md.\n')
 
 
 def main():
