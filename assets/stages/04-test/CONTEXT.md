@@ -34,4 +34,4 @@ Skillset: `testing-skillset` (pin: `.tink/skillsets/testing-skillset.json`).
 Stage skills (required in the existing build session):
 - `principle-prove-it-works`: Before declaring done: run the real artifact and show its output; a green build or "it compiles" is not proof.
 - `principle-build-the-lever`: Non-trivial work: build the script or tool that does or proves it, so a reviewer can rerun it, instead of doing it by hand.
-Once the build is committed, run `python3 _system/scripts/sdlc.py pull <slug> 4`: it checks `stages/04-test/TRIGGERS.json` against the run's diff and tags and writes the pull sheet `runs/<slug>/skills/stage-4-pulls.json`. When one of these triggers fires, or the pull sheet names a skill, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.
+When one of these applies, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.
