@@ -109,8 +109,8 @@ class UpgradeTests(unittest.TestCase):
         self.assertIn(PIN, owned)
         self.assertIn('.tink/skillsets/extra-skillset.json', owned)
         real = json.loads((ROOT / 'assets/manifest.json').read_text())
-        self.assertEqual(real['version'], '1.21.0')
-        self.assertEqual(len(real['projectOwned']), 21)
+        self.assertEqual(real['version'], '1.22.0')
+        self.assertEqual(len(real['projectOwned']), 7)
 
     def test_clean_upgrade(self):
         self.install_old()

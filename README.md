@@ -44,13 +44,6 @@ reproduction baseline for bug fixes, rejection/rework, and verification. Do not
 paste fictional reviewer names or evidence into real runs. The full profile separates
 intent, spec, and implementation plan; the light profile uses one reviewed brief.
 
-Stage skills are chosen by tables, not by the model. Each stage ships a reviewed
-`TRIGGERS.json` (signal, one-line need, expected skill) and a lock of what the router
-answered for each need. At stage open the launcher matches the run's diff and its tags
-(`sdlc.py new feature-name --tag web-ui`) against the table and writes a pull sheet to
-`runs/<run>/skills/stage-<n>-pulls.json`, with no router call; stage 4 uses
-`sdlc.py pull <run> 4`. The format, lock and pool are specified in
-[docs/stations.md](docs/stations.md).
 
 Local status accepts unchanged candidate content after an evidence-only commit.
 A release still needs CI for the actual merge revision and independent forge approval.

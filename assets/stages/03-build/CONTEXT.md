@@ -31,4 +31,4 @@ Skillset: `build-skillset` (pin: `.tink/skillsets/build-skillset.json`).
 Stage skills (always for this stage; `tink use` compiles the same set):
 - `principle-build-the-lever`: Non-trivial work: build the script or tool that does or proves it, so a reviewer can rerun it, instead of doing it by hand.
 - `unslop`: Any prose you write (docs, commit messages, replies): cut AI tells and filler before you send it.
-At stage open the launcher checks `stages/03-build/TRIGGERS.json` against the run's diff and tags and writes the pull sheet `runs/<slug>/skills/stage-3-pulls.json`. When one of these triggers fires, or the pull sheet names a skill, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.
+When one of these applies, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.

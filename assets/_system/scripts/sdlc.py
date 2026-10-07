@@ -5,7 +5,6 @@ import contextlib
 import errno
 import fcntl
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -351,29 +350,15 @@ def evidence_inputs(path):
             **({'checklist': checklist_digest(path), 'manual_marks': attested} if checklist_digest(path) is not None else {})}
 
 
-def run_tags(requested):
-    """Validated, sorted run tags: each must be a `profile` tag used by some stages/*/TRIGGERS.json."""
-    tags = sorted(set(requested or []))
-    if not tags:
-        return []
-    known = stations_module().known_tags(trigger_files())
-    unknown = [t for t in tags if t not in known]
-    if unknown:
-        raise ValueError(f"unknown tag {', '.join(unknown)}; known tags: {', '.join(sorted(known)) or '(none)'} "
-                         '(tags come from the profile lists in stages/*/TRIGGERS.json)')
-    return tags
-
-
 def create(args):
     path = run_path(args.run)
-    tags = run_tags(args.tag)
     path.parent.mkdir(exist_ok=True)
     with locked(path.parent / f'.{args.run}.lock'):
         if path.exists():
             raise ValueError('Run already exists; nothing overwritten.')
         temporary = Path(tempfile.mkdtemp(prefix=f'.{args.run}-', dir=path.parent))
         try:
-            write_json(temporary / 'run.json', {'profile': args.profile, 'kind': args.kind, 'schema': 1, 'tags': tags})
+            write_json(temporary / 'run.json', {'profile': args.profile, 'kind': args.kind, 'schema': 1})
             write_json(temporary / 'checklist.json', {'schema': 1, 'items': []})
             if args.profile == 'light':
                 shutil.copyfile(ROOT / '_shared/brief-template.md', temporary / 'brief.md')
@@ -1120,34 +1105,14 @@ def walk_w7(root, agents_text):
     return walk_result('W7', name, 'warn', f'tink use --check exited {result.returncode}', message)
 
 
-def walk_w8(root):
-    name = 'triggers-locked'
-    files = trigger_files(root)
-    if not files:
-        return walk_result('W8', name, 'pass', 'skipped (no stages/*/TRIGGERS.json)', '')
-    pool = root / '.tink/pool.lock.json'
-    detail = 'Each lock entry must match its trigger (need_sha, stable, skill == expect) and the lock pool hash must match .tink/pool.lock.json.'
-    if not pool.is_file():
-        return walk_result('W8', name, 'fail', 'trigger files without a pool lock', detail, ['.tink/pool.lock.json is missing'])
-    try:
-        tool = stations_module()
-    except Exception as error:
-        return walk_result('W8', name, 'fail', 'cannot load the trigger tool', detail, [str(error)])
-    problems = []
-    for f in files:
-        problems += [str(x).replace(str(root) + '/', '') for x in tool.lint(f, pool)]
-    if problems:
-        return walk_result('W8', name, 'fail', f'{len(problems)} trigger lock problem(s)',
-                           detail + ' Re-lock with: python3 _system/scripts/stations.py check stages/*/TRIGGERS.json', problems)
-    count = sum(len(json.loads(f.read_text()).get('triggers', [])) for f in files)
-    return walk_result('W8', name, 'pass', f'{count} triggers in {len(files)} stage(s) match their locks and the pool', '')
+
 
 
 def walk(args):
     agents_text = read_text_safe(ROOT / 'AGENTS.md')
     w4, tokens = walk_w4(ROOT, agents_text)
     checks = [walk_w1(ROOT, agents_text), walk_w2(ROOT, agents_text), walk_w3(ROOT), w4,
-              walk_w5(ROOT), walk_w6(ROOT), walk_w7(ROOT, agents_text), walk_w8(ROOT)]
+              walk_w5(ROOT), walk_w6(ROOT), walk_w7(ROOT, agents_text)]
     summary = {key: sum(1 for c in checks if c['status'] == key) for key in ('pass', 'warn', 'fail')}
     if args.json:
         print(json.dumps({'schema': 1, 'checks': checks, 'tokens': tokens, 'summary': summary}, indent=2))
@@ -1376,92 +1341,6 @@ def delivery_warning(run):
             f'hand the owner these commands instead of stopping silently: git push -u origin {run}; gh pr create --fill')
 
 
-STATIONS = Path(__file__).resolve().parent / 'stations.py'
-
-
-def stations_module():
-    """The trigger tool next to this script, loaded in-process (no router, no network)."""
-    spec = importlib.util.spec_from_file_location('sdlc_stations', STATIONS)
-    if spec is None or not STATIONS.is_file():
-        raise ValueError(f'{STATIONS.name} is missing from {STATIONS.parent}')
-    module = importlib.util.module_from_spec(spec)
-    previous = sys.dont_write_bytecode
-    sys.dont_write_bytecode = True
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.dont_write_bytecode = previous
-    return module
-
-
-def trigger_files(root=ROOT):
-    return sorted((root / 'stages').glob('*/TRIGGERS.json'))
-
-
-def stage_pull(path, run, n):
-    """Evaluate the stage's TRIGGERS.json against the run's diff and tags. Returns (lines, sheet or None).
-
-    Never raises and never blocks the stage: any failure is one printed line. Makes no router call."""
-    try:
-        triggers = ROOT / 'stages' / STAGE_DIRS[n] / 'TRIGGERS.json'
-        if not triggers.is_file():
-            return [f'pulls: skipped (no stages/{STAGE_DIRS[n]}/TRIGGERS.json)'], None
-        tags = require_run(path).get('tags', [])
-        result, lines = stations_module().pull(triggers, ROOT, tags=tags)
-        return lines, result
-    except Exception as error:  # a pull is advice; it must never stop the stage
-        return [pull_failure(error)], None
-
-
-def pull_failure(error):
-    reason = ' '.join(str(error).split())[:160] or type(error).__name__
-    return f'pulls: skipped ({reason})'
-
-
-def pull_sheet_path(path, n):
-    return path / 'skills' / f'stage-{n}-pulls.json'
-
-
-def pull_sheet_changes(path, n, result):
-    """True when writing this sheet would change runs/<run>/skills/stage-<n>-pulls.json."""
-    if result is None:
-        return False
-    target = pull_sheet_path(path, n)
-    return not target.is_file() or target.read_bytes() != (json.dumps(result, indent=2) + '\n').encode()
-
-
-def write_pull_sheet(path, run, n, result, lines):
-    """Record the sheet; returns the launch-prompt sentence naming pulled skills (or None). Never raises."""
-    if result is None:
-        return None
-    sheet = f'runs/{run}/skills/stage-{n}-pulls.json'
-    try:
-        with locked(path / '.writer-lock'):
-            write_json(pull_sheet_path(path, n), result)
-    except Exception as error:  # still advice only
-        lines.append(pull_failure(error))
-        return None
-    lines.append(f'pull sheet: {sheet}')
-    if not result['pulls']:
-        return None
-    named = f" Pulled skills for this stage ({sheet}): {', '.join(result['pulls'])}"
-    if not shutil.which('tink'):
-        return named + '; tink is not installed here, so continue without them.'
-    return named + '; read each in full before acting on it: tink mount <skill> --json --payload.'
-
-
-def pull(args):
-    path = run_path(args.run)
-    require_run(path)
-    if args.n not in STAGE_DIRS:
-        raise ValueError('stage must be one of 1, 2, 3, 4, 5, 6')
-    lines, result = stage_pull(path, args.run, args.n)
-    sentence = write_pull_sheet(path, args.run, args.n, result, lines)
-    print('\n'.join(lines))
-    if sentence:
-        print(sentence.strip())
-
-
 def stage(args):
     run, n = args.run, args.n
     path = run_path(run)
@@ -1518,9 +1397,7 @@ def stage(args):
             source = previous.get('source', str(seed_source)) if seed_source == copy.resolve() else str(seed_source)
             write_json(path / 'run.json', {**read_json(path / 'run.json'),
                                             'seed_contract': {'path': seed_contract, 'sha256': digest(seed_bytes), 'source': source}})
-    pull_lines, pull_result = stage_pull(path, run, n)
-    pending = make_worktree and (bool(run_git(ROOT, 'status', '--porcelain', '--', f'runs/{run}').stdout.strip())
-                                 or pull_sheet_changes(path, n, pull_result))
+    pending = make_worktree and bool(run_git(ROOT, 'status', '--porcelain', '--', f'runs/{run}').stdout.strip())
     if pending and not stage_identity_ok():
         raise ValueError('no committer identity configured; set user.name and user.email (or GIT_COMMITTER_*) so the launcher can commit '
                          f'runs/{run}')
@@ -1535,10 +1412,7 @@ def stage(args):
     warning = ('warning: not carried into the new checkout: ' + ', '.join(warn[:5]) + (f' (+{len(warn) - 5} more)' if len(warn) > 5 else '')
                if warn else None)
 
-    if not args.check:
-        prompt += write_pull_sheet(path, run, n, pull_result, pull_lines) or ''
     if args.check:
-        print('\n'.join(pull_lines))
         if seed_contract and seed_source != (ROOT / seed_contract).resolve():
             print(f'Would copy {seed_source} to {seed_contract}')
         print(f'Would commit: {"yes" if pending else "no"}')
@@ -1592,8 +1466,6 @@ def stage(args):
         print(warning)
     if n in (3, 5) and (undeliverable := delivery_warning(run)):
         print(undeliverable)
-    if not args.check:
-        print('\n'.join(pull_lines))
     if not args.check and (stale_route := tink_route_warning()):
         print(stale_route)
     if args.check and make_worktree:
@@ -1618,8 +1490,6 @@ def main():
     new.add_argument('run')
     new.add_argument('--profile', choices=['light', 'full'], default='light')
     new.add_argument('--kind', choices=['feature', 'bug'], default='feature')
-    new.add_argument('--tag', action='append', metavar='TAG',
-                     help='a fact about the project that profile triggers match (repeatable; see stages/*/TRIGGERS.json)')
     state = commands.add_parser('status')
     state.add_argument('run', nargs='?')
     state.add_argument('--json', action='store_true', help='read-only versioned machine interface')
@@ -1656,14 +1526,11 @@ def main():
     where.add_argument('--here', action='store_true')
     launch.add_argument('--seed-contract', metavar='PATH')
     launch.add_argument('--check', action='store_true', help='validate and print the plan; write nothing')
-    sheet = commands.add_parser('pull', help="evaluate a stage's triggers and write runs/<run>/skills/stage-<n>-pulls.json")
-    sheet.add_argument('run')
-    sheet.add_argument('n', type=int)
     lint = commands.add_parser('walk', help='structural walk lint (read-only)')
     lint.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
-        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'pull': pull, 'walk': walk}[args.command](args)
+        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'walk': walk}[args.command](args)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
         if args.command in ('status', 'capabilities') and args.json:
             machine_output({'error': {'code': 'not-found' if isinstance(error, FileNotFoundError) else 'invalid-state',

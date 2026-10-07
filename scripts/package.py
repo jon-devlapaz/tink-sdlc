@@ -8,8 +8,8 @@ import re
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets'
 # Files a project edits for itself: installed once, never overwritten by an upgrade.
-PROJECT_OWNED = {'_system/verification.json', '.tink/pool.lock.json', '.tink/pool-overlay.json'}
-PROJECT_OWNED_PATTERNS = [r'\.tink/skillsets/[^/]+\.json', r'stages/[^/]+/TRIGGERS(\.lock)?\.json']
+PROJECT_OWNED = {'_system/verification.json'}
+PROJECT_OWNED_PATTERNS = [r'\.tink/skillsets/[^/]+\.json']
 
 
 def parse_version(text):

@@ -35,4 +35,4 @@ Skillset: `deployment-skillset` (pin: `.tink/skillsets/deployment-skillset.json`
 
 Stage skills (always for this stage; `tink use` compiles the same set):
 - `principle-prove-it-works`: Before declaring done: run the real artifact and show its output; a green build or "it compiles" is not proof.
-At stage open the launcher checks `stages/05-deploy/TRIGGERS.json` against the run's diff and tags and writes the pull sheet `runs/<slug>/skills/stage-5-pulls.json`. When one of these triggers fires, or the pull sheet names a skill, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.
+When one of these applies, read that skill in full before acting on it. In the handoff note, name each skill that changed a decision and the decision it changed.
