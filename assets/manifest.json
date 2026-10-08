@@ -1,5 +1,5 @@
 {
-  "version": "1.22.1",
+  "version": "1.23.0",
   "files": {
     ".tink/skillsets/build-skillset.json": "8e4b6397b31e9d830a7baa6d887891505d1b3354a3482ef2c9a876dbdb291445",
     ".tink/skillsets/deployment-skillset.json": "9a89b7593f86f593afe3d81878d97b14ee0143d734eeb4fd0adca6ef8f7a6732",
@@ -12,14 +12,14 @@
     "_shared/intent-template.md": "93eebf7467c4a1e76b02e1da8629d28be4218c199739c88f51e58914a8d5d403",
     "_shared/plan-template.md": "fe93363211dcc70b73843b0fa7827f8f9ca7b26e185db7a6b6e9d2adf5a42c00",
     "_shared/spec-template.md": "d26109e578014743268696a97d0f83932b48be8b17a9a04bf6ec822b498caa28",
-    "_system/SDLC.md": "be82759df6d00c9eb4867f3b19a2e12592a4b5b74d0e144ef52da91059080239",
+    "_system/SDLC.md": "90a6b3a76e59a99358ff7191a79def827507093a484a1a374abd0ce06af9dfbe",
     "_system/scripts/sdlc.py": "f340927c97ffcefb3a02168a2cc6b8253e67556fcccdce38576b8f21ee3db993",
     "_system/verification.json": "1308d67c7c43c1a8f5c90cde99a69e217a7fa7c553cece572ecf3228b50fa937",
     "stages/01-plan/CONTEXT.md": "544ca617ae05d55725d91bbdefef0da9abef2c4142f98c4b4585803cdd8efb71",
     "stages/02-design/CONTEXT.md": "c23139482f386045b6a40d8efd3211e3a558393a2cfd21d4b3beb8f519182f94",
     "stages/03-build/CONTEXT.md": "f039270109e317705de8767a36c926dd71f88777dac85be2856c8f1b43b35b4c",
     "stages/04-test/CONTEXT.md": "89a63674744da145cd265c39aeb34bd464c803aa3918f2d079c4edc6d23462b3",
-    "stages/05-deploy/CONTEXT.md": "e58c4f90b84f52b48a2bc8a1c78adb50fa7a91a9f529e534ad5c2adb6594f90b",
+    "stages/05-deploy/CONTEXT.md": "72e90121af9a39fb7d8b8da4720e35b826edfd920e06da6f1cd300a0fcfae471",
     "stages/06-maintain/CONTEXT.md": "362467f65f8b8ee3fb1e51af6feac74b299af88f908f936a1fec2ddca82ee844"
   },
   "projectOwned": [

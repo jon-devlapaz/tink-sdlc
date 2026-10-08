@@ -3,7 +3,7 @@
 Inputs: current stage 04 evidence, candidate diff, approved brief or spec/plan,
 and `_shared/REVIEW.md`.
 Output: `runs/<slug>/05-deploy/output/REVIEW-findings.md` and a PR when requested.
-Open (or confirm) the PR from the verified, committed candidate; the agent may open it, only a human merges it.
+Open (or confirm) the PR from the verified, committed candidate. The agent may open it. Only a human authorizes a merge: directly for this PR, or through a recorded standing approval that names merging (tink-substrate's approved-sequence contract). With that authorization the agent may merge.
 If code changes after the PR is open, run verify again before the review continues.
 
 Manual delivery recipe: `git push -u origin <slug>`, then `gh pr create --fill`.
@@ -14,8 +14,8 @@ Check logic, security boundaries, and acceptance criteria. Use separate review
 passes for risk that warrants them; a model review is not human approval.
 Important findings return to stage 03 and require renewed verification.
 
-Gate: independently authenticated code-owner approval and current required CI in
-the forge. Local review files cannot approve a release. Consult the deployment
+Gate: the human's merge authorization (direct or standing), current required CI,
+and whatever the forge enforces (protected branches, required reviews). Local review files cannot approve a release. Consult the deployment
 system for the deployed revision, health result, and rollback reference.
 
 Skill mounts land in the git-ignored `.active` directory inside `.tink` (created on first mount, not shipped); nothing to clean up at run closure.
