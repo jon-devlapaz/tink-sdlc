@@ -272,6 +272,8 @@ class HereMode(StageBase):
 
     def test_reopening_with_the_edited_original_rebinds_and_stales_approval(self):
         self.new_run('r', approve=False)
+        metadata = self.root / 'runs/r/run.json'
+        run_id = json.loads(metadata.read_text())['run_id']
         target = self.base / 'contract.md'
         target.write_text(CONFIRMED)
         self.stage('r', 1, '--seed-contract', str(target))
@@ -280,6 +282,7 @@ class HereMode(StageBase):
         self.stage('r', 1, '--seed-contract', str(target))
         self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), CONFIRMED + 'revised\n')
         self.assertNotIn('Stage 3: approved', self.sdlc('status', 'r').stdout)
+        self.assertEqual(json.loads(metadata.read_text())['run_id'], run_id)
 
     def test_check_preview_copies_nothing(self):
         self.new_run('r', approve=False)
@@ -312,11 +315,14 @@ class HereMode(StageBase):
 
     def test_worktree_launch_carries_the_seed_contract_copy(self):
         self.new_run('r', approve=False)
+        run_id = json.loads((self.root / 'runs/r/run.json').read_text())['run_id']
         self.commit_run()
         target = self.base / 'contract.md'
         target.write_text(CONFIRMED)
         self.stage('r', 1, '--worktree', str(self.base / 'wt1'), '--seed-contract', str(target), env=IDENT)
         bound = json.loads((self.base / 'wt1/runs/r/run.json').read_text())
+        self.assertEqual(bound['run_id'], run_id)
+        self.assertEqual(json.loads((self.root / 'runs/r/run.json').read_text())['run_id'], run_id)
         self.assertEqual(bound['seed_contract']['path'], 'runs/r/seed-contract.md')
         self.assertEqual((self.base / 'wt1/runs/r/seed-contract.md').read_text(), CONFIRMED)
         self.assertEqual(self.git('status', '--porcelain', '--', 'runs/r').stdout.strip(), '')
@@ -690,6 +696,7 @@ class WorktreeMode(StageBase):
 
     def test_tink_failure_removes_the_worktree_and_retry_works(self):
         self.new_run('r')
+        run_id = json.loads((self.root / 'runs/r/run.json').read_text())['run_id']
         result = self.stage('r', 3, ok=False, env={**IDENT, 'TINK_FAIL': '1'})
         worktree = self.root.parent / 'proj-r'
         self.assertFalse(worktree.exists())
@@ -701,6 +708,8 @@ class WorktreeMode(StageBase):
         retry = self.stage('r', 3, env=IDENT)
         self.assertIn('Launch prompt', retry.stdout)
         self.assertTrue(worktree.is_dir())
+        self.assertEqual(json.loads((self.root / 'runs/r/run.json').read_text())['run_id'], run_id)
+        self.assertEqual(json.loads((worktree / 'runs/r/run.json').read_text())['run_id'], run_id)
 
     def test_tink_failure_removes_a_detached_review_worktree(self):
         self.set_checks([PASSING])

@@ -144,14 +144,23 @@ and capabilities are additive; removing fields or changing their meaning require
 a new API major. Unknown critical states, malformed responses, and unsupported
 majors must fail closed, never fall back to parsing the human CLI.
 
-`status --json` returns `runs`: summaries with `slug`, `profile`, `kind`,
+From scaffold 1.24.0, `new` stores a random UUIDv4 `run_id` in `run.json`.
+SDLC operations preserve it, including seed rebinding and worktree copies.
+Recreating a deleted run with the same slug creates a different ID. Both JSON
+status forms return this ID; the slug and workspace locate the run, not identify
+its creation. A legacy record without the field returns `run_id: null` and stays
+usable. Reads never assign an ID; legacy adoption is not implemented. A present
+field must be a canonical lowercase, hyphenated UUIDv4 string; malformed values
+are refused. The ID is not approval or tamper protection: local files are editable.
+
+`status --json` returns `runs`: summaries with `slug`, `run_id`, `profile`, `kind`,
 `verification_status`, `next_action`, `has_lock`, and `checklist_summary`
 (`total`, `passed`). An unreadable run instead has `verification_status: "invalid"`,
 `error`, and an empty summary; it does not hide valid runs.
 
 `status <run> --json` returns `run`:
 
-- `slug`, `meta` (`profile`, `kind`), and `gates` (`stage`, `status`, `blocked`).
+- `slug`, `run_id`, `meta` (`profile`, `kind`), and `gates` (`stage`, `status`, `blocked`).
   Gate states are `approved`, `pending`, `stale`, or `changes-requested`.
 - `verification_status`: `blocked`, `running`, `not-run`, `current`, `stale`,
   `failed`, or `interrupted`. `verification` is null or a normalized record with

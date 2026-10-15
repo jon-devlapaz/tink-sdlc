@@ -1,9 +1,11 @@
 """Provider contract: exercise the shipped runtime, not a second implementation."""
 import fcntl
 import json
+import shutil
 import subprocess
 import sys
 import unittest
+import uuid
 from unittest.mock import patch
 
 import test_sdlc_workflow as fixtures
@@ -55,6 +57,77 @@ class ProtocolTests(unittest.TestCase):
         value = self.machine('capabilities')
         self.assertEqual(set(value['capabilities']), {'status-json', 'verify', 'mark', 'log-file'})
         self.assertEqual(self.machine('status')['runs'], [])
+
+    def test_run_ids_distinguish_creations_in_both_status_views(self):
+        seen = set()
+        for profile in ('light', 'full', 'light'):
+            with self.subTest(profile=profile):
+                self.cli('new', 'example', '--profile', profile)
+                metadata = self.root / 'runs/example/run.json'
+                before = metadata.read_bytes()
+                run_id = json.loads(before)['run_id']
+                self.assertEqual(uuid.UUID(run_id).version, 4)
+                self.assertEqual(str(uuid.UUID(run_id)), run_id)
+                self.assertNotIn(run_id, seen)
+                seen.add(run_id)
+                self.assertEqual(self.view()['run_id'], run_id)
+                self.assertEqual(self.machine('status')['runs'][0]['run_id'], run_id)
+                self.cli('new', 'example', ok=False)
+                self.assertEqual(metadata.read_bytes(), before)
+                shutil.rmtree(metadata.parent)
+
+    def test_run_id_survives_decisions_verification_and_reopening(self):
+        self.checked_run()
+        metadata = self.root / 'runs/example/run.json'
+        run_id = json.loads(metadata.read_text())['run_id']
+        self.mark_manual()
+        self.cli('verify', 'example')
+        self.assertEqual(self.view()['run_id'], run_id)
+        self.assertEqual(self.view()['verification_status'], 'current')
+        (self.root / 'runs/example/brief.md').write_text('Revised scope')
+        self.assertEqual(self.view()['gates'][0]['status'], 'stale')
+        self.approve()
+        self.mark_manual()
+        self.cli('verify', 'example')
+        self.assertEqual(self.view()['verification_status'], 'current')
+        self.assertEqual(json.loads(metadata.read_text())['run_id'], run_id)
+        self.assertEqual(self.machine('status')['runs'][0]['run_id'], run_id)
+
+    def test_legacy_run_without_id_stays_usable_and_reads_never_assign_one(self):
+        self.cli('new', 'example')
+        metadata = self.root / 'runs/example/run.json'
+        record = json.loads(metadata.read_text())
+        record.pop('run_id', None)
+        metadata.write_text(json.dumps(record))
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        self.assertIsNone(self.view()['run_id'])
+        self.assertIsNone(self.machine('status')['runs'][0]['run_id'])
+        self.cli('status', 'example')
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+        (metadata.parent / 'checklist.json').unlink()  # existing legacy checklist behavior
+        self.approve()
+        self.cli('verify', 'example')
+        self.assertEqual(self.view()['verification_status'], 'current')
+        self.assertEqual(json.loads(metadata.read_text()), record)
+
+    def test_malformed_run_ids_are_refused_without_repair_or_hidden_healthy_runs(self):
+        self.cli('new', 'example')
+        self.cli('new', 'healthy')
+        metadata = self.root / 'runs/example/run.json'
+        original = json.loads(metadata.read_text())
+        for run_id in (None, True, 17, [], {}, '', 'not-a-uuid',
+                       'A9CF2941-8B28-4A28-8F77-739194B421D3',
+                       'a9cf29418b284a288f77739194b421d3',
+                       'a9cf2941-8b28-1a28-8f77-739194b421d3',
+                       'a9cf2941-8b28-4a28-0f77-739194b421d3'):
+            with self.subTest(run_id=run_id):
+                metadata.write_text(json.dumps({**original, 'run_id': run_id}))
+                before = {p: p.read_bytes() for p in metadata.parent.rglob('*') if p.is_file()}
+                self.assert_invalid_run_is_isolated()
+                error = self.cli('decide', 'example', '3', 'changes-requested',
+                                 '--reviewer', 'fixture', '--source', 'test', '--reason', 'test', ok=False)
+                self.assertIn('run_id', error)
+                self.assertEqual(before, {p: p.read_bytes() for p in metadata.parent.rglob('*') if p.is_file()})
 
     def test_status_is_read_only_and_reports_pending_actions_and_log_reference(self):
         self.cli('new', 'example')
