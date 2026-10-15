@@ -100,7 +100,16 @@ def locked(path, timeout=5.0, poll_interval=0.05):
 def require_run(path):
     if not path.is_dir() or not (path / 'run.json').is_file():
         raise ValueError('Run is missing or legacy. Create a new run; legacy artifacts remain readable but are not approved evidence.')
-    return read_json(path / 'run.json')
+    meta = read_json(path / 'run.json')
+    if isinstance(meta, dict) and 'run_id' in meta:
+        value = meta['run_id']
+        try:
+            identity = uuid.UUID(value) if isinstance(value, str) else None
+        except ValueError:
+            identity = None
+        if identity is None or identity.version != 4 or str(identity) != value:
+            raise ValueError('Run run_id must be a canonical UUIDv4 string.')
+    return meta
 
 
 def validate_check(check, exact=False):
@@ -358,7 +367,8 @@ def create(args):
             raise ValueError('Run already exists; nothing overwritten.')
         temporary = Path(tempfile.mkdtemp(prefix=f'.{args.run}-', dir=path.parent))
         try:
-            write_json(temporary / 'run.json', {'profile': args.profile, 'kind': args.kind, 'schema': 1})
+            write_json(temporary / 'run.json', {'profile': args.profile, 'kind': args.kind, 'schema': 1,
+                                              'run_id': str(uuid.uuid4())})
             write_json(temporary / 'checklist.json', {'schema': 1, 'items': []})
             if args.profile == 'light':
                 shutil.copyfile(ROOT / '_shared/brief-template.md', temporary / 'brief.md')
@@ -702,7 +712,8 @@ def status_state(path):
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': str(record.get('error', 'Verification failed. Inspect the log, then rerun it.')) if record else '',
     }.get(state, 'implement the approved brief, then run verification.')
-    return {'slug': path.name, 'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
+    return {'slug': path.name, 'run_id': meta.get('run_id'),
+            'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active,
             'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
             'checklist': checklist['items'], 'checklist_state': checklist['state'],
@@ -816,7 +827,7 @@ def status(args):
     for name in names:
         try:
             view = run_view(name)
-            runs.append({'slug': name, **view['meta'], 'verification_status': view['verification_status'],
+            runs.append({'slug': name, 'run_id': view['run_id'], **view['meta'], 'verification_status': view['verification_status'],
                          'next_action': view['next_action'], 'has_lock': view['has_lock'],
                          'checklist_summary': {'total': len(view['checklist']),
                                                'passed': sum(i['status'] == 'passed' for i in view['checklist'])}})
