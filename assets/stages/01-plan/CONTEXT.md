@@ -2,9 +2,11 @@
 
 Inputs: originator's request and `_shared/intent-template.md` for full runs.
 Read the run's `run.json` to select its profile.
+For Tinkery-originated work, follow [Tinkery intake boundaries](../../_system/SDLC.md#tinkery-ownership-and-handoff)
+before translating the supplied confirmed seed into intent.
 
-For light runs, write `runs/<slug>/brief.md` with problem, acceptance criteria,
-approach, risks, and verification. Define the implementation checklist as
+For light runs, write `runs/<slug>/brief.md` with problem and outcome, acceptance criteria,
+constraints and exclusions, approach, risks, and verification. Define the implementation checklist as
 item definitions in `runs/<slug>/checklist.json` (id, description, verify, and a `check` whenever an automated proof exists). Combine stages 01–03
 into one human-reviewed definition. Light runs have ONE definition gate, recorded as stage 3 (`sdlc.py decide <run> 3 ...`): the approved `brief.md` + `checklist.json` are the intent, design and plan.
 For full runs, write `runs/<slug>/01-plan/output/intent.md`.

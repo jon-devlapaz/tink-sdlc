@@ -13,6 +13,8 @@ finish the review, then hand the owner these commands at the end.
 Check logic, security boundaries, and acceptance criteria. Use separate review
 passes for risk that warrants them; a model review is not human approval.
 Important findings return to stage 03 and require renewed verification.
+For Tinkery-originated work, follow [Tinkery result handoff and retention](../../_system/SDLC.md#tinkery-ownership-and-handoff)
+in the existing review findings and PR handoff; do not record a Taste verdict.
 
 Gate: the human's merge authorization (direct or standing), current required CI,
 and whatever the forge enforces (protected branches, required reviews). Local review files cannot approve a release. Consult the deployment

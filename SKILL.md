@@ -8,6 +8,8 @@ license: MIT
 
 Advance the next authorized action in this local ICM-inspired workflow. Stage contracts
 own the process; local receipts track evidence, not authenticated release authority.
+For Tinkery-originated work, read the installed checkout's
+`_system/SDLC.md#tinkery-ownership-and-handoff` for intake and result boundaries.
 
 ## Bootstrap
 

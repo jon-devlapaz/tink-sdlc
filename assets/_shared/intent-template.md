@@ -14,9 +14,9 @@ What does success look like when this is complete?
 - Users / Teams:
 - Services / Repos / Modules:
 
-## 4. Constraints & Boundaries
-- Non-negotiables, performance targets, or security policies:
-- Explicitly out of scope:
+## 4. Constraints and boundaries
+- Must (non-negotiables):
+- Must not (exclusions and rejected alternatives):
 
 ## 5. Open Questions
 - Points to resolve before or during Stage 02 (Design):
