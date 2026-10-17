@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -412,6 +413,54 @@ def decide(args):
     print('Recorded local review receipt. Release approval must be independently authenticated by the forge.')
 
 
+def run_check(check, log):
+    with subprocess.Popen(check['argv'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                          start_new_session=True) as process:
+        try:
+            returncode = process.wait(timeout=check['timeout_seconds'])
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            finally:
+                process.wait()
+    return subprocess.CompletedProcess(check['argv'], returncode)
+
+
+def dry_run(args):
+    path = run_path(args.run)
+    require_run(path)
+    with locked(path / '.writer-lock'):
+        items = load_checklist(path)
+        if not items:
+            raise ValueError('Define checklist items before a dry run.')
+        log_path = path / 'checklist-dry-run.log'
+        problems = []
+        with log_path.open('w') as log:
+            for item in items:
+                if 'check' not in item:
+                    continue
+                check = item['check']
+                log.write(f"\n# checklist item {item['id']}\n$ {json.dumps(check['argv'])}\n")
+                log.flush()
+                try:
+                    result = run_check(check, log)
+                    outcome = f'exit {result.returncode}'
+                    if result.returncode:
+                        problems.append(item['id'])
+                        outcome += ' (inspect output; reproduction failure may be expected)'
+                except (subprocess.TimeoutExpired, OSError) as error:
+                    outcome = f'{type(error).__name__}: {error}'
+                    problems.append(item['id'])
+                log.write(f'\n{outcome}\n')
+                print(f"{item['id']}: {outcome}")
+        print(f'Output: {log_path.relative_to(ROOT)}')
+        print('Dry run only: no approval, marks, or verification receipt recorded. Review output before the definition gate.')
+        if problems:
+            raise ValueError(f"Dry-run checks need review: {', '.join(problems)} (output: {log_path.relative_to(ROOT)})")
+
+
 def describe(error):
     """Error text plus any pointer to the check output attached where the check ran."""
     return f"{error}{getattr(error, 'sdlc_hint', '')}"
@@ -444,8 +493,7 @@ def verify(args):
                     log.write(f"\n$ {json.dumps(check['argv'])}\n")
                     log.flush()
                     try:
-                        result = subprocess.run(check['argv'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                                                timeout=check['timeout_seconds'])
+                        result = run_check(check, log)
                     except (subprocess.TimeoutExpired, OSError) as error:
                         log.write(f'{type(error).__name__}: {error}\n')
                         error.sdlc_hint = log_hint
@@ -459,8 +507,7 @@ def verify(args):
                     log.write(f"\n# checklist item {item['id']}\n$ {json.dumps(check['argv'])}\n")
                     log.flush()
                     try:
-                        result = subprocess.run(check['argv'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                                                timeout=check['timeout_seconds'])
+                        result = run_check(check, log)
                     except (subprocess.TimeoutExpired, OSError) as error:
                         log.write(f'{type(error).__name__}: {error}\n')
                         raise ValueError(f"Checklist check failed: {item['id']}{log_hint}") from error
@@ -700,6 +747,12 @@ def status_state(path):
         errors.append(checklist['error'])
     first_gate = next((g for g in gates if g['status'] != 'approved'), None)
     gate_reason = f"revise/review stage {first_gate['stage']}; record the human decision." if first_gate else ''
+    if first_gate and first_gate['stage'] == 3:
+        if meta['profile'] == 'light' and (not (path / 'brief.md').is_file() or checklist['state'] in ('empty', 'missing', 'legacy', 'invalid')):
+            gate_reason = f'Define brief.md and checklist.json in runs/{path.name} before requesting human review.'
+        elif any(item['automatic'] for item in checklist['items']):
+            gate_reason = (f'Run python3 _system/scripts/sdlc.py dry-run {path.name} before definition review; '
+                           'inspect each check output, then record the actual human decision.')
     unavailable = 'A writer already owns this run.' if active else gate_reason
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
@@ -731,10 +784,11 @@ def status_text(view):
         stage, state, blocked = gate_info['stage'], gate_info['status'], gate_info['blocked']
         lines.append(f'Stage {stage}: {state}' + (' (blocked by upstream gate)' if blocked else ''))
         if state != 'approved' and not blocked:
-            lines.extend([f'Next: revise/review stage {stage}; record the human decision.',
-                          'After human review, fill in this command from the scaffold root (DECISION: approved or changes-requested):',
-                          f"  python3 _system/scripts/sdlc.py decide {view['slug']} {stage} DECISION "
-                          "--reviewer 'REVIEWER' --source 'SOURCE' --reason 'REASON'"])
+            lines.append(f"Next: {view['next_action']}")
+            if not view['next_action'].startswith('Define brief.md'):
+                lines.extend(['After human review, fill in this command from the scaffold root (DECISION: approved or changes-requested):',
+                              f"  python3 _system/scripts/sdlc.py decide {view['slug']} {stage} DECISION "
+                              "--reviewer 'REVIEWER' --source 'SOURCE' --reason 'REASON'"])
     lines.append(view['checklist_text'])
     repro = view.get('reproduction')
     if repro is not None:
@@ -1491,7 +1545,7 @@ def stage(args):
 class ShortErrorParser(argparse.ArgumentParser):
     def error(self, message):
         self.exit(2, f'sdlc.py: error: {message}\n'
-                     'Commands: new, status, decide, verify, mark, lock-tests, skills, stage, walk. See _system/SDLC.md.\n')
+                     'Commands: new, status, decide, dry-run, verify, mark, lock-tests, skills, stage, walk. See _system/SDLC.md.\n')
 
 
 def main():
@@ -1512,6 +1566,8 @@ def main():
     decision.add_argument('decision', choices=['approved', 'changes-requested'])
     for flag in ['reviewer', 'source', 'reason']:
         decision.add_argument('--' + flag, required=True)
+    preflight = commands.add_parser('dry-run', help='exercise checklist checks before definition review; records no approval or proof')
+    preflight.add_argument('run')
     verification = commands.add_parser('verify')
     verification.add_argument('run')
     marking = commands.add_parser('mark')
@@ -1541,7 +1597,7 @@ def main():
     lint.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
-        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'walk': walk}[args.command](args)
+        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'walk': walk}[args.command](args)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
         if args.command in ('status', 'capabilities') and args.json:
             machine_output({'error': {'code': 'not-found' if isinstance(error, FileNotFoundError) else 'invalid-state',

@@ -54,6 +54,188 @@ class WorkflowTests(unittest.TestCase):
         (self.root / 'runs/example/checklist.json').unlink()  # legacy run: no checklist enforcement
         self.approve()
 
+    def dry_run_items(self, commands):
+        self.cli('new', 'example')
+        path = self.root / 'runs/example'
+        (path / 'checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+            {'id': name, 'description': name, 'verify': 'inspect output',
+             'check': {'argv': argv, 'timeout_seconds': 1}}
+            for name, argv in commands]}))
+        return path
+
+    def test_dry_run_reports_all_checks_before_approval_without_proof(self):
+        path = self.dry_run_items([
+            ('missing', ['missing-executable-sdlc']),
+            ('reproduction', ['python3', '-c', 'print("expected reproduction"); raise SystemExit(1)']),
+            ('environment', ['python3', '-c', 'print("bad TMPDIR"); raise SystemExit(2)']),
+            ('timeout', ['python3', '-c', 'import time; time.sleep(5)']),
+            ('root', ['python3', '-c', 'from pathlib import Path; print(Path("code.py").read_text())']),
+        ])
+        out = self.cli('dry-run', 'example', ok=False)
+        for text in ['missing: FileNotFoundError', 'reproduction: exit 1', 'environment: exit 2',
+                     'timeout: TimeoutExpired', 'root: exit 0', 'reproduction failure may be expected']:
+            self.assertIn(text, out)
+        log = (path / 'checklist-dry-run.log').read_text()
+        for text in ['expected reproduction', 'bad TMPDIR', 'original']:
+            self.assertIn(text, log)
+        self.assertFalse((path / 'decisions').exists())
+        self.assertFalse((path / 'marks').exists())
+        self.assertFalse((path / '04-test/output/verification.json').exists())
+        self.assertIn('Stage 3: pending', self.cli('status', 'example'))
+        self.cli('verify', 'example', ok=False)
+
+    def descendant_command(self, wait=True):
+        child = ('import time; from pathlib import Path; time.sleep(1.4); '
+                 'Path("late-child-write").write_text("leaked"); print("LATE CHILD OUTPUT", flush=True)')
+        parent = ('import subprocess, sys, time; from pathlib import Path; '
+                  f'p = subprocess.Popen([sys.executable, "-c", {child!r}]); '
+                  'Path("child.pid").write_text(str(p.pid))')
+        if wait:
+            parent += '; time.sleep(5)'
+        return ['python3', '-c', parent]
+
+    def child_is_running(self):
+        pid = (self.root / 'child.pid').read_text()
+        result = subprocess.run(['ps', '-p', pid, '-o', 'stat='], capture_output=True, text=True)
+        # An orphan zombie has exited and cannot write; only its OS-owned reaping remains.
+        return bool(result.stdout.strip()) and not result.stdout.strip().startswith('Z')
+
+    def test_dry_run_timeout_stops_descendant_before_next_item(self):
+        observer = ('import subprocess, time; from pathlib import Path; '
+                    'pid = Path("child.pid").read_text(); '
+                    'state = subprocess.run(["ps", "-p", pid, "-o", "stat="], capture_output=True, text=True).stdout.strip(); '
+                    'print("child running at next start:", bool(state) and not state.startswith("Z"), flush=True); '
+                    'time.sleep(0.7); print("late write:", Path("late-child-write").exists(), flush=True)')
+        path = self.dry_run_items([
+            ('timeout', self.descendant_command()),
+            ('observer', ['python3', '-c', observer]),
+        ])
+        out = self.cli('dry-run', 'example', ok=False)
+        log = (path / 'checklist-dry-run.log').read_text()
+        self.assertIn('timeout: TimeoutExpired', out)
+        self.assertIn('observer: exit 0', out)
+        self.assertIn('child running at next start: False', log)
+        self.assertIn('late write: False', log)
+        self.assertNotIn('LATE CHILD OUTPUT\n', log)
+        self.assertFalse(self.child_is_running())
+        self.assertFalse((self.root / 'late-child-write').exists())
+        timeout_log, observer_log = log.split('# checklist item observer', 1)
+        self.assertIn('TimeoutExpired:', timeout_log)
+        self.assertNotIn('TimeoutExpired:', observer_log)
+
+    def test_dry_run_success_stops_descendant_before_next_item(self):
+        observer = ('import subprocess, time; from pathlib import Path; '
+                    'pid = Path("child.pid").read_text(); '
+                    'state = subprocess.run(["ps", "-p", pid, "-o", "stat="], capture_output=True, text=True).stdout.strip(); '
+                    'print("child running at next start:", bool(state) and not state.startswith("Z"), flush=True); '
+                    'time.sleep(1.6); print("late write:", Path("late-child-write").exists(), flush=True)')
+        path = self.dry_run_items([
+            ('successful-parent', self.descendant_command(wait=False)),
+            ('observer', ['python3', '-c', observer]),
+        ])
+        definitions = json.loads((path / 'checklist.json').read_text())
+        definitions['items'][1]['check']['timeout_seconds'] = 3
+        (path / 'checklist.json').write_text(json.dumps(definitions))
+        out = self.cli('dry-run', 'example')
+        self.assertIn('successful-parent: exit 0', out)
+        log = (path / 'checklist-dry-run.log').read_text()
+        self.assertIn('child running at next start: False', log)
+        self.assertIn('late write: False', log)
+        self.assertNotIn('LATE CHILD OUTPUT\n', log)
+        self.assertFalse(self.child_is_running())
+        self.assertFalse((self.root / 'late-child-write').exists())
+
+    def test_verify_timeout_stops_descendant_for_configured_and_checklist_checks(self):
+        self.cli('new', 'example')
+        for checked_item in [False, True]:
+            with self.subTest(checked_item=checked_item):
+                check = {'argv': self.descendant_command(), 'timeout_seconds': 1}
+                if checked_item:
+                    self.config([{'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 1}])
+                    items = [{'id': 'timeout', 'description': 'timeout', 'verify': 'timeout', 'check': check}]
+                else:
+                    self.config([check])
+                    items = [{'id': 'passing', 'description': 'passing', 'verify': 'passing',
+                              'check': {'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 1}}]
+                (self.root / 'runs/example/checklist.json').write_text(json.dumps({'schema': 1, 'items': items}))
+                self.approve()
+                out = self.cli('verify', 'example', ok=False)
+                self.assertIn('Checklist check failed: timeout' if checked_item else 'timed out', out)
+                self.assertFalse(self.child_is_running())
+                time.sleep(0.7)
+                self.assertFalse((self.root / 'late-child-write').exists())
+                log = (self.root / 'runs/example/04-test/output/test-log.md').read_text()
+                self.assertNotIn('LATE CHILD OUTPUT\n', log)
+
+    def test_verify_success_stops_descendant_for_configured_and_checklist_checks(self):
+        (self.root / '.gitignore').write_text('child.pid\nlate-child-write\n')
+        self.cli('new', 'example')
+        for checked_item in [False, True]:
+            with self.subTest(checked_item=checked_item):
+                check = {'argv': self.descendant_command(wait=False), 'timeout_seconds': 1}
+                if checked_item:
+                    self.config([{'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 1}])
+                    item_check = check
+                else:
+                    self.config([check])
+                    item_check = {'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 1}
+                (self.root / 'runs/example/checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+                    {'id': 'passing', 'description': 'passing', 'verify': 'passing', 'check': item_check}]}))
+                self.approve()
+                self.cli('verify', 'example')
+                try:
+                    self.assertFalse(self.child_is_running())
+                finally:
+                    time.sleep(1.6)
+                self.assertFalse((self.root / 'late-child-write').exists())
+                log = (self.root / 'runs/example/04-test/output/test-log.md').read_text()
+                self.assertNotIn('LATE CHILD OUTPUT\n', log)
+
+    def test_dry_run_pass_does_not_replace_verification(self):
+        path = self.dry_run_items([('passing', ['python3', '-c', 'print("preflight")'])])
+        definitions = (path / 'checklist.json').read_bytes()
+        self.assertIn('passing: exit 0', self.cli('dry-run', 'example'))
+        self.assertEqual((path / 'checklist.json').read_bytes(), definitions)
+        self.approve()
+        self.assertIn('Verification: not run', self.cli('status', 'example'))
+        # A passing preflight cannot excuse a later failing checked item.
+        items = json.loads(definitions)
+        items['items'][0]['check']['argv'] = ['python3', '-c', 'raise SystemExit(1)']
+        (path / 'checklist.json').write_text(json.dumps(items))
+        self.assertIn('Stage 3: stale', self.cli('status', 'example'))
+        self.approve()
+        self.assertIn('Checklist check failed: passing', self.cli('verify', 'example', ok=False))
+
+    def test_status_offers_dry_run_for_light_and_full_definition(self):
+        for profile in ['light', 'full']:
+            with self.subTest(profile=profile):
+                slug = profile
+                self.cli('new', slug, '--profile', profile)
+                path = self.root / 'runs' / slug
+                (path / 'checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+                    {'id': 'check', 'description': 'check', 'verify': 'check',
+                     'check': {'argv': ['missing-executable-sdlc'], 'timeout_seconds': 1}}]}))
+                if profile == 'full':
+                    for stage in ['1', '2']:
+                        self.cli('decide', slug, stage, 'approved', '--reviewer', 'human',
+                                 '--source', 'review:1', '--reason', 'accepted')
+                for out in [self.cli('status', slug),
+                            json.loads(self.cli('status', slug, '--json'))['run']['next_action']]:
+                    self.assertIn(f'sdlc.py dry-run {slug}', out)
+                self.assertFalse((path / 'checklist-dry-run.log').exists())  # status never executes checks
+
+    def test_fresh_light_status_defines_artifacts_before_decision(self):
+        self.cli('new', 'example')
+        path = self.root / 'runs/example'
+        for missing in [None, 'brief.md', 'checklist.json']:
+            if missing:
+                (path / missing).unlink()
+            for out in [self.cli('status', 'example'),
+                        json.loads(self.cli('status', 'example', '--json'))['run']['next_action']]:
+                self.assertIn('Define brief.md and checklist.json', out)
+                self.assertNotIn('record the human decision', out)
+                self.assertNotIn('sdlc.py decide', out)
+
     def test_slug_and_no_overwrite(self):
         self.cli('new', '../escape', ok=False)
         self.cli('new', 'example')
@@ -156,12 +338,12 @@ class WorkflowTests(unittest.TestCase):
     def test_required_tink_is_not_optional(self):
         self.create_ready()
         self.config([{'argv': ['true'], 'timeout_seconds': 1}], True)
-        original_run = workflow.subprocess.run
+        original_popen = workflow.subprocess.Popen
         def missing_tink(argv, **kwargs):
             if argv[0] == 'tink':
                 raise FileNotFoundError('tink unavailable')
-            return original_run(argv, **kwargs)
-        with patch.object(workflow, 'ROOT', self.root), patch.object(workflow.subprocess, 'run', side_effect=missing_tink):
+            return original_popen(argv, **kwargs)
+        with patch.object(workflow, 'ROOT', self.root), patch.object(workflow.subprocess, 'Popen', side_effect=missing_tink):
             with self.assertRaises(FileNotFoundError):
                 workflow.verify(SimpleNamespace(run='example'))
         receipt = json.loads((self.root / 'runs/example/04-test/output/verification.json').read_text())
@@ -1027,7 +1209,7 @@ class WorkflowTests(unittest.TestCase):
         lines = result.stderr.strip().splitlines()
         self.assertEqual(len(lines), 2, result.stderr)
         self.assertTrue(lines[0].startswith('sdlc.py: error: '), lines[0])
-        self.assertEqual(lines[1], 'Commands: new, status, decide, verify, mark, lock-tests, skills, stage, walk. See _system/SDLC.md.')
+        self.assertEqual(lines[1], 'Commands: new, status, decide, dry-run, verify, mark, lock-tests, skills, stage, walk. See _system/SDLC.md.')
         self.assertNotIn('usage:', result.stderr)
 
     def test_clarity_missing_argument_prints_short_error(self):
