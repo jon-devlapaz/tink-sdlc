@@ -67,9 +67,26 @@ supplied, operator-confirmed seed and imports its `## Acceptance criteria` (or
 `## Acceptance checks`) section into `runs/<slug>/seed-checks.json`. Both Seed Me
 forms work: separate `cmd:`, `expect:`, `cwd:` lines beneath a criterion, or
 ``cmd: `<command>` | expect: <expected output> | cwd: <path>`` on one line.
-Commands may be wrapped in backticks. Criteria can be plain lines, Markdown list
-items or Lean `A1 [user] ...` items. Missing command fields refuse intake; the
-launcher still does not infer confirmation or implementation permission from text.
+Commands may be bare shell text (including shell backticks), or wrapped in a
+validated enclosing Markdown backtick span. Only matching whole-field delimiters
+are removed; bytes inside the span are preserved, including any padding spaces.
+Use a longer delimiter for commands containing backticks:
+
+```text
+cmd: ``test -d `pwd` && true``
+```
+
+Unmatched or ambiguous wrappers refuse intake. Bare commands on separate field
+lines preserve field-like shell text too. For inline commands with shell quoting,
+use an enclosing span rather than ambiguous pipe-delimited field markers.
+Criteria can be plain lines, Markdown list items or Lean `A1 [user] ...` items.
+Fenced examples outside acceptance are ignored when locating headings. A recognized
+acceptance section must be unique and nonempty: nested headings, fenced content
+inside acceptance, duplicate sections and unclosed fences explicitly refuse intake
+rather than importing a partial section or downgrading it to legacy no-check behavior.
+Flatten nested criteria into the canonical plain criterion/field format before retrying.
+Missing command fields also refuse intake; the launcher still does not infer
+confirmation or implementation permission from text.
 
 Imported items are **LOCKED, operator-confirmed** definitions, distinct from the
 worker's editable `checklist.json`; `seed-` IDs are reserved. They participate in

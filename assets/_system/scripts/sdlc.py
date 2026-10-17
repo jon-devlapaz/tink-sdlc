@@ -157,19 +157,86 @@ def validate_checklist(value):
     return items
 
 
+def seed_acceptance_lines(text):
+    """Locate one real section, ignoring fenced examples and refusing partial imports."""
+    active, seen, level, fence = False, False, None, None
+    lines = []
+    for line in text.splitlines():
+        if fence:
+            closing = re.fullmatch(r' {0,3}(' + re.escape(fence[0]) + r'+)[ \t]*', line)
+            if closing and len(closing[1]) >= fence[1]:
+                fence = None
+            continue
+        opening = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line)
+        if opening:
+            if active:
+                raise ValueError('Unsupported fenced content in seed acceptance section; use plain criterion/field lines.')
+            if opening[1][0] == '`' and '`' in opening[2]:
+                raise ValueError('Ambiguous Markdown fence in seed contract.')
+            fence = (opening[1][0], len(opening[1]))
+            continue
+        heading = re.match(r'^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$', line)
+        if heading:
+            if heading[2].lower() in ('acceptance criteria', 'acceptance checks'):
+                if seen:
+                    raise ValueError('Ambiguous seed contract: multiple acceptance sections.')
+                active, seen, level = True, True, len(heading[1])
+            elif active:
+                if len(heading[1]) > level:
+                    raise ValueError('Unsupported nested heading in seed acceptance section; flatten all required criteria.')
+                active = False
+            continue
+        if active:
+            lines.append(line)
+    if fence:
+        raise ValueError('Unclosed Markdown fence in seed contract; acceptance section cannot be determined safely.')
+    if seen and not any(line.strip() for line in lines):
+        raise ValueError('Seed acceptance section is empty; it cannot fall back to legacy no-check behavior.')
+    return lines
+
+
+def seed_fields(body):
+    """Unwrap only a whole, matched Markdown span; bare shell backticks are literal."""
+    fields = {}
+    names = r'(cmd|expect|cwd|provisional|you judge)'
+    separator = re.compile(r'[ \t]+\|[ \t]+(?=' + names + r':)')
+    separate_command = bool(re.search(r'(?m)^(?:expect|cwd):', body))
+    for line in body.splitlines():
+        rest = line.strip()
+        while rest:
+            field = re.match(names + r':[ \t]*', rest)
+            if not field:
+                raise ValueError('Unsupported seed acceptance field syntax.')
+            key, tail = field[1], rest[field.end():]
+            if key in fields:
+                raise ValueError(f'Duplicate {key}: in seed acceptance item.')
+            opener = re.match(r'`+', tail)
+            if opener:
+                width = len(opener[0])
+                closing = next((m for m in re.finditer(r'`+', tail[width:]) if len(m[0]) == width), None)
+                if closing is None:
+                    raise ValueError(f'Unclosed or ambiguous Markdown span in seed {key}: field.')
+                end = width + closing.start()
+                value, suffix = tail[width:end], tail[end + width:]
+                delimiter = separator.match(suffix) if not (key == 'cmd' and separate_command) else None
+                if suffix.strip() and delimiter is None:
+                    raise ValueError(f'A seed {key}: Markdown span must enclose the whole field value.')
+                rest = suffix[delimiter.end():] if delimiter else ''
+            else:
+                delimiter = separator.search(tail) if not (key == 'cmd' and separate_command) else None
+                if key == 'cmd' and delimiter and re.search(r'''['"`\\()]''', tail[:delimiter.start()]):
+                    raise ValueError('Ambiguous inline shell command; use an enclosing Markdown span or separate field lines.')
+                value = (tail[:delimiter.start()] if delimiter else tail).strip()
+                rest = tail[delimiter.end():] if delimiter else ''
+            fields[key] = value
+    return fields
+
+
 def seed_definitions(data):
     """Read only the Seed Me acceptance section; commands remain verbatim shell text."""
-    text = data.decode('utf-8')
-    section = False
     blocks, current = [], []
-    for line in text.splitlines():
-        heading = re.match(r'^#{1,6}\s+(.+?)\s*#*$', line)
-        if heading:
-            if section:
-                break
-            section = heading[1].lower() in ('acceptance criteria', 'acceptance checks')
-            continue
-        if not section or not line.strip():
+    for line in seed_acceptance_lines(data.decode('utf-8')):
+        if not line.strip():
             continue
         value = re.sub(r'^\s*(?:[-*]\s+(?:\[[ xX]\]\s*)?)?', '', line).strip()
         if not re.match(r'^(cmd|expect|cwd|provisional|you judge):', value):
@@ -186,14 +253,7 @@ def seed_definitions(data):
         body = '\n'.join(block[1:])
         if not re.search(r'(?m)^(?:cmd|provisional|you judge):', body):
             raise ValueError(f'Seed acceptance item {index} needs cmd: or you judge: (and expect: and cwd: for commands).')
-        fields = {}
-        # Backtick-quoted commands can contain shell pipes, including field-like text.
-        pattern = r'(?:^|\s+\|\s+)(cmd|expect|cwd|provisional|you judge):\s*(`[^`]*`|.*?)(?=\s+\|\s+(?:cmd|expect|cwd|provisional|you judge):|\n|$)'
-        for match in re.finditer(pattern, body, re.MULTILINE):
-            key, value = match.groups()
-            if key in fields:
-                raise ValueError(f'Duplicate {key}: in seed acceptance item {index}.')
-            fields[key] = value.strip().strip('`')
+        fields = seed_fields(body)
         if 'you judge' in fields:
             if set(fields) != {'you judge'} or not fields['you judge']:
                 raise ValueError('you judge: must be a standalone operator attestation.')
