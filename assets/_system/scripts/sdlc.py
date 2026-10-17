@@ -157,13 +157,173 @@ def validate_checklist(value):
     return items
 
 
+def seed_acceptance_lines(text):
+    """Locate one real section, ignoring fenced examples and refusing partial imports."""
+    active, seen, level, fence = False, False, None, None
+    lines = []
+    for line in text.splitlines():
+        if fence:
+            closing = re.fullmatch(r' {0,3}(' + re.escape(fence[0]) + r'+)[ \t]*', line)
+            if closing and len(closing[1]) >= fence[1]:
+                fence = None
+            continue
+        opening = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line)
+        if opening:
+            if active:
+                raise ValueError('Unsupported fenced content in seed acceptance section; use plain criterion/field lines.')
+            if opening[1][0] == '`' and '`' in opening[2]:
+                raise ValueError('Ambiguous Markdown fence in seed contract.')
+            fence = (opening[1][0], len(opening[1]))
+            continue
+        heading = re.match(r'^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$', line)
+        if heading:
+            if heading[2].lower() in ('acceptance criteria', 'acceptance checks'):
+                if seen:
+                    raise ValueError('Ambiguous seed contract: multiple acceptance sections.')
+                active, seen, level = True, True, len(heading[1])
+            elif active:
+                if len(heading[1]) > level:
+                    raise ValueError('Unsupported nested heading in seed acceptance section; flatten all required criteria.')
+                active = False
+            continue
+        if active:
+            lines.append(line)
+    if fence:
+        raise ValueError('Unclosed Markdown fence in seed contract; acceptance section cannot be determined safely.')
+    if seen and not any(line.strip() for line in lines):
+        raise ValueError('Seed acceptance section is empty; it cannot fall back to legacy no-check behavior.')
+    return lines
+
+
+def seed_fields(body):
+    """Unwrap only a whole, matched Markdown span; bare shell backticks are literal."""
+    fields = {}
+    names = r'(cmd|expect|cwd|provisional|you judge)'
+    separator = re.compile(r'[ \t]+\|[ \t]+(?=' + names + r':)')
+    separate_command = bool(re.search(r'(?m)^(?:expect|cwd):', body))
+    for line in body.splitlines():
+        rest = line.strip()
+        while rest:
+            field = re.match(names + r':[ \t]*', rest)
+            if not field:
+                raise ValueError('Unsupported seed acceptance field syntax.')
+            key, tail = field[1], rest[field.end():]
+            if key in fields:
+                raise ValueError(f'Duplicate {key}: in seed acceptance item.')
+            opener = re.match(r'`+', tail)
+            if opener:
+                width = len(opener[0])
+                closing = next((m for m in re.finditer(r'`+', tail[width:]) if len(m[0]) == width), None)
+                if closing is None:
+                    raise ValueError(f'Unclosed or ambiguous Markdown span in seed {key}: field.')
+                end = width + closing.start()
+                value, suffix = tail[width:end], tail[end + width:]
+                delimiter = separator.match(suffix) if not (key == 'cmd' and separate_command) else None
+                if suffix.strip() and delimiter is None:
+                    raise ValueError(f'A seed {key}: Markdown span must enclose the whole field value.')
+                rest = suffix[delimiter.end():] if delimiter else ''
+            else:
+                delimiter = separator.search(tail) if not (key == 'cmd' and separate_command) else None
+                if key == 'cmd' and delimiter and re.search(r'''['"`\\()]''', tail[:delimiter.start()]):
+                    raise ValueError('Ambiguous inline shell command; use an enclosing Markdown span or separate field lines.')
+                value = (tail[:delimiter.start()] if delimiter else tail).strip()
+                rest = tail[delimiter.end():] if delimiter else ''
+            fields[key] = value
+    return fields
+
+
+def seed_definitions(data):
+    """Read only the Seed Me acceptance section; commands remain verbatim shell text."""
+    blocks, current = [], []
+    for line in seed_acceptance_lines(data.decode('utf-8')):
+        if not line.strip():
+            continue
+        value = re.sub(r'^\s*(?:[-*]\s+(?:\[[ xX]\]\s*)?)?', '', line).strip()
+        if not re.match(r'^(cmd|expect|cwd|provisional|you judge):', value):
+            if current:
+                blocks.append(current)
+            current = [value]
+        else:
+            current.append(value)
+    if current:
+        blocks.append(current)
+    items = []
+    for index, block in enumerate(blocks, 1):
+        description = block[0]
+        body = '\n'.join(block[1:])
+        if not re.search(r'(?m)^(?:cmd|provisional|you judge):', body):
+            raise ValueError(f'Seed acceptance item {index} needs cmd: or you judge: (and expect: and cwd: for commands).')
+        fields = seed_fields(body)
+        if 'you judge' in fields:
+            if set(fields) != {'you judge'} or not fields['you judge']:
+                raise ValueError('you judge: must be a standalone operator attestation.')
+            kind = 'attestation'
+        else:
+            if not all(fields.get(key) for key in ('cmd', 'expect', 'cwd')):
+                raise ValueError(f'Seed acceptance item {index} requires cmd:, expect: and cwd:.')
+            if 'provisional' in fields and not fields['provisional']:
+                raise ValueError('provisional: must name its prerequisite.')
+            kind = 'provisional' if 'provisional' in fields else 'settled'
+        items.append({'id': f'seed-{index}', 'description': description,
+                      'origin': 'operator-confirmed-seed', 'locked': True, 'kind': kind, **fields})
+    return {'schema': 1, 'items': items}
+
+
+def seed_check_items(path):
+    """Validate imported definitions against the bound seed; only activation is editable."""
+    bound = require_run(path).get('seed_contract')
+    if not bound:
+        return []
+    source = Path(bound['path'])
+    source = source if source.is_absolute() else ROOT / source
+    expected = seed_definitions(source.read_bytes())
+    target = path / 'seed-checks.json'
+    if not expected['items'] and not target.exists():
+        return []  # Old seeds without acceptance checks remain compatible.
+    if not target.is_file():
+        raise ValueError('Locked seed checks are missing; rebind the confirmed seed at stage 1.')
+    value = read_json(target)
+    if (not isinstance(value, dict) or set(value) != {'schema', 'items'}
+            or type(value['schema']) is not int or value['schema'] != 1 or not isinstance(value['items'], list)):
+        raise ValueError('Invalid locked seed checks.')
+    definitions = [{k: v for k, v in item.items() if k != 'activation'} for item in value['items'] if isinstance(item, dict)]
+    if encoded(definitions) != encoded(expected['items']):
+        raise ValueError('Locked seed checks changed; rebind the confirmed seed at stage 1.')
+    result = []
+    for item in value['items']:
+        activation = item.get('activation')
+        if 'activation' in item:
+            if (item['kind'] != 'provisional' or not isinstance(activation, dict)
+                    or set(activation) != {'cmd', 'cwd', 'evidence'}
+                    or not all(isinstance(v, str) and v.strip() for v in activation.values())):
+                raise ValueError('Provisional activation needs a real cmd, cwd and prerequisite evidence.')
+        pending = item['kind'] == 'provisional' and activation is None
+        base = {'id': item['id'], 'description': item['description'],
+                'verify': item.get('you judge', item.get('expect')), 'origin': item['origin'],
+                'locked': True, 'pending': pending, 'seed_definition': digest(encoded(item))}
+        if item['kind'] == 'attestation' or pending:
+            result.append({**base, 'operator_attestation': not pending,
+                           **({'prerequisite': item['provisional']} if pending else {})})
+            continue
+        command = activation or item
+        result.append({**base, 'check': {'argv': ['bash', '-c', command['cmd']],
+                                        'timeout_seconds': 120, 'cwd': command['cwd']}})
+        result.append({**base, 'id': item['id'] + '-expect', 'operator_attestation': True,
+                       'description': 'Operator confirms expected output: ' + item['description']})
+    return result
+
+
 def load_checklist(path):
     """None for legacy runs without checklist.json; otherwise the validated item list."""
     target = path / 'checklist.json'
+    seed_items = seed_check_items(path)
     if not target.exists():
-        return None
+        return seed_items or None
     try:
-        return validate_checklist(read_json(target))
+        items = validate_checklist(read_json(target))
+        if any(item['id'].startswith('seed-') for item in items) and seed_items:
+            raise ValueError('seed- item IDs are reserved for locked operator-confirmed checks.')
+        return items + seed_items
     except json.JSONDecodeError as error:
         raise ValueError(f'checklist.json is not valid JSON: {error}') from error
 
@@ -192,7 +352,11 @@ def marks(path, items):
                     latest_marks[record['item']] = (key, record)
         except (ValueError, KeyError, TypeError, OSError):
             continue
-    return {item: record for item, (_, record) in latest_marks.items()}
+    definitions = {item['id']: item for item in items}
+    return {name: record for name, (_, record) in latest_marks.items()
+            if not definitions[name].get('operator_attestation')
+            or (record.get('reviewer') and record.get('source')
+                and record.get('seed_definition') == definitions[name]['seed_definition'])}
 
 
 def inputs(path, stage):
@@ -205,6 +369,11 @@ def inputs(path, stage):
         source = Path(seed_contract['path'])
         source = source if source.is_absolute() else ROOT / source
         values['seed-contract'] = digest(source.read_bytes()) if source.is_file() else '<missing>'
+    if seed_contract:
+        target = path / 'seed-checks.json'
+        has_checks = bool(seed_definitions(source.read_bytes())['items']) if source.is_file() else False
+        if target.exists() or has_checks:
+            values['seed-checks'] = digest(target.read_bytes()) if target.is_file() else '<missing>'
     if stage == 3 and checklist_digest(path) is not None:
         values[str((path / 'checklist.json').relative_to(ROOT))] = checklist_digest(path)
     return digest(encoded(values))
@@ -349,7 +518,8 @@ def manual_marks(path):
     """Digest of the latest receipt per attested (check-less) item: a later mark, or an edited receipt, stales verification."""
     items = load_checklist(path) or []
     latest = marks(path, items)
-    return {item['id']: digest(encoded(latest[item['id']])) for item in items if 'check' not in item and item['id'] in latest}
+    return {item['id']: digest(encoded(latest[item['id']])) for item in items
+            if 'check' not in item and not item.get('pending') and item['id'] in latest}
 
 
 def evidence_inputs(path):
@@ -357,7 +527,8 @@ def evidence_inputs(path):
     return {'candidate': snapshot(), 'inputs': inputs(path, 3),
             'policy': digest((ROOT / '_system/verification.json').read_bytes()),
             'test_lock': test_lock(path),
-            **({'checklist': checklist_digest(path), 'manual_marks': attested} if checklist_digest(path) is not None else {})}
+            **({'checklist': checklist_digest(path), 'manual_marks': attested}
+               if checklist_digest(path) is not None or seed_check_items(path) else {})}
 
 
 def create(args):
@@ -403,6 +574,7 @@ def decide(args):
             raise ValueError(f'Define at least one checklist item before approval. Edit runs/{args.run}/checklist.json '
                              '(each item needs id, description, verify; optional check).')
         if args.decision == 'approved':
+            seed_check_items(path)
             for stage in stages(path):
                 if stage < args.stage and gate(path, stage) != 'approved':
                     raise ValueError(f'Approve stage {stage} first.')
@@ -414,7 +586,7 @@ def decide(args):
 
 
 def run_check(check, log):
-    with subprocess.Popen(check['argv'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+    with subprocess.Popen(check['argv'], cwd=ROOT / check.get('cwd', '.'), stdout=log, stderr=subprocess.STDOUT,
                           start_new_session=True) as process:
         try:
             returncode = process.wait(timeout=check['timeout_seconds'])
@@ -479,12 +651,15 @@ def verify(args):
         log_hint = f' (output: {log_path.relative_to(ROOT)})'
         receipt.parent.mkdir(parents=True, exist_ok=True)
         write_json(receipt, {'result': 'running'})
+        seed_results = {}
         try:
             ready(path)
             config = checks_config()
             before_files = snapshot_files()
             before = evidence_inputs(path)
             items = load_checklist(path)
+            seed_results = {item['id']: 'pending' if 'check' not in item else 'not-run'
+                            for item in items or [] if item.get('origin') == 'operator-confirmed-seed'}
             checks = list(config['checks'])
             if config['require_tink']:
                 checks.insert(0, {'argv': ['tink', 'skill', 'check'], 'timeout_seconds': 120})
@@ -504,15 +679,24 @@ def verify(args):
                     if 'check' not in item:
                         continue
                     check = item['check']
-                    log.write(f"\n# checklist item {item['id']}\n$ {json.dumps(check['argv'])}\n")
+                    seed = item.get('origin') == 'operator-confirmed-seed'
+                    label = 'seed check' if seed else 'checklist item'
+                    failure = 'Seed check failed' if seed else 'Checklist check failed'
+                    if seed:
+                        seed_results[item['id']] = 'failed'
+                    log.write(f"\n# {label} {item['id']}\n$ {json.dumps(check['argv'])}\n")
+                    if seed:
+                        log.write(f"cwd: {check['cwd']}\nexpect (operator confirms): {item['verify']}\n")
                     log.flush()
                     try:
                         result = run_check(check, log)
                     except (subprocess.TimeoutExpired, OSError) as error:
                         log.write(f'{type(error).__name__}: {error}\n')
-                        raise ValueError(f"Checklist check failed: {item['id']}{log_hint}") from error
+                        raise ValueError(f"{failure}: {item['id']}{log_hint}") from error
                     if result.returncode:
-                        raise ValueError(f"Checklist check failed: {item['id']}{log_hint}")
+                        raise ValueError(f"{failure}: {item['id']}{log_hint}")
+                    if seed:
+                        seed_results[item['id']] = 'proven'
             if before != evidence_inputs(path):
                 raise ValueError('Candidate or inputs changed during verification; rerun against stable inputs.'
                                  + changed_report(before_files, snapshot_files()))
@@ -520,16 +704,29 @@ def verify(args):
             proof = {}
             if items is not None:
                 marked = marks(path, items)
-                attested = [item['id'] for item in items if 'check' not in item]
-                missing = [i for i in attested if marked.get(i, {}).get('result') != 'passed']
+                attested = [item['id'] for item in items if 'check' not in item and not item.get('pending')]
+                for item in items:
+                    if item.get('origin') == 'operator-confirmed-seed' and 'check' not in item:
+                        record = marked.get(item['id'], {})
+                        accepted = record.get('result') == 'passed' and record.get('reviewer') and record.get('source')
+                        seed_results[item['id']] = 'attested' if accepted and not item.get('pending') else 'pending'
+                missing = [i for i in attested if marked.get(i, {}).get('result') != 'passed'
+                           or (i in seed_results and seed_results[i] != 'attested')]
                 if missing:
                     raise ValueError(f"Checklist incomplete: {', '.join(missing)} "
                                      f'(mark them with: sdlc.py mark {args.run} <id> passed --evidence "...")')
-                proof = {'checklist_items': {item['id']: 'proven' if 'check' in item else 'attested' for item in items}}
+                proof = {'checklist_items': {item['id']: 'proven' if 'check' in item else 'attested'
+                                             for item in items if item.get('origin') != 'operator-confirmed-seed'}}
+                if seed_results:
+                    proof['seed_checks'] = seed_results
             write_json(receipt, {'result': 'passed', **before, **proof, 'log': digest(log_path.read_bytes())})
         except Exception as error:
-            write_json(receipt, {'result': 'failed', 'error': describe(error)})
+            write_json(receipt, {'result': 'failed', 'error': describe(error),
+                                 **({'seed_checks': seed_results} if seed_results else {})})
             raise
+    if seed_results:
+        print('Seed checks (operator-confirmed): ' + ', '.join(f'{name}: {state}' for name, state in seed_results.items()))
+        print('Worker-written checks: passed (supporting evidence only).')
     print('Configured checks passed for the recorded candidate. Human release review remains required.')
 
 
@@ -595,6 +792,11 @@ def mark(args):
         if args.item not in {item['id'] for item in items}:
             ids = ', '.join(item['id'] for item in items)
             raise ValueError(f'Unknown checklist item: {args.item} (items: {ids})')
+        item = next(item for item in items if item['id'] == args.item)
+        if item.get('pending'):
+            raise ValueError('Provisional seed check is pending; activate it with prerequisite evidence and renew definition approval.')
+        if item.get('operator_attestation') and not (args.reviewer and args.reviewer.strip() and args.source and args.source.strip()):
+            raise ValueError('Seed checks require an operator attestation: --reviewer and --source of the actual operator observation.')
         if any(item['id'] == args.item and 'check' in item for item in items):
             raise ValueError(f'item {args.item} has an executable check; run verify to prove it '
                              f'(its check runs during: python3 _system/scripts/sdlc.py verify {args.run})')
@@ -603,6 +805,8 @@ def mark(args):
         now = time.time_ns()
         write_json(path / 'marks' / f'{args.item}-{now}-{uuid.uuid4().hex}.json', {
             'item': args.item, 'result': args.result, 'evidence': evidence,
+            **({'reviewer': args.reviewer, 'source': args.source, 'seed_definition': item['seed_definition']}
+               if item.get('operator_attestation') else {}),
             'candidate': snapshot()['tree'], 'time_ns': now})
     print(f'Recorded {args.result} receipt for {args.item}.')
 
@@ -644,7 +848,9 @@ def checklist_text(view):
     lines = [f'Checklist: {passed}/{len(items)} passed ({proven} with a check, {len(items) - proven} attested)']
     for item in items:
         if item['status'] != 'passed':
-            suffix = ' (its check runs in verify)' if item['automatic'] else ''
+            suffix = (' (provisional; awaiting prerequisite and reviewed activation)' if item.get('pending') else
+                      ' (operator attestation required)' if item.get('operator_attestation') else
+                      ' (its check runs in verify)' if item['automatic'] else '')
             lines.append(f"  - {item['id']}: {item['status']}{suffix}")
         elif item['needs_recheck']:
             lines.append(f"  - {item['id']}: attested before the latest changes; re-check it only if the change affects it")
@@ -1433,6 +1639,7 @@ def stage(args):
                              + mode_note + '; commit the candidate changes (verify again only if the code changed since it passed)')
     seed_source, seed_bytes = stage_seed_contract(args.seed_contract) if args.seed_contract else (None, None)
     seed_contract = f'runs/{run}/seed-contract.md' if seed_source else None
+    seed_checks = seed_definitions(seed_bytes) if seed_bytes is not None else None
     skillset = stage_skillset(n)
     tink = shutil.which('tink') if skillset else None
     if tink:
@@ -1456,6 +1663,8 @@ def stage(args):
     if seed_contract and not args.check:
         with locked(path / '.writer-lock'):
             copy = ROOT / seed_contract
+            if seed_checks['items'] or (path / 'seed-checks.json').exists():
+                write_json(path / 'seed-checks.json', seed_checks)
             previous = read_json(path / 'run.json').get('seed_contract', {})
             if seed_source != copy.resolve():
                 copy.write_bytes(seed_bytes)
@@ -1480,6 +1689,7 @@ def stage(args):
     if args.check:
         if seed_contract and seed_source != (ROOT / seed_contract).resolve():
             print(f'Would copy {seed_source} to {seed_contract}')
+            print('Would import locked operator-confirmed acceptance checks')
         print(f'Would commit: {"yes" if pending else "no"}')
         how = f'branch {run}' if not detached else 'detached'
         print(f'Would create worktree: {target} ({how})' if make_worktree else 'Would create worktree: none')
@@ -1575,6 +1785,8 @@ def main():
     marking.add_argument('item')
     marking.add_argument('result', choices=['passed', 'failed'])
     marking.add_argument('--evidence', required=True)
+    marking.add_argument('--reviewer', help='actual operator attesting a seed check')
+    marking.add_argument('--source', help='reference to the operator observation')
     baseline = commands.add_parser('lock-tests')
     baseline.add_argument('run')
     baseline.add_argument('paths', nargs='+')
