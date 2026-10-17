@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -412,6 +413,22 @@ def decide(args):
     print('Recorded local review receipt. Release approval must be independently authenticated by the forge.')
 
 
+def run_check(check, log):
+    with subprocess.Popen(check['argv'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                          start_new_session=True) as process:
+        try:
+            returncode = process.wait(timeout=check['timeout_seconds'])
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            finally:
+                process.wait()
+            raise
+    return subprocess.CompletedProcess(check['argv'], returncode)
+
+
 def dry_run(args):
     path = run_path(args.run)
     require_run(path)
@@ -429,8 +446,7 @@ def dry_run(args):
                 log.write(f"\n# checklist item {item['id']}\n$ {json.dumps(check['argv'])}\n")
                 log.flush()
                 try:
-                    result = subprocess.run(check['argv'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                                            timeout=check['timeout_seconds'])
+                    result = run_check(check, log)
                     outcome = f'exit {result.returncode}'
                     if result.returncode:
                         problems.append(item['id'])
@@ -478,8 +494,7 @@ def verify(args):
                     log.write(f"\n$ {json.dumps(check['argv'])}\n")
                     log.flush()
                     try:
-                        result = subprocess.run(check['argv'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                                                timeout=check['timeout_seconds'])
+                        result = run_check(check, log)
                     except (subprocess.TimeoutExpired, OSError) as error:
                         log.write(f'{type(error).__name__}: {error}\n')
                         error.sdlc_hint = log_hint
@@ -493,8 +508,7 @@ def verify(args):
                     log.write(f"\n# checklist item {item['id']}\n$ {json.dumps(check['argv'])}\n")
                     log.flush()
                     try:
-                        result = subprocess.run(check['argv'], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                                                timeout=check['timeout_seconds'])
+                        result = run_check(check, log)
                     except (subprocess.TimeoutExpired, OSError) as error:
                         log.write(f'{type(error).__name__}: {error}\n')
                         raise ValueError(f"Checklist check failed: {item['id']}{log_hint}") from error
