@@ -17,3 +17,8 @@ Detailed breakdown of what the system must do.
 
 ## 4. Flagged Policy & Design Concerns
 Explicit trade-offs, security implications, or policy conflicts requiring tech lead sign-off.
+
+## 5. Constraints and boundaries
+Carry forward the approved intent's constraints and exclusions; surface conflicts rather than silently replacing them.
+- Must (non-negotiables):
+- Must not (exclusions and rejected alternatives):

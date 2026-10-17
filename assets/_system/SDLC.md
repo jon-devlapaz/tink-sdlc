@@ -66,6 +66,60 @@ Include relevant fixtures, snapshots, discovery configuration, and runner helper
 
 This detects local changes, not adversarial tampering. Strict protection requires CI to fetch the accepted test revision independently, protect verification policy, run against the candidate revision, and require the resulting check before merge. Agent-writable lock files and hooks are not an authorization boundary. This scaffold does not configure a forge or deployment environment.
 
+## Tinkery ownership and handoff
+
+SDLC can operate standalone or as Tinkery's external implementation workflow.
+SDLC owns run identity, implementation orchestration, technical review and local
+verification freshness. Seed Me owns the seed and its discovery decisions.
+Tinkery owns the intended goal-to-result presentation, not another set of SDLC
+approvals. The operator judges usefulness and authorizes merging; the forge
+owns remote checks and enforces configured release requirements. Technical review
+asks whether the change is correct and meets approved scope; Taste asks whether
+the exact result serves the unchanged operator goal. A model's praise is neither.
+
+For a Tinkery-originated run:
+
+- **Load:** Load only the explicitly supplied, operator-confirmed seed for seed
+  intake; never discover operator sessions to fill a gap. Also read the active
+  contract's immediate inputs, approved brief or spec/plan, checklist, relevant
+  project policy, and repository source and project files needed by the active stage.
+  Use the stage-1 seed-copy mechanism below. Carry forward the supplied seed's
+  Problem statement, Proposed outcome (desired user-visible results and success criteria),
+  Acceptance criteria, and Constraints and boundaries (non-negotiables, exclusions
+  and rejected alternatives). Preserve settled `cmd:` and `expect:` checks verbatim;
+  keep provisional checks labelled as proposals, not completed verification.
+  Preserve Accepted decisions and assumed defaults with their separate authority,
+  plus evidence, uncertainty, open questions and deferrals. Keep the confirmed goal
+  intact rather than reconstructing it from a headline. Seed confirmation is not
+  implementation permission. Never infer a goal-to-run connection from matching names,
+  paths or seed bytes.
+- **Hand off:** Use the existing review findings and PR handoff to identify the
+  run ID and checkout, bound seed reference/digest, candidate commit and explicit
+  PR/result revision. Link each claimed completion condition to evidence for that result;
+  name unresolved conditions and findings. Keep automated proof, manual attestation, independent review and operator acceptance
+  separate. This assembled handoff is human-readable only, not a normalized machine interface.
+  API 1 already exposes run_id and verification candidate provenance, but not the
+  seed_contract binding or an explicit PR reference. Until those fields are exposed,
+  do not treat this prose as input to Tinkery's machine binding or reader; that API
+  work is proposed separately in [#68](https://github.com/jon-devlapaz/tink-sdlc/issues/68).
+  Acceptance or correction returns to the existing external review process
+  for the displayed result. Copying a handoff records no verdict and starts nothing;
+  recheck current state before recording any external decision.
+- **Retain:** Keep the run's seed copy/binding, approved artifacts, checklist,
+  decision and mark history, verification receipts/logs, review findings and closure
+  references through the existing retention process before removing a checkout.
+  Preserve source identities, revisions/digests, read times and decision provenance
+  (reviewer, source and reason) in the handoff where available; name absent facts.
+  Missing, stale, failed, interrupted and conflicting evidence stay distinct.
+  A reader cannot recover records deleted with a worktree.
+
+Do not create a Taste verdict format or a competing acceptance ledger. Goal/run
+binding, the shared reader and Taste are Tinkery integration work, not capabilities
+provided by this scaffold. Consult Tinkery's [constitution](https://github.com/jon-devlapaz/tinkery/blob/main/docs/yohaku.md),
+[proposed job-record contract](https://github.com/jon-devlapaz/tinkery/blob/main/docs/design/job-records.md)
+and [Taste scope](https://github.com/jon-devlapaz/tinkery/issues/114) when changing
+that integration; proposals grant no implementation or execution authority.
+
 ## Who does what at a stage boundary
 
 - The launcher (the human, or a script acting for them) records the gate, then runs

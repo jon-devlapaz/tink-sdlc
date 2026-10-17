@@ -54,6 +54,68 @@ class WordingTests(unittest.TestCase):
         text = (ROOT / 'assets/_system/SDLC.md').read_text()
         self.assertIn('excluded from the candidate fingerprint', text)
 
+    def test_tinkery_ownership_and_handoff_contract(self):
+        text = (ROOT / 'assets/_system/SDLC.md').read_text()
+        self.assertIn('## Tinkery ownership and handoff', text)
+        section = ' '.join(text.split('## Tinkery ownership and handoff', 1)[1].split('\n## ', 1)[0].split())
+        for rule in [
+            'SDLC owns run identity, implementation orchestration, technical review',
+            'Seed Me owns the seed and its discovery decisions',
+            'Tinkery owns the intended goal-to-result presentation',
+            'The operator judges usefulness and authorizes merging',
+            'Load only the explicitly supplied, operator-confirmed seed',
+            'repository source and project files needed by the active stage',
+            'Problem statement',
+            'Proposed outcome (desired user-visible results and success criteria)',
+            'Acceptance criteria',
+            'Constraints and boundaries (non-negotiables, exclusions and rejected alternatives)',
+            'Accepted decisions and assumed defaults',
+            'never discover operator sessions',
+            'human-readable only, not a normalized machine interface',
+            'API 1 already exposes run_id and verification candidate provenance',
+            'not the seed_contract binding or an explicit PR reference',
+            'Never infer a goal-to-run connection from matching names',
+            'each claimed completion condition to evidence for that result',
+            'automated proof, manual attestation, independent review and operator acceptance',
+            'Copying a handoff records no verdict and starts nothing',
+            'Do not create a Taste verdict format or a competing acceptance ledger',
+            'Missing, stale, failed, interrupted and conflicting evidence stay distinct',
+        ]:
+            self.assertIn(rule, section)
+
+    def test_tinkery_guidance_is_reachable_from_active_contracts(self):
+        for rel in ['SKILL.md', 'assets/stages/01-plan/CONTEXT.md',
+                    'assets/_shared/REVIEW.md', 'assets/stages/05-deploy/CONTEXT.md']:
+            text = (ROOT / rel).read_text()
+            self.assertIn('Tinkery', text, rel)
+            self.assertIn('_system/SDLC.md#tinkery-ownership-and-handoff', text, rel)
+
+    def test_tinkery_readme_is_a_stable_pointer_not_a_snapshot(self):
+        text = (ROOT / 'README.md').read_text()
+        self.assertIn('assets/_system/SDLC.md#tinkery-ownership-and-handoff', text)
+        self.assertNotIn('## Tinkery capability assessment', text)
+        self.assertNotRegex(text, r'\b[0-9a-f]{40}\b')
+        self.assertNotIn('needs-approval', text)
+
+    def test_tinkery_source_links_follow_main(self):
+        text = (ROOT / 'assets/_system/SDLC.md').read_text()
+        links = re.findall(r'https://github.com/jon-devlapaz/tinkery/blob/[^)]+', text)
+        self.assertTrue(links)
+        for link in links:
+            self.assertTrue(link.startswith('https://github.com/jon-devlapaz/tinkery/blob/main/'), link)
+
+    def test_light_and_full_templates_preserve_seed_boundaries(self):
+        for name, heading in [('brief', '## Constraints and exclusions'),
+                              ('intent', '## 4. Constraints and boundaries'),
+                              ('spec', '## 5. Constraints and boundaries')]:
+            text = (ROOT / f'assets/_shared/{name}-template.md').read_text()
+            self.assertIn(heading, text, name)
+            section = text.split(heading, 1)[1].split('\n## ', 1)[0]
+            self.assertIn('Must (non-negotiables):', section, name)
+            self.assertIn('Must not (exclusions and rejected alternatives):', section, name)
+        plan = (ROOT / 'assets/stages/01-plan/CONTEXT.md').read_text()
+        self.assertIn('constraints and exclusions', plan)
+
     def test_review_guide_is_about_review(self):
         text = (ROOT / 'assets' / '_shared' / 'REVIEW.md').read_text()
         self.assertIn('Review logic and edge cases', text)

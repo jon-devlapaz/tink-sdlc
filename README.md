@@ -56,6 +56,8 @@ consume normalized run state, available actions, and declared log references rat
 than parsing prose or receipt internals. The versioning and field contract lives in
 `assets/_system/SDLC.md`; API versions are independent of package versions.
 
+For Tinkery-originated work, see the installed [ownership and handoff guidance](assets/_system/SDLC.md#tinkery-ownership-and-handoff).
+
 ## Maintain this package
 
 `assets/` is the canonical distributable scaffold in this repository. Do not update
