@@ -31,6 +31,10 @@ without needing an approval. It executes real commands, not a sandbox: review th
 side effects first and use the intended verification environment. Output goes to
 `runs/<slug>/checklist-dry-run.log`; each invocation replaces that log. All checks
 are attempted, with launch errors, timeouts and nonzero exits reported per item.
+No check process survives its check: dry-run and verification checks start in a new
+session; on normal exit or timeout, remaining members of that process group are
+killed and the direct child is reaped before proceeding. Commands must not escape
+that session; process-group cleanup is not a sandbox.
 Inspect output to distinguish an expected reproduction failure from a broken command
 or environment (including an unsuitable `TMPDIR`); nonzero exits need review, not
 necessarily a passing reproduction. Correct command/environment problems before

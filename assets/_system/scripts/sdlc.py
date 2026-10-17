@@ -418,14 +418,13 @@ def run_check(check, log):
                           start_new_session=True) as process:
         try:
             returncode = process.wait(timeout=check['timeout_seconds'])
-        except subprocess.TimeoutExpired:
+        finally:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             finally:
                 process.wait()
-            raise
     return subprocess.CompletedProcess(check['argv'], returncode)
 
 

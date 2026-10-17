@@ -70,6 +70,9 @@ class StageBase(unittest.TestCase):
                     'TINK_LOG': str(self.log), 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1'}
         self.run_cmd([PYTHON, str(INIT), str(self.root)], cwd=self.root)
         self.git('init', '-q', '-b', 'main')
+        # Git's detached auto-maintenance must not race temporary-repository cleanup.
+        self.git('config', 'maintenance.autoDetach', 'false')
+        self.git('config', 'gc.autoDetach', 'false')
         self.git('add', '-A')
         self.git('commit', '-qm', 'baseline', env=IDENT)
 
@@ -425,6 +428,18 @@ class HereMode(StageBase):
 
 
 class WorktreeMode(StageBase):
+    def test_fixture_git_maintenance_is_synchronous(self):
+        for key in ['maintenance.autoDetach', 'gc.autoDetach']:
+            self.assertEqual(self.git('config', '--get', key).stdout.strip(), 'false')
+        trace = self.base / 'git-trace.jsonl'
+        self.env['GIT_TRACE2_EVENT'] = str(trace)
+        self.new_run('r')
+        self.commit_run()
+        events = [json.loads(line) for line in trace.read_text().splitlines()]
+        for event in events:
+            if event.get('event') == 'child_start' and 'maintenance' in event.get('argv', []):
+                self.assertNotIn('--detach', event['argv'])
+
     def test_light_build_opens_a_worktree(self):
         self.new_run('r')
         result = self.stage('r', 3, env=IDENT)

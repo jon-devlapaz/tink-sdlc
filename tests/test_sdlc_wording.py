@@ -47,7 +47,8 @@ class WordingTests(unittest.TestCase):
         self.assertLess(text.index('sdlc.py dry-run fix-example'), text.index('sdlc.py decide fix-example'))
         for phrase in ['expected reproduction failure', 'launch errors, timeouts',
                        'records no decision', 'does not enforce a new approval prerequisite',
-                       'still requires current approval and passing checks']:
+                       'still requires current approval and passing checks',
+                       'No check process survives its check', 'on normal exit or timeout']:
             self.assertIn(phrase, text)
 
     def test_stage_boundary_ownership_section(self):

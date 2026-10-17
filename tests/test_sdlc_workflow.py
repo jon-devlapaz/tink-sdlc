@@ -84,12 +84,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('Stage 3: pending', self.cli('status', 'example'))
         self.cli('verify', 'example', ok=False)
 
-    def descendant_timeout_command(self):
+    def descendant_command(self, wait=True):
         child = ('import time; from pathlib import Path; time.sleep(1.4); '
                  'Path("late-child-write").write_text("leaked"); print("LATE CHILD OUTPUT", flush=True)')
         parent = ('import subprocess, sys, time; from pathlib import Path; '
                   f'p = subprocess.Popen([sys.executable, "-c", {child!r}]); '
-                  'Path("child.pid").write_text(str(p.pid)); time.sleep(5)')
+                  'Path("child.pid").write_text(str(p.pid))')
+        if wait:
+            parent += '; time.sleep(5)'
         return ['python3', '-c', parent]
 
     def child_is_running(self):
@@ -105,7 +107,7 @@ class WorkflowTests(unittest.TestCase):
                     'print("child running at next start:", bool(state) and not state.startswith("Z"), flush=True); '
                     'time.sleep(0.7); print("late write:", Path("late-child-write").exists(), flush=True)')
         path = self.dry_run_items([
-            ('timeout', self.descendant_timeout_command()),
+            ('timeout', self.descendant_command()),
             ('observer', ['python3', '-c', observer]),
         ])
         out = self.cli('dry-run', 'example', ok=False)
@@ -121,11 +123,33 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('TimeoutExpired:', timeout_log)
         self.assertNotIn('TimeoutExpired:', observer_log)
 
+    def test_dry_run_success_stops_descendant_before_next_item(self):
+        observer = ('import subprocess, time; from pathlib import Path; '
+                    'pid = Path("child.pid").read_text(); '
+                    'state = subprocess.run(["ps", "-p", pid, "-o", "stat="], capture_output=True, text=True).stdout.strip(); '
+                    'print("child running at next start:", bool(state) and not state.startswith("Z"), flush=True); '
+                    'time.sleep(1.6); print("late write:", Path("late-child-write").exists(), flush=True)')
+        path = self.dry_run_items([
+            ('successful-parent', self.descendant_command(wait=False)),
+            ('observer', ['python3', '-c', observer]),
+        ])
+        definitions = json.loads((path / 'checklist.json').read_text())
+        definitions['items'][1]['check']['timeout_seconds'] = 3
+        (path / 'checklist.json').write_text(json.dumps(definitions))
+        out = self.cli('dry-run', 'example')
+        self.assertIn('successful-parent: exit 0', out)
+        log = (path / 'checklist-dry-run.log').read_text()
+        self.assertIn('child running at next start: False', log)
+        self.assertIn('late write: False', log)
+        self.assertNotIn('LATE CHILD OUTPUT\n', log)
+        self.assertFalse(self.child_is_running())
+        self.assertFalse((self.root / 'late-child-write').exists())
+
     def test_verify_timeout_stops_descendant_for_configured_and_checklist_checks(self):
         self.cli('new', 'example')
         for checked_item in [False, True]:
             with self.subTest(checked_item=checked_item):
-                check = {'argv': self.descendant_timeout_command(), 'timeout_seconds': 1}
+                check = {'argv': self.descendant_command(), 'timeout_seconds': 1}
                 if checked_item:
                     self.config([{'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 1}])
                     items = [{'id': 'timeout', 'description': 'timeout', 'verify': 'timeout', 'check': check}]
@@ -139,6 +163,30 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIn('Checklist check failed: timeout' if checked_item else 'timed out', out)
                 self.assertFalse(self.child_is_running())
                 time.sleep(0.7)
+                self.assertFalse((self.root / 'late-child-write').exists())
+                log = (self.root / 'runs/example/04-test/output/test-log.md').read_text()
+                self.assertNotIn('LATE CHILD OUTPUT\n', log)
+
+    def test_verify_success_stops_descendant_for_configured_and_checklist_checks(self):
+        (self.root / '.gitignore').write_text('child.pid\nlate-child-write\n')
+        self.cli('new', 'example')
+        for checked_item in [False, True]:
+            with self.subTest(checked_item=checked_item):
+                check = {'argv': self.descendant_command(wait=False), 'timeout_seconds': 1}
+                if checked_item:
+                    self.config([{'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 1}])
+                    item_check = check
+                else:
+                    self.config([check])
+                    item_check = {'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 1}
+                (self.root / 'runs/example/checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+                    {'id': 'passing', 'description': 'passing', 'verify': 'passing', 'check': item_check}]}))
+                self.approve()
+                self.cli('verify', 'example')
+                try:
+                    self.assertFalse(self.child_is_running())
+                finally:
+                    time.sleep(1.6)
                 self.assertFalse((self.root / 'late-child-write').exists())
                 log = (self.root / 'runs/example/04-test/output/test-log.md').read_text()
                 self.assertNotIn('LATE CHILD OUTPUT\n', log)
