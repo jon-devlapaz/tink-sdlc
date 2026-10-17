@@ -20,6 +20,24 @@ prompts and commands before release.
 
 The default `light` profile creates one `brief.md`: problem, acceptance criteria, approach, risks, and verification, plus `checklist.json` for the implementation checklist. Use `--profile full` for consequential architecture or policy changes; it creates the existing intent/spec/plan artifacts. A human selects the appropriate profile. Legacy artifacts without run metadata remain drafts; text approval tags are not imported as evidence.
 
+Before asking for definition-gate approval, review the checklist commands and offer a dry run:
+
+```sh
+python3 _system/scripts/sdlc.py dry-run fix-example
+```
+
+This runs every checklist `check` in the repository root with its declared timeout,
+without needing an approval. It executes real commands, not a sandbox: review their
+side effects first and use the intended verification environment. Output goes to
+`runs/<slug>/checklist-dry-run.log`; each invocation replaces that log. All checks
+are attempted, with launch errors, timeouts and nonzero exits reported per item.
+Inspect output to distinguish an expected reproduction failure from a broken command
+or environment (including an unsuitable `TMPDIR`); nonzero exits need review, not
+necessarily a passing reproduction. Correct command/environment problems before
+review, then rerun. Attested items are not executed. The dry run records no decision,
+mark or verification receipt, does not enforce a new approval prerequisite, and does
+not replace `verify`, which still requires current approval and passing checks.
+
 After the human accepts the brief, record the actual review reference:
 
 ```sh

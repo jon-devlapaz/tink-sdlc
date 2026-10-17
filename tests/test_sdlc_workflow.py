@@ -54,6 +54,81 @@ class WorkflowTests(unittest.TestCase):
         (self.root / 'runs/example/checklist.json').unlink()  # legacy run: no checklist enforcement
         self.approve()
 
+    def dry_run_items(self, commands):
+        self.cli('new', 'example')
+        path = self.root / 'runs/example'
+        (path / 'checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+            {'id': name, 'description': name, 'verify': 'inspect output',
+             'check': {'argv': argv, 'timeout_seconds': 1}}
+            for name, argv in commands]}))
+        return path
+
+    def test_dry_run_reports_all_checks_before_approval_without_proof(self):
+        path = self.dry_run_items([
+            ('missing', ['missing-executable-sdlc']),
+            ('reproduction', ['python3', '-c', 'print("expected reproduction"); raise SystemExit(1)']),
+            ('environment', ['python3', '-c', 'print("bad TMPDIR"); raise SystemExit(2)']),
+            ('timeout', ['python3', '-c', 'import time; time.sleep(5)']),
+            ('root', ['python3', '-c', 'from pathlib import Path; print(Path("code.py").read_text())']),
+        ])
+        out = self.cli('dry-run', 'example', ok=False)
+        for text in ['missing: FileNotFoundError', 'reproduction: exit 1', 'environment: exit 2',
+                     'timeout: TimeoutExpired', 'root: exit 0', 'reproduction failure may be expected']:
+            self.assertIn(text, out)
+        log = (path / 'checklist-dry-run.log').read_text()
+        for text in ['expected reproduction', 'bad TMPDIR', 'original']:
+            self.assertIn(text, log)
+        self.assertFalse((path / 'decisions').exists())
+        self.assertFalse((path / 'marks').exists())
+        self.assertFalse((path / '04-test/output/verification.json').exists())
+        self.assertIn('Stage 3: pending', self.cli('status', 'example'))
+        self.cli('verify', 'example', ok=False)
+
+    def test_dry_run_pass_does_not_replace_verification(self):
+        path = self.dry_run_items([('passing', ['python3', '-c', 'print("preflight")'])])
+        definitions = (path / 'checklist.json').read_bytes()
+        self.assertIn('passing: exit 0', self.cli('dry-run', 'example'))
+        self.assertEqual((path / 'checklist.json').read_bytes(), definitions)
+        self.approve()
+        self.assertIn('Verification: not run', self.cli('status', 'example'))
+        # A passing preflight cannot excuse a later failing checked item.
+        items = json.loads(definitions)
+        items['items'][0]['check']['argv'] = ['python3', '-c', 'raise SystemExit(1)']
+        (path / 'checklist.json').write_text(json.dumps(items))
+        self.assertIn('Stage 3: stale', self.cli('status', 'example'))
+        self.approve()
+        self.assertIn('Checklist check failed: passing', self.cli('verify', 'example', ok=False))
+
+    def test_status_offers_dry_run_for_light_and_full_definition(self):
+        for profile in ['light', 'full']:
+            with self.subTest(profile=profile):
+                slug = profile
+                self.cli('new', slug, '--profile', profile)
+                path = self.root / 'runs' / slug
+                (path / 'checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+                    {'id': 'check', 'description': 'check', 'verify': 'check',
+                     'check': {'argv': ['missing-executable-sdlc'], 'timeout_seconds': 1}}]}))
+                if profile == 'full':
+                    for stage in ['1', '2']:
+                        self.cli('decide', slug, stage, 'approved', '--reviewer', 'human',
+                                 '--source', 'review:1', '--reason', 'accepted')
+                for out in [self.cli('status', slug),
+                            json.loads(self.cli('status', slug, '--json'))['run']['next_action']]:
+                    self.assertIn(f'sdlc.py dry-run {slug}', out)
+                self.assertFalse((path / 'checklist-dry-run.log').exists())  # status never executes checks
+
+    def test_fresh_light_status_defines_artifacts_before_decision(self):
+        self.cli('new', 'example')
+        path = self.root / 'runs/example'
+        for missing in [None, 'brief.md', 'checklist.json']:
+            if missing:
+                (path / missing).unlink()
+            for out in [self.cli('status', 'example'),
+                        json.loads(self.cli('status', 'example', '--json'))['run']['next_action']]:
+                self.assertIn('Define brief.md and checklist.json', out)
+                self.assertNotIn('record the human decision', out)
+                self.assertNotIn('sdlc.py decide', out)
+
     def test_slug_and_no_overwrite(self):
         self.cli('new', '../escape', ok=False)
         self.cli('new', 'example')
@@ -1027,7 +1102,7 @@ class WorkflowTests(unittest.TestCase):
         lines = result.stderr.strip().splitlines()
         self.assertEqual(len(lines), 2, result.stderr)
         self.assertTrue(lines[0].startswith('sdlc.py: error: '), lines[0])
-        self.assertEqual(lines[1], 'Commands: new, status, decide, verify, mark, lock-tests, skills, stage, walk. See _system/SDLC.md.')
+        self.assertEqual(lines[1], 'Commands: new, status, decide, dry-run, verify, mark, lock-tests, skills, stage, walk. See _system/SDLC.md.')
         self.assertNotIn('usage:', result.stderr)
 
     def test_clarity_missing_argument_prints_short_error(self):

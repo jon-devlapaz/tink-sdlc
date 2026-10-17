@@ -42,6 +42,14 @@ class WordingTests(unittest.TestCase):
         self.assertNotIn('Inspect code, write the plan,', build)
         self.assertIn('For full runs, write the plan', build)
 
+    def test_preapproval_dry_run_preserves_gate_authority(self):
+        text = (ROOT / 'assets/_system/SDLC.md').read_text()
+        self.assertLess(text.index('sdlc.py dry-run fix-example'), text.index('sdlc.py decide fix-example'))
+        for phrase in ['expected reproduction failure', 'launch errors, timeouts',
+                       'records no decision', 'does not enforce a new approval prerequisite',
+                       'still requires current approval and passing checks']:
+            self.assertIn(phrase, text)
+
     def test_stage_boundary_ownership_section(self):
         text = (ROOT / 'assets/_system/SDLC.md').read_text()
         self.assertIn('## Who does what at a stage boundary', text)
