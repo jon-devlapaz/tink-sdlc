@@ -60,6 +60,70 @@ An item may carry `check`: `{"argv":[...],"timeout_seconds":N}`, validated like 
 
 An item without `check` is attested. Agents record it with `sdlc.py mark <run> <item-id> passed|failed --evidence <text>`, which needs a current stage 3 approval and appends a receipt under `marks/`; the latest receipt per item wins, and `verify` requires it to be `passed`. The passed verification records a digest of each attested item's latest receipt (so editing one also stales it), so any later `mark` (pass or fail) makes it stale: mark first, then run `verify` again. Attested marks are self-reported claims: independent review should challenge them. Status flags an attested item marked on an older candidate as attested before the latest changes; re-check it only if the change affects it. The passed verification receipt records each item as `proven` or `attested`. Runs without `checklist.json` are legacy and unaffected (so deleting the file downgrades a run to legacy; status says `Checklist: none (legacy run)`; local files are not a tamper boundary, and neither are receipts you can delete or `git update-index --skip-worktree`, so trusted CI and forge review are the boundary); status reports a checklist deleted after approval as MISSING.
 
+### Locked seed acceptance checks
+
+At stage-1 intake, `stage <slug> 1 --seed-contract PATH` copies the explicitly
+supplied, operator-confirmed seed and imports its `## Acceptance criteria` (or
+`## Acceptance checks`) section into `runs/<slug>/seed-checks.json`. Both Seed Me
+forms work: separate `cmd:`, `expect:`, `cwd:` lines beneath a criterion, or
+``cmd: `<command>` | expect: <expected output> | cwd: <path>`` on one line.
+Commands may be wrapped in backticks. Criteria can be plain lines, Markdown list
+items or Lean `A1 [user] ...` items. Missing command fields refuse intake; the
+launcher still does not infer confirmation or implementation permission from text.
+
+Imported items are **LOCKED, operator-confirmed** definitions, distinct from the
+worker's editable `checklist.json`; `seed-` IDs are reserved. They participate in
+status, dry runs and verification. Their file is bound to every definition gate:
+editing or deleting a check (or the file) stales approval, and `decide` refuses to
+approve imports that disagree with the bound seed. A genuinely revised confirmed
+seed must be explicitly rebound at stage 1 and reviewed again. Rebinding replaces
+imports, including any provisional activations; retain prior evidence in Git.
+Seeds without acceptance checks retain legacy behavior.
+
+Settled commands run verbatim through `bash -c`, with the existing process-group
+safe runner and a 120-second timeout. Relative `cwd:` is relative to the selected
+checkout, not the seed's folder; absolute paths are used as supplied. Review command
+and directory safety before intake/dry-run: these commands are not sandboxed.
+Nonzero exits, missing working directories and timeouts fail `verify` even when all
+worker-written checks pass. Free-text `expect:` is preserved, not guessed or treated
+as a literal output matcher: success requires both command exit zero and an
+**operator attestation** for `seed-N-expect`. `you judge:` beneath a criterion
+creates only an operator attestation (`seed-N`), never an automated pass.
+
+Record only the actual operator's observation, not the worker's judgment:
+
+```sh
+python3 _system/scripts/sdlc.py mark <slug> seed-1-expect passed \
+  --reviewer 'Actual operator' --source 'Actual observation reference' \
+  --evidence 'Observed output and why it satisfies the seed expectation'
+```
+
+These marks require current definition approval and bind the exact seed item,
+including its activation; old marks cannot satisfy a revised command. Reviewer and
+source are local references, not authentication. This adds no auto-approval or new
+meaning to approval; independent forge policy remains the authority boundary.
+
+For a not-yet-runnable check, put `provisional: <what must exist>` before `cmd:`.
+The imported item stays pending and nonblocking while its prerequisite is absent;
+it is never reported as proven. At implementation time the worker must inspect the
+named prerequisite. **Once it exists**, supply the real command and prerequisite
+evidence by adding only this `activation` object to that item in `seed-checks.json`:
+
+```json
+{"activation": {"cmd": "./real-command", "cwd": ".", "evidence": "Prerequisite exists at <path>; observed <evidence>"}}
+```
+
+Do not change the locked proposal or its expectation. Activation stales all definition
+gates; obtain renewed operator approval of the updated definition before verification.
+The activated command and its `seed-N-expect` attestation are then required. A prose
+prerequisite is not machine-detected: the worker must surface it when it becomes true,
+and the operator reviews the evidence rather than accepting a hidden automatic trigger.
+
+Verification logs label seed checks separately; receipts report `seed_checks`
+(`proven`, `attested`, `pending`, or `not-run` on failure) separately from worker
+`checklist_items`. Pending proposals are not passing acceptance evidence. Manual
+observations still need rechecking when candidate changes affect them.
+
 ## Implementation and verification
 
 Use a separate Git worktree or clone for each code-writing run, never just two branches in one checkout. Keep each run's artifacts in its own checkout. Do not share writable skill directories. Ports, databases, and credentials need separate isolation when used.

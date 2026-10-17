@@ -4,6 +4,12 @@ Inputs: originator's request and `_shared/intent-template.md` for full runs.
 Read the run's `run.json` to select its profile.
 For Tinkery-originated work, follow [Tinkery intake boundaries](../../_system/SDLC.md#tinkery-ownership-and-handoff)
 before translating the supplied confirmed seed into intent.
+Stage-1 `--seed-contract` imports acceptance checks into `runs/<slug>/seed-checks.json`
+as LOCKED operator-confirmed items, separate from worker checks. Do not edit or drop
+these definitions. Preserve pending provisional checks; when a prerequisite exists,
+add a real command and prerequisite evidence via `activation` and obtain renewed
+operator definition approval. `expect:` and `you judge:` require actual operator
+attestations, never the worker's judgment. See the guide's locked seed checks section.
 
 For light runs, write `runs/<slug>/brief.md` with problem and outcome, acceptance criteria,
 constraints and exclusions, approach, risks, and verification. Define the implementation checklist as
