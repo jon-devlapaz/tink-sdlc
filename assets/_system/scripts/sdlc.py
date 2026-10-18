@@ -220,6 +220,27 @@ def seed_check_items(path):
     return result
 
 
+def missing_cited_evidence(path):
+    """Relative paths cited as activation evidence that exist in neither the run nor the checkout (#76)."""
+    target = path / 'seed-checks.json'
+    if not seed_check_items(path):
+        return []
+    missing = []
+    for item in read_json(target)['items']:
+        for token in item.get('activation', {}).get('evidence', '').split():
+            token = token.lstrip('"\'`([').rstrip('"\'`)],;:.')
+            if ('/' not in token or '://' in token or token.startswith(('/', '~'))
+                    or not (token.endswith('/') or re.search(r'\.[A-Za-z]\w*$', token))):
+                continue
+            brace = re.search(r'\{([^{}]*,[^{}]*)\}', token)
+            for cited in ([token[:brace.start()] + part + token[brace.end():] for part in brace.group(1).split(',')]
+                          if brace else [token]):
+                kind = Path.is_dir if cited.endswith('/') else Path.exists
+                if not (kind(path / cited) or kind(ROOT / cited)) and cited not in missing:
+                    missing.append(cited)
+    return missing
+
+
 def load_checklist(path):
     """None for legacy runs without checklist.json; otherwise the validated item list."""
     target = path / 'checklist.json'
@@ -572,6 +593,9 @@ def verify(args):
         seed_results = {}
         try:
             ready(path)
+            missing = missing_cited_evidence(path)
+            if missing:
+                raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
             config = checks_config()
             before_files = snapshot_files()
             before = evidence_inputs(path)

@@ -134,7 +134,9 @@ evidence by adding only this `activation` object to that item in `seed-checks.js
 
 Do not change the locked proposal or its expectation. Activation stales all definition
 gates; obtain renewed operator approval of the updated definition before verification.
-The activated command and its `seed-N-expect` attestation are then required. A prose
+The activated command and its `seed-N-expect` attestation are then required. Verify
+refuses evidence that cites a relative file or `dir/` present in neither the run nor the
+checkout, so save each cited log before verifying. A prose
 prerequisite is not machine-detected: the worker must surface it when it becomes true,
 and the operator reviews the evidence rather than accepting a hidden automatic trigger.
 
