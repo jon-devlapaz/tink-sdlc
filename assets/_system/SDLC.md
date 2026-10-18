@@ -71,7 +71,7 @@ python3 _system/scripts/sdlc.py stage <slug> 1 \
 ```
 
 The upstream contract is Seed Me PR #17 at
-`2fc494ae3c9be146aa94c2dac8e555dfc365809b`: `session.py seed checks
+`9ef827f92c79f5d53afd255ac0fb4ae32b85dd4f`: `session.py seed checks
 set|show|render`, session records in `seed-checks.json`, and confirmation v2.
 Intake requires the helper's `status` to report `handoff.verified`: canonical
 records, full seed bytes, rendered acceptance bytes and decisions must still match
