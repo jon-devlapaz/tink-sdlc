@@ -751,14 +751,43 @@ def set_checks(directory, records):
     return {"checks": str(directory / CHECKS_FILE), "count": len(records), "sha256": checks_digest(records)}
 
 
+def markdown_headings(body):
+    """Section offsets outside fenced examples; shorter or different fences cannot close an example."""
+    headings, fence, previous = [], None, None
+    for match in re.finditer(r"[^\n]*\n|[^\n]+", body):
+        line = split_terminator(match.group())[0]
+        if fence:
+            if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + r"{%s,}[ \t]*" % len(fence), line):
+                fence = None
+            previous = None
+            continue
+        opening = re.match(r" {0,3}(`{3,}|~{3,})(.*)$", line)
+        if opening and (opening[1][0] == "~" or "`" not in opening[2]):
+            fence, previous = opening[1], None
+            continue
+        heading = re.match(r" {0,3}(#{1,6})(?:[ \t]+(.*)|$)", line)
+        if heading:
+            title = re.sub(r"[ \t]+#+[ \t]*$", "", heading[2] or "").strip()
+            headings.append((match.start(), len(heading[1]), title))
+            previous = None
+        elif previous and re.fullmatch(r" {0,3}(=+|-+)[ \t]*", line):
+            headings.append((previous[0], 1 if line.lstrip().startswith("=") else 2, previous[1]))
+            previous = None
+        else:
+            previous = (match.start(), line.strip()) if line.strip() and not line.startswith("    ") else None
+    return headings
+
+
 def require_seed_checks(directory):
     records = read_checks(directory)
     body = "".join(seed_lines(directory))
-    headings = list(re.finditer(r"^## Acceptance criteria\r?$", body, re.MULTILINE))
-    require(len(headings) == 1, "checks need exactly one rendered Acceptance criteria section; use `seed checks render`")
-    start = headings[0].start()
-    following = re.search(r"^## ", body[headings[0].end():], re.MULTILINE)
-    end = headings[0].end() + following.start() if following else len(body)
+    headings = markdown_headings(body)
+    acceptance = [(offset, title) for offset, _, title in headings
+                  if one_line(title).casefold() in ("acceptance criteria", "acceptance checks")]
+    require(len(acceptance) == 1 and acceptance[0][1] == "Acceptance criteria",
+            "checks need exactly one rendered Acceptance criteria section outside fences, with no other acceptance sections; use `seed checks render`")
+    start = acceptance[0][0]
+    end = next((offset for offset, level, _ in headings if offset > start and level <= 2), len(body))
     require(body[start:end] == checks_block(records), "checks do not match the rendered Acceptance criteria section; use `seed checks render`")
     return records
 

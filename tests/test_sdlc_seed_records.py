@@ -24,7 +24,7 @@ class RecordIntake(StageBase):
 
     def test_helper_fixture_is_exact_pinned_upstream_source(self):
         self.assertEqual(hashlib.sha256(HELPER.read_bytes()).hexdigest(),
-                         'ae4ccd7dab3f5318b58ced71364b8026faf61510afbeb254ceeea7ca5a44a102')
+                         'df1a08f26dbcb764769787d8edd3c83d6d58b142653d23fc78babcba9db6ec89')
 
     def test_historical_seeds_are_readable_but_not_new_approval_or_verification(self):
         self.new_run('r', approve=False)
@@ -66,6 +66,8 @@ class RecordIntake(StageBase):
         self.set_checks([PASSING])
         seed = confirmed(self.base / 'TEST-stacker-sessions', records, template=original)
         self.intake(seed)
+        self.assertEqual(seed.read_text().count('## Acceptance criteria\n'), 1)
+        self.assertNotIn('## Acceptance checks', seed.read_text())
         self.assertEqual((self.path / 'seed-contract.md').read_bytes(), seed.read_bytes())
         self.assertIn('## Suggested first slice', seed.read_text())
         self.assertEqual([i['kind'] for i in self.definitions()['items']], ['judge', 'provisional', 'provisional'])
