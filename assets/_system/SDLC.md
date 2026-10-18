@@ -62,50 +62,48 @@ An item without `check` is attested. Agents record it with `sdlc.py mark <run> <
 
 ### Locked seed acceptance checks
 
-At stage-1 intake, `stage <slug> 1 --seed-contract PATH` copies the explicitly
-supplied, operator-confirmed seed and imports its `## Acceptance criteria` (or
-`## Acceptance checks`) section into `runs/<slug>/seed-checks.json`. Both Seed Me
-forms work: separate `cmd:`, `expect:`, `cwd:` lines beneath a criterion, or
-``cmd: `<command>` | expect: <expected output> | cwd: <path>`` on one line.
-Commands may be bare shell text (including shell backticks), or wrapped in a
-validated enclosing Markdown backtick span. Only matching whole-field delimiters
-are removed; bytes inside the span are preserved, including any padding spaces.
-Use a longer delimiter for commands containing backticks:
+At stage-1 intake, use the bound Seed Me session and its trusted helper:
 
-```text
-cmd: ``test -d `pwd` && true``
+```sh
+python3 _system/scripts/sdlc.py stage <slug> 1 \
+  --seed-contract <session>/seed-contract.md \
+  --seed-me-helper <seed-me>/scripts/session.py
 ```
 
-Unmatched or ambiguous wrappers refuse intake. Bare commands on separate field
-lines preserve field-like shell text too. For inline commands with shell quoting,
-use an enclosing span rather than ambiguous pipe-delimited field markers.
-Criteria can be plain lines, Markdown list items or Lean `A1 [user] ...` items.
-Fenced examples outside acceptance are ignored when locating headings. A recognized
-acceptance section must be unique and nonempty: nested headings, fenced content
-inside acceptance, duplicate sections and unclosed fences explicitly refuse intake
-rather than importing a partial section or downgrading it to legacy no-check behavior.
-Flatten nested criteria into the canonical plain criterion/field format before retrying.
-Missing command fields also refuse intake; the launcher still does not infer
-confirmation or implementation permission from text.
+The upstream contract is Seed Me PR #17 at
+`b313d6c06b231f94169cf6f0d88d2179b7c1610a`: `session.py seed checks
+set|show|render`, session records in `seed-checks.json`, and confirmation v2.
+Intake requires the helper's `status` to report `handoff.verified`: canonical
+records, full seed bytes, rendered acceptance bytes and decisions must still match
+the confirmation. A Markdown-only seed or v1 confirmation is refused. The helper
+is executable toolchain code; supply a trusted installation, not a seed-provided script.
+Verification proves content binding, not operator identity or implementation approval.
+
+Intake copies the confirmed seed and preserves every record's fields in locked
+`runs/<slug>/seed-checks.json` items with stable `seed-N` IDs. The run metadata
+retains the v2 confirmation and immutable definitions digest. There is no Markdown
+acceptance parser or legacy intake fallback. Historical runs remain readable by
+status/walk without parsing their seeds; new approvals or verification of old
+seed-bound runs require explicit v2 re-intake.
 
 Imported items are **LOCKED, operator-confirmed** definitions, distinct from the
 worker's editable `checklist.json`; `seed-` IDs are reserved. They participate in
 status, dry runs and verification. Their file is bound to every definition gate:
-editing or deleting a check (or the file) stales approval, and `decide` refuses to
-approve imports that disagree with the bound seed. A genuinely revised confirmed
-seed must be explicitly rebound at stage 1 and reviewed again. Rebinding replaces
-imports, including any provisional activations; retain prior evidence in Git.
-Seeds without acceptance checks retain legacy behavior.
+editing or deleting a check (or the file) stales approval, and `decide` refuses
+imports that disagree with the locked digest. Revised records require a newly
+displayed draft, renewed Seed Me confirmation, explicit stage-1 rebind and definition
+review. Rebinding replaces activations too; retain prior evidence in Git.
+Changes to the original session after intake do not change the run-local snapshot.
 
-Settled commands run verbatim through `bash -c`, with the existing process-group
-safe runner and a 120-second timeout. Relative `cwd:` is relative to the selected
-checkout, not the seed's folder; absolute paths are used as supplied. Review command
-and directory safety before intake/dry-run: these commands are not sandboxed.
-Nonzero exits, missing working directories and timeouts fail `verify` even when all
-worker-written checks pass. Free-text `expect:` is preserved, not guessed or treated
-as a literal output matcher: success requires both command exit zero and an
-**operator attestation** for `seed-N-expect`. `you judge:` beneath a criterion
-creates only an operator attestation (`seed-N`), never an automated pass.
+A `cmd` record runs verbatim through `bash -c`, using the process-group-safe
+runner and a 120-second timeout. `cwd` is relative to the selected checkout, never
+the session directory. Absolute paths, traversal, backslashes, drive-letter paths,
+NUL and CR/LF are refused. Commands are not sandboxed; review them before approval.
+Nonzero exits, missing working directories and timeouts fail `verify` even when
+all worker-written checks pass. Prose `expect` is not an output matcher: a command
+must pass **and** have an operator attestation for `seed-N-expect`.
+A `judge` record requires only a manual operator attestation (`seed-N`), using
+`how_to_judge` when supplied and otherwise its statement, never an automated pass.
 
 Record only the actual operator's observation, not the worker's judgment:
 
@@ -120,7 +118,7 @@ including its activation; old marks cannot satisfy a revised command. Reviewer a
 source are local references, not authentication. This adds no auto-approval or new
 meaning to approval; independent forge policy remains the authority boundary.
 
-For a not-yet-runnable check, put `provisional: <what must exist>` before `cmd:`.
+A `provisional` record names its prerequisite in `missing`; `cmd` is optional and proposed only.
 The imported item stays pending and nonblocking while its prerequisite is absent;
 it is never reported as proven. At implementation time the worker must inspect the
 named prerequisite. **Once it exists**, supply the real command and prerequisite
@@ -227,7 +225,7 @@ that integration; proposals grant no implementation or execution authority.
 
 - The launcher (the human, or a script acting for them) records the gate, then runs
   `python3 _system/scripts/sdlc.py stage <run> <n>` (`--check` previews, `--worktree PATH` or `--here`
-  picks the checkout, `--seed-contract PATH` adds the confirmed seed contract to a stage-1 prompt; pass only a seed contract the operator has confirmed in seed-me (the launcher cannot tell, and does not guess from wording), and the run keeps its own copy at `runs/<slug>/seed-contract.md`, committed with the run; that copy's sha256 is recorded in `run.json` and bound to approvals and verification, so editing the copy makes them stale, and re-running stage 1 with a revised original re-copies and re-binds it). It commits
+  picks the checkout, `--seed-contract PATH --seed-me-helper PATH` verifies the bound session's v2 handoff and adds its confirmed seed contract to a stage-1 prompt, and the run keeps its own copy at `runs/<slug>/seed-contract.md`, committed with the run; that copy's sha256 is recorded in `run.json` and bound to approvals and verification, so editing the copy makes them stale, and re-running stage 1 with a revised original re-copies and re-binds it). It commits
   `runs/<run>`, creates the worktree (stage 3: branch `<run>`; stage 5: detached review checkout),
   runs `tink use <skillset> --snapshot runs/<run>/<stage-dir>` inside it, and prints the launch prompt
   for a NEW session. It refuses unless the entry gates are approved and current (stage 5 also needs

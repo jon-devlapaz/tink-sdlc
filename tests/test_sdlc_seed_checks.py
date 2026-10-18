@@ -1,5 +1,6 @@
 """Operator-confirmed seed checks are independent acceptance evidence (#194)."""
 import json
+from seed_me_fixture import HELPER, confirmed, command, provisional, DEFAULT
 
 from test_sdlc_stage import StageBase, PASSING
 
@@ -7,10 +8,8 @@ from test_sdlc_stage import StageBase, PASSING
 class SeedChecks(StageBase):
     def bind(self, checks, profile='light'):
         self.new_run('r', profile=profile, approve=False)
-        seed = self.base / 'seed-contract.md'
-        seed.write_text('status: confirmed for intake\n# Seed\n## Acceptance criteria\n' + checks
-                        + '\n## Boundaries\nNo extra work.\n')
-        self.stage('r', 1, '--seed-contract', str(seed))
+        seed = confirmed(self.base / 'TEST-sessions', checks)
+        self.stage('r', 1, '--seed-contract', str(seed), '--seed-me-helper', str(HELPER))
         self.path = self.root / 'runs/r'
         self.set_checks([PASSING])
 
@@ -30,7 +29,7 @@ class SeedChecks(StageBase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_failing_seed_command_overrules_passing_worker_checks(self):
-        self.bind('A1 [user] Independent check\n   cmd: `test -f accepted` | expect: exit 0 | cwd: .\n')
+        self.bind([command('test -f accepted')])
         self.approve_all()
         self.attest('seed-1-expect')
         failed = self.sdlc('verify', 'r')
@@ -49,7 +48,7 @@ class SeedChecks(StageBase):
         self.assertIn('# checklist item a', log)
 
     def test_seed_edit_drop_and_file_removal_stale_definition_gate(self):
-        self.bind('A1 [user] Check\ncmd: `true`\nexpect: success\ncwd: .\n', profile='full')
+        self.bind([command()], profile='full')
         self.approve_all('full')
         original = self.definitions()
         for mutation in ['edit', 'drop', 'remove']:
@@ -72,8 +71,7 @@ class SeedChecks(StageBase):
                 self.save(original)
 
     def test_you_judge_and_expect_require_operator_attestation(self):
-        self.bind('A1 [user] Output\ncmd: `true` | expect: looks right | cwd: .\n'
-                  'A2 [user] Appearance\nyou judge: The layout is readable\n')
+        self.bind([command(), DEFAULT[0]])
         self.approve_all()
         self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
         status = self.sdlc('status', 'r').stdout
@@ -89,8 +87,7 @@ class SeedChecks(StageBase):
                          ['seed_checks']['seed-2'], 'attested')
 
     def test_provisional_activation_requires_evidence_and_renewed_review(self):
-        self.bind('A1 [agent] Future command\nprovisional: executable exists\n'
-                  'cmd: `./future` | expect: success | cwd: .\n')
+        self.bind([provisional('./future')])
         self.approve_all()
         result = self.sdlc('verify', 'r')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -119,7 +116,7 @@ class SeedChecks(StageBase):
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
 
     def test_provisional_cannot_be_marked_or_activated_without_evidence(self):
-        self.bind('A1 [agent] Future\nprovisional: executable exists | cmd: `false` | expect: success | cwd: .\n')
+        self.bind([provisional('false')])
         self.approve_all()
         self.assertNotEqual(self.sdlc('mark', 'r', 'seed-1', 'passed', '--evidence', 'guess').returncode, 0)
         value = self.definitions()
@@ -129,36 +126,28 @@ class SeedChecks(StageBase):
                                       '--source', 's', '--reason', 'r').returncode, 0)
         self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
 
-    def test_inline_lean_list_and_backtick_shell_fields_are_verbatim(self):
-        self.new_run('r', approve=False)
-        seed = self.base / 'lean.md'
-        command = 'printf "%s\\n" "value | expect: literal" | grep literal'
-        seed.write_text('status: confirmed for intake\n## Acceptance checks\n'
-                        '- [ ] A1 [user] Exact shell text\n'
-                        f'  cmd: `{command}` | expect: literal | cwd: .\n'
-                        '\n## Next steps\ncmd: `false`\n')
-        self.stage('r', 1, '--seed-contract', str(seed))
-        self.path = self.root / 'runs/r'
-        self.set_checks([PASSING])
-        self.assertEqual(self.definitions()['items'][0]['cmd'], command)
+    def test_shell_fields_are_verbatim(self):
+        cmd = 'test -d `pwd` && printf "%s" "literal | expect: not a field"'
+        self.bind([command(cmd)])
+        self.assertEqual(self.definitions()['items'][0]['cmd'], cmd)
         self.approve_all()
         self.attest('seed-1-expect')
-        out = self.sdlc('verify', 'r')
-        self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertIn('Seed checks (operator-confirmed)', out.stdout)
-        self.assertIn('Worker-written checks:', out.stdout)
+        result = self.sdlc('verify', 'r')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Seed checks (operator-confirmed)', result.stdout)
+        self.assertIn('Worker-written checks:', result.stdout)
 
     def test_cwd_and_shell_command_are_preserved(self):
         (self.root / 'sub').mkdir()
         (self.root / 'sub/proof').write_text('exact output\n')
-        self.bind('A1 [user] Shell pipeline\ncmd: `cat proof | grep "exact output"`\n'
-                  'expect: exact output\ncwd: sub\n')
+        self.bind([command('cat proof | grep "exact output"', 'sub')])
         self.approve_all()
         self.attest('seed-1-expect')
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
 
-    def test_malformed_executable_check_refuses_intake_without_mutation(self):
+    def test_markdown_only_seed_refuses_intake_without_mutation(self):
         self.new_run('r', approve=False)
-        seed = self.base / 'bad.md'
-        seed.write_text('## Acceptance checks\nA1 [user] Missing fields\ncmd: `true`\n')
-        self.refuses('r', 1, '--seed-contract', str(seed), message='expect: and cwd:')
+        seed = self.base / 'seed-contract.md'
+        seed.write_text('## Acceptance criteria\nCommand: true\n')
+        self.refuses('r', 1, '--seed-contract', str(seed), '--seed-me-helper', str(HELPER),
+                     message='Seed Me')

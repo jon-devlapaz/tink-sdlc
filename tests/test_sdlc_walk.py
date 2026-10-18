@@ -36,7 +36,7 @@ def tree_hash(root):
 
 class WalkBase(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-walk-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve() / 'repo'
         self.root.mkdir()
@@ -107,6 +107,27 @@ class WalkBase(unittest.TestCase):
 
 
 class FreshScaffold(WalkBase):
+    def test_older_completed_arcade_runs_do_not_reparse_markdown(self):
+        # Modelled on tink-arcade runs/pacman (item 7) and runs/snake (item 1):
+        # old bound seeds, no run_id or imported records, existing completed evidence.
+        fixtures = json.loads((ROOT / 'tests/fixtures/older-completed-runs.json').read_text())
+        for slug, fixture in fixtures.items():
+            self.new_run(slug)
+            seed = fixture.pop('seed')
+            relative = f'runs/{slug}/seed-contract.md'
+            self.write(relative, seed)
+            fixture['seed_contract'] = {'path': relative, 'sha256': hashlib.sha256(seed.encode()).hexdigest(),
+                                        'source': f'/tmp/TEST-old-sessions/{slug}/seed-contract.md'}
+            self.write(f'runs/{slug}/run.json', json.dumps(fixture))
+            self.write(f'runs/{slug}/decisions/3-TEST.json', json.dumps({'decision': 'approved', 'inputs': 'old'}))
+            self.write(f'runs/{slug}/04-test/output/verification.json', json.dumps({'result': 'passed'}))
+            self.write(f'runs/{slug}/05-deploy/output/release.md', 'TEST completed cabinet\n')
+        before = tree_hash(self.root)
+        code, data = self.walk()
+        self.assertEqual(code, 0, json.dumps(data, indent=2))
+        self.assertEqual(self.check(data, 'W6')['status'], 'pass')
+        self.assertEqual(tree_hash(self.root), before)
+
     def test_fresh_scaffold_has_no_warnings_or_failures(self):
         code, data = self.walk()
         self.assertEqual(code, 0)

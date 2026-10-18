@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from seed_me_fixture import HELPER, confirmed
 import shutil
 import subprocess
 import tempfile
@@ -40,7 +41,7 @@ def tree_hash(root):
 
 class StageBase(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-')
         self.addCleanup(self.temp.cleanup)
         base = Path(self.temp.name).resolve()
         self.base = base
@@ -241,30 +242,32 @@ class HereMode(StageBase):
 
     def test_stage_one_seed_contract_repo_relative(self):
         self.new_run('r', approve=False)
-        (self.root / 'seed-contract.md').write_text(CONFIRMED)
-        result = self.stage('r', 1, '--seed-contract', 'seed-contract.md', cwd=self.root)
+        target = confirmed(self.base / 'TEST-sessions')
+        result = self.stage('r', 1, '--seed-contract', os.path.relpath(target, self.root),
+                            '--seed-me-helper', str(HELPER), cwd=self.root)
         self.assertEqual(result.stdout.splitlines()[-1],
                          'Begin stage 1 (plan) of SDLC run `r`. The operator-confirmed seed contract is at runs/r/seed-contract.md; '
                          'it is input, not authorization.')
-        self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), CONFIRMED)
+        self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), target.read_text())
 
     def test_stage_one_seed_contract_absolute_outside_repo_is_copied_into_the_run(self):
         self.new_run('r', approve=False)
-        outside = self.base / 'notes.md'
-        outside.write_text(CONFIRMED)
-        result = self.stage('r', 1, '--seed-contract', str(outside))
+        outside = confirmed(self.base / 'TEST-sessions')
+        original = outside.read_text()
+        result = self.stage('r', 1, '--seed-contract', str(outside), '--seed-me-helper', str(HELPER))
         self.assertIn('seed contract is at runs/r/seed-contract.md;', result.stdout.splitlines()[-1])
-        self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), CONFIRMED)
-        self.assertEqual(outside.read_text(), CONFIRMED)
+        self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), original)
+        self.assertEqual(outside.read_text(), original)
 
     def test_the_run_binds_its_own_copy_not_the_original(self):
         self.new_run('r', approve=False)
-        target = self.base / 'contract.md'
-        target.write_text(CONFIRMED)
-        self.stage('r', 1, '--seed-contract', str(target))
+        target = confirmed(self.base / 'TEST-sessions')
+        self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
         recorded = json.loads((self.root / 'runs/r/run.json').read_text())['seed_contract']
-        self.assertEqual(recorded, {'path': 'runs/r/seed-contract.md', 'sha256': hashlib.sha256(CONFIRMED.encode()).hexdigest(),
-                                    'source': str(target)})
+        self.assertEqual({k: recorded[k] for k in ('path', 'sha256', 'source')},
+                         {'path': 'runs/r/seed-contract.md', 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
+                          'source': str(target)})
+        self.assertEqual(recorded['confirmation']['schema_version'], 2)
         self.decide('r', 3)
         self.assertIn('Stage 3: approved', self.sdlc('status', 'r').stdout)
         target.write_text('seed contract — confirmed for intake\nedited elsewhere\n')
@@ -277,31 +280,28 @@ class HereMode(StageBase):
         self.new_run('r', approve=False)
         metadata = self.root / 'runs/r/run.json'
         run_id = json.loads(metadata.read_text())['run_id']
-        target = self.base / 'contract.md'
-        target.write_text(CONFIRMED)
-        self.stage('r', 1, '--seed-contract', str(target))
+        target = confirmed(self.base / 'TEST-sessions')
+        self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
         self.decide('r', 3)
-        target.write_text(CONFIRMED + 'revised\n')
-        self.stage('r', 1, '--seed-contract', str(target))
-        self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), CONFIRMED + 'revised\n')
+        target = confirmed(self.base / 'TEST-revised-sessions', extra='## Revised\nRevised scope.\n')
+        self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
+        self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), target.read_text())
         self.assertNotIn('Stage 3: approved', self.sdlc('status', 'r').stdout)
         self.assertEqual(json.loads(metadata.read_text())['run_id'], run_id)
 
     def test_check_preview_copies_nothing(self):
         self.new_run('r', approve=False)
-        target = self.base / 'contract.md'
-        target.write_text(CONFIRMED)
+        target = confirmed(self.base / 'TEST-sessions')
         before = (self.root / 'runs/r/run.json').read_text()
-        out = self.stage('r', 1, '--check', '--seed-contract', str(target)).stdout
+        out = self.stage('r', 1, '--check', '--seed-contract', str(target), '--seed-me-helper', str(HELPER)).stdout
         self.assertIn('Would copy', out)
         self.assertFalse((self.root / 'runs/r/seed-contract.md').exists())
         self.assertEqual((self.root / 'runs/r/run.json').read_text(), before)
 
     def test_decide_refuses_a_run_copy_that_no_longer_matches_the_record(self):
         self.new_run('r', approve=False)
-        target = self.base / 'contract.md'
-        target.write_text(CONFIRMED)
-        self.stage('r', 1, '--seed-contract', str(target))
+        target = confirmed(self.base / 'TEST-sessions')
+        self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
         copy = self.root / 'runs/r/seed-contract.md'
         for change in ('overwrite', 'delete'):
             with self.subTest(change=change):
@@ -313,21 +313,20 @@ class HereMode(StageBase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('seed contract', result.stderr)
                 self.assertEqual(list((self.root / 'runs/r/decisions').glob('*.json')), [])
-        copy.write_text(CONFIRMED)
+        copy.write_bytes(target.read_bytes())
         self.decide('r', 3)
 
     def test_worktree_launch_carries_the_seed_contract_copy(self):
         self.new_run('r', approve=False)
         run_id = json.loads((self.root / 'runs/r/run.json').read_text())['run_id']
         self.commit_run()
-        target = self.base / 'contract.md'
-        target.write_text(CONFIRMED)
-        self.stage('r', 1, '--worktree', str(self.base / 'wt1'), '--seed-contract', str(target), env=IDENT)
+        target = confirmed(self.base / 'TEST-sessions')
+        self.stage('r', 1, '--worktree', str(self.base / 'wt1'), '--seed-contract', str(target), '--seed-me-helper', str(HELPER), env=IDENT)
         bound = json.loads((self.base / 'wt1/runs/r/run.json').read_text())
         self.assertEqual(bound['run_id'], run_id)
         self.assertEqual(json.loads((self.root / 'runs/r/run.json').read_text())['run_id'], run_id)
         self.assertEqual(bound['seed_contract']['path'], 'runs/r/seed-contract.md')
-        self.assertEqual((self.base / 'wt1/runs/r/seed-contract.md').read_text(), CONFIRMED)
+        self.assertEqual((self.base / 'wt1/runs/r/seed-contract.md').read_text(), target.read_text())
         self.assertEqual(self.git('status', '--porcelain', '--', 'runs/r').stdout.strip(), '')
 
     def test_failed_compile_leaves_no_empty_parent_directories(self):

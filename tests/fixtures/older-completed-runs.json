@@ -1,0 +1,14 @@
+{
+  "pacman": {
+    "seed": "status: confirmed for intake\n## Acceptance criteria\nFirst check\ncmd: true\nexpect: success\ncwd: .\nSecond check\ncmd: true\nexpect: success\ncwd: .\nThird check\ncmd: true\nexpect: success\ncwd: .\nFourth check\ncmd: true\nexpect: success\ncwd: .\nFifth check\ncmd: true\nexpect: success\ncwd: .\nSixth check\ncmd: true\nexpect: success\ncwd: .\nSeventh: a human plays the cabinet and it feels right.\n## Boundaries\nExisting cabinet only.\n",
+    "profile": "light",
+    "kind": "feature",
+    "schema": 1
+  },
+  "snake": {
+    "seed": "status: confirmed for intake\n## Acceptance criteria\nFirst: snake plays correctly and matches the arcade style.\n## Boundaries\nExisting cabinet only.\n",
+    "profile": "light",
+    "kind": "feature",
+    "schema": 1
+  }
+}
