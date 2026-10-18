@@ -26,7 +26,7 @@ class RecordIntake(StageBase):
 
     def test_helper_fixture_is_exact_pinned_upstream_source(self):
         self.assertEqual(hashlib.sha256(HELPER.read_bytes()).hexdigest(),
-                         '29847ff959da90b2dbb9252af6162332d3325413f26ea071e34bcd7c5204968a')
+                         '22e506bf40018666d6d1b5246299dd0ee88bdebffc7c9a92c165b864bc49111b')
         self.assertEqual(hashlib.sha256(FRAME.read_bytes()).hexdigest(),
                          '24c1fdaf3280200562fb927abe2d73458ab561e185be70de30e3699c17e6e87b')
 

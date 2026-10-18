@@ -817,6 +817,7 @@ def document_headings(body):
 def require_seed_checks(directory):
     records = read_checks(directory)
     body = "".join(seed_lines(directory))
+    require(not re.search(r"\r(?!\n)", body), "checks refuse lone CR: seed line endings must be LF or CRLF")
     headings = document_headings(body)
     require(headings and re.fullmatch(r"# [^\r\n]*\S", headings[0][1]),
             "checks need one leading H1 title and canonical Full or Lean section headings")

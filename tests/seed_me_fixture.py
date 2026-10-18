@@ -1,4 +1,4 @@
-"""Real zero-call Seed Me CLI, pinned to PR #17 934891aa8b130e8edd0391144bafe9403be84b82.
+"""Real zero-call Seed Me CLI, pinned to PR #17 2fc494ae3c9be146aa94c2dac8e555dfc365809b.
 
 session.py is a byte-identical upstream test fixture, not a second runtime implementation.
 """
@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-HELPER = Path(__file__).parent / 'fixtures/seed-me-934891a/scripts/session.py'
+HELPER = Path(__file__).parent / 'fixtures/seed-me-2fc494a/scripts/session.py'
 FRAME = HELPER.parents[1] / 'seed_fixture.py'
 _spec = importlib.util.spec_from_file_location('pinned_seed_fixture', FRAME)
 _frame = importlib.util.module_from_spec(_spec)
