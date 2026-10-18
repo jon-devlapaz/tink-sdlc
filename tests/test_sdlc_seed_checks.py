@@ -115,6 +115,35 @@ class SeedChecks(StageBase):
         self.attest('seed-1-expect')
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
 
+    def test_activation_evidence_paths_must_exist_in_the_checkout(self):
+        # Shape of the Stacker run's seed-3 and seed-4 evidence (tink-arcade ca64bd9), whose log was absent (#76).
+        self.bind([provisional('./future')])
+        value = self.definitions()
+        value['items'][0]['activation'] = {
+            'cmd': 'true', 'cwd': '.',
+            'evidence': 'Runs green in 03-build/output/stability-{1,2}.log and 03-build/output/red-probes/; '
+                        'the command now ships (see 03-build/output/rules-command.log, tests/test_rules.py).'}
+        self.save(value)
+        self.approve_all()
+        self.attest('seed-1-expect')
+        result = self.sdlc('verify', 'r')
+        self.assertNotEqual(result.returncode, 0)
+        for missing in ('03-build/output/stability-1.log', '03-build/output/stability-2.log',
+                        '03-build/output/red-probes/', '03-build/output/rules-command.log', 'tests/test_rules.py'):
+            self.assertIn(missing, result.stderr)
+        output = self.path / '03-build/output'
+        (output / 'red-probes').mkdir(parents=True)
+        for name in ('stability-1.log', 'stability-2.log', 'rules-command.log'):
+            (output / name).write_text('synthetic log\n')
+        result = self.sdlc('verify', 'r')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('tests/test_rules.py', result.stderr)
+        self.assertNotIn('rules-command.log', result.stderr)
+        (self.root / 'tests').mkdir(exist_ok=True)
+        (self.root / 'tests/test_rules.py').write_text('')  # Repository-relative evidence resolves from the root.
+        result = self.sdlc('verify', 'r')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_provisional_cannot_be_marked_or_activated_without_evidence(self):
         self.bind([provisional('false')])
         self.approve_all()
