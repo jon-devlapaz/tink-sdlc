@@ -2,9 +2,18 @@
 
 Inputs: current stage 04 evidence, candidate diff, approved brief or spec/plan,
 and `_shared/REVIEW.md`.
-Output: `runs/<slug>/05-deploy/output/REVIEW-findings.md` and a PR when requested.
-Open (or confirm) the PR from the verified, committed candidate. The agent may open it. Only a human authorizes a merge: directly for this PR, or through a recorded standing approval that names merging (tink-substrate's approved-sequence contract). With that authorization the agent may merge.
-If code changes after the PR is open, run verify again before the review continues.
+Output: `runs/<slug>/05-deploy/output/REVIEW-findings.md` (the current review only) and a PR when requested.
+
+Two jobs, kept apart:
+- **Reviewer** (the session in the review checkout): reads current verification and writes findings only.
+  It does not change code, run `verify`, mark items or touch the PR. Missing or stale verification is a finding, not a repair.
+- **Owner** (the session that built the candidate): pushes the stage-open commit before review so the PR head
+  is what the reviewer reads, brings `REVIEW-findings.md` back to the PR branch, opens or updates the PR, and
+  runs verify again after any code change. The agent may open the PR. Only a human authorizes a merge: directly for this PR, or through a recorded standing approval that names merging (tink-substrate's approved-sequence contract). With that authorization the agent may merge.
+
+A repeat review replaces `REVIEW-findings.md`; Git keeps the previous one, because once the owner has brought it back,
+the next `stage <slug> 5` commits `runs/<slug>` first. Begin a repeat review with `Previous review: <commit>`. If the old review checkout
+still exists, the launcher refuses and names both ways forward.
 
 Manual delivery recipe: `git push -u origin <slug>`, then `gh pr create --fill`.
 If `stage <slug> 5` printed a delivery warning (no `origin`, or `gh` missing or not signed in), do not stop silently:

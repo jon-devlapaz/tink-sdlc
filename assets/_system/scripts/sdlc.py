@@ -1682,6 +1682,15 @@ def stage(args):
         first_existing = target.parent
         while not first_existing.exists():
             first_existing = first_existing.parent
+        if (target.exists() or target.is_symlink()) and n == 5 and not args.worktree:
+            # A repeat review: name both ways forward and choose neither; the old checkout may hold findings.
+            number = 2
+            while Path(f'{target}-{number}').exists() or Path(f'{target}-{number}').is_symlink():
+                number += 1
+            fresh = Path(f'{target}-{number}')
+            raise ValueError(f'review checkout already exists: {target}. Once its findings are on this branch, '
+                             f'remove it: git worktree remove {target}; or review in a fresh checkout: '
+                             f'python3 _system/scripts/sdlc.py stage {run} 5 --worktree {fresh}')
         if target.exists() or target.is_symlink():
             raise ValueError(f'worktree path already exists: {target} (remove it with: git worktree remove {target})')
         if not detached and run_git(ROOT, 'show-ref', '--verify', '--quiet', f'refs/heads/{run}').returncode == 0:
