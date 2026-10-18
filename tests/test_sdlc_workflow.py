@@ -21,7 +21,7 @@ spec.loader.exec_module(workflow)
 
 class WorkflowTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-workflow-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         shutil.copytree(SOURCE.parents[2] / '_shared', self.root / '_shared')

@@ -330,6 +330,10 @@ are refused. The ID is not approval or tamper protection: local files are editab
   when allowed). Verification also has `timeout_seconds`, a total execution budget
   or null when blocked. These are UI hints, not authorization: `verify <run>` and
   `mark <run> <item> passed|failed --evidence <text>` recheck their own rules.
+  Historical seed bindings without record intake remain readable, but their status
+  errors and action reasons require explicit v2 re-intake at stage 1 before renewed
+  definition review. Even retained current gates or old passing receipts cannot
+  make verification eligible/current; `next_action` names re-intake, not reapproval alone.
 - `artifacts` (named text), `decisions` (normalized stage, nanosecond timestamp,
   decision, reviewer, source, reason, and opaque id). Decision values are `approved`
   or `changes-requested`; reviewer, source, and reason are strings or null when

@@ -1,9 +1,13 @@
 """Provider contract: exercise the shipped runtime, not a second implementation."""
 import fcntl
+import hashlib
 import json
 import shutil
 import subprocess
 import sys
+import tempfile
+
+from seed_me_fixture import HELPER, confirmed
 import unittest
 import uuid
 from unittest.mock import patch
@@ -145,6 +149,94 @@ class ProtocolTests(unittest.TestCase):
         self.assertFalse(view['log']['truncated'])
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
         self.assertEqual(view['cli_status'] + '\n', self.cli('status', 'example'))
+
+    def historical_seed_with_retained_approval(self, retained_pass=False):
+        # Review F2: a synthetic retained current receipt, never new approval of an old seed.
+        self.checked_run()
+        if retained_pass:
+            self.mark_manual()
+            self.cli('verify', 'example')
+        path = self.root / 'runs/example'
+        seed = path / 'seed-contract.md'
+        seed.write_text('## Acceptance criteria\nTEST historical handwritten requirement\n')
+        metadata = json.loads((path / 'run.json').read_text())
+        metadata.pop('run_id')
+        metadata['seed_contract'] = {'path': 'runs/example/seed-contract.md',
+                                     'sha256': hashlib.sha256(seed.read_bytes()).hexdigest(),
+                                     'source': '/tmp/TEST-retained-session/seed-contract.md'}
+        (path / 'run.json').write_text(json.dumps(metadata))
+        with patch.object(fixtures.workflow, 'ROOT', self.root):
+            for receipt in (path / 'decisions').glob('*.json'):
+                value = json.loads(receipt.read_text())
+                value['inputs'] = fixtures.workflow.inputs(path, 3)
+                receipt.write_text(json.dumps(value))
+            if retained_pass:
+                receipt = path / '04-test/output/verification.json'
+                value = json.loads(receipt.read_text())
+                value.update(fixtures.workflow.evidence_inputs(path))
+                receipt.write_text(json.dumps(value))
+        return path
+
+    def assert_record_intake_blocked(self):
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        view = self.view()
+        self.assertIsNone(view['run_id'])
+        self.assertEqual(view['verification_status'], 'blocked')
+        if view['verification'] is not None:
+            self.assertFalse(view['verification']['passed'])
+        self.assertTrue(any('record intake' in error for error in view['errors']))
+        for action in ('verify', 'mark'):
+            self.assertFalse(view['actions'][action]['allowed'])
+            self.assertIn('v2 re-intake', view['actions'][action]['reason'])
+        self.assertEqual(set(view['actions']['verify']), {'allowed', 'reason', 'timeout_seconds'})
+        self.assertIsNone(view['actions']['verify']['timeout_seconds'])
+        self.assertEqual(set(view['actions']['mark']), {'allowed', 'reason'})
+        for text in ('explicit v2 re-intake', 'stage example 1', '--seed-contract', '--seed-me-helper'):
+            self.assertIn(text, view['next_action'])
+            self.assertIn(text, view['cli_status'])
+        self.assertEqual(view['cli_status'] + '\n', self.cli('status', 'example'))
+        summary = self.machine('status')['runs'][0]
+        self.assertEqual(summary['verification_status'], 'blocked')
+        self.assertEqual(summary['next_action'], view['next_action'])
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+        return view
+
+    def test_historical_retained_approval_requires_v2_reintake_in_status(self):
+        for retained_pass in (False, True):
+            with self.subTest(retained_pass=retained_pass):
+                self.setUp()
+                self.historical_seed_with_retained_approval(retained_pass)
+                view = self.assert_record_intake_blocked()
+                self.assertEqual(view['gates'], [{'stage': 3, 'status': 'approved', 'blocked': False}])
+                self.assertIn('record intake', self.cli('verify', 'example', ok=False))
+
+    def test_historical_stale_and_pending_gates_prioritize_v2_reintake(self):
+        for gate in ('stale', 'pending'):
+            with self.subTest(gate=gate):
+                self.setUp()
+                path = self.historical_seed_with_retained_approval()
+                if gate == 'stale':
+                    (path / 'brief.md').write_text('TEST changed scope')
+                else:
+                    for receipt in (path / 'decisions').glob('*.json'):
+                        receipt.unlink()
+                view = self.assert_record_intake_blocked()
+                self.assertEqual(view['gates'][0]['status'], gate)
+
+    def test_explicit_v2_reintake_restores_normal_status_actions_after_review(self):
+        self.historical_seed_with_retained_approval()
+        self.assert_record_intake_blocked()
+        sessions = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-reviewed-reintake-')
+        self.addCleanup(sessions.cleanup)
+        seed = confirmed(sessions.name)
+        self.cli('stage', 'example', '1', '--here', '--seed-contract', str(seed), '--seed-me-helper', str(HELPER))
+        self.assertFalse(self.view()['actions']['verify']['allowed'])  # renewed definition review still required
+        self.approve()
+        view = self.view()
+        self.assertEqual(view['errors'], [])
+        self.assertTrue(view['actions']['verify']['allowed'])
+        self.assertTrue(view['actions']['mark']['allowed'])
+        self.assertNotIn('v2 re-intake', view['next_action'])
 
     def test_real_light_run_evidence_and_actions(self):
         self.checked_run()

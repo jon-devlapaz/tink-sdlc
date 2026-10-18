@@ -306,7 +306,11 @@ def stages(path):
 def require_record_intake(path):
     bound = require_run(path).get('seed_contract')
     if bound and 'definitions_sha256' not in bound:
-        raise ValueError('Historical seed contract needs verified Seed Me record intake at stage 1 before new approval or verification.')
+        raise ValueError('Historical seed contract needs verified Seed Me record intake; complete explicit v2 re-intake '
+                         'at stage 1 before new approval or verification: display a fresh draft and obtain Seed Me v2 '
+                         'confirmation, then run: '
+                         f'python3 _system/scripts/sdlc.py stage {path.name} 1 '
+                         '--seed-contract <session>/seed-contract.md --seed-me-helper <trusted-seed-me>/scripts/session.py')
 
 
 def ready(path):
@@ -809,6 +813,11 @@ def status_state(path):
         raise ValueError('Run profile must be light or full.')
     if not isinstance(meta.get('kind', 'feature'), str):
         raise ValueError('Run kind must be a string.')
+    intake_error = None
+    try:
+        require_record_intake(path)
+    except ValueError as error:
+        intake_error = str(error)
     gates, blocked = [], False
     for stage in stages(path):
         state = gate(path, stage)
@@ -816,6 +825,7 @@ def status_state(path):
             raise ValueError(f'Unknown gate state: {state}')
         gates.append({'stage': stage, 'status': state, 'blocked': blocked})
         blocked = blocked or state != 'approved'
+    blocked = blocked or bool(intake_error)
     record_path, _ = verification_files(path)
     record = read_json(record_path) if record_path.exists() else None
     if record is not None:
@@ -846,7 +856,7 @@ def status_state(path):
     else:
         state = {'passed': 'stale', 'failed': 'failed', 'running': 'interrupted'}[record['result']]
     checklist = checklist_view(path, verified)
-    errors = []
+    errors = [intake_error] if intake_error else []
     try:
         config = checks_config()
     except (ValueError, OSError, TypeError, AttributeError) as error:
@@ -873,7 +883,7 @@ def status_state(path):
         elif any(item['automatic'] for item in checklist['items']):
             gate_reason = (f'Run python3 _system/scripts/sdlc.py dry-run {path.name} before definition review; '
                            'inspect each check output, then record the actual human decision.')
-    unavailable = 'A writer already owns this run.' if active else gate_reason
+    unavailable = 'A writer already owns this run.' if active else (intake_error or gate_reason)
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')

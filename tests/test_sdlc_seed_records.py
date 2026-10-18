@@ -1,6 +1,8 @@
 """Record-bound intake regressions; no Markdown acceptance parser remains (#73)."""
 import hashlib
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from seed_me_fixture import HELPER, cli, confirmed, command, provisional, DEFAULT
@@ -126,6 +128,46 @@ class RecordIntake(StageBase):
                 (self.path / 'seed-checks.json').write_text(json.dumps(value))
                 result = self.sdlc('decide', 'r', '3', 'approved', '--reviewer', 'h', '--source', 's', '--reason', 'r')
                 self.assertNotEqual(result.returncode, 0)
+
+    def test_review_f1_hidden_acceptance_repros_refuse_real_intake(self):
+        for variant in ('emphasized-heading', 'comment-only'):
+            with self.subTest(variant=variant):
+                self.setUp()
+                seed = self.prepare([command()])
+                self.intake(seed)  # real CLI positive control: the sole true record is imported
+                original = seed.read_text()
+                rendered = cli('seed', 'checks', 'render', seed.parent)
+                confirmation_path = seed.parent / 'seed-confirmation.json'
+                confirmation = json.loads(confirmation_path.read_text())
+
+                def transform(body):
+                    replacement = (rendered + '## **Acceptance checks**\nTEST additional failing requirement\n'
+                                   'cmd: false\nexpect: exit zero\ncwd: .\n\n' if variant == 'emphasized-heading'
+                                   else '<!--\n' + rendered + '## End example\n-->\n\n')
+                    return body.replace(rendered, replacement, 1)
+
+                # New confirmation must refuse both reviewer repros without writing.
+                draft = '\n'.join(line for line in original.split('\n') if not line.startswith('Confirmed by:'))
+                seed.write_text(transform(draft.replace('status: confirmed for intake', 'status: draft', 1)))
+                before = {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()}
+                refused = subprocess.run([sys.executable, str(HELPER), 'seed', 'confirm', str(seed.parent),
+                                          '--revision', 'r1', '--source', 'TEST reviewer repro'],
+                                         capture_output=True, text=True)
+                self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+                self.assertIn('checks', refused.stderr)
+                self.assertEqual(before, {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()})
+
+                # Model a receipt admitted by the old helper: all hashes still match.
+                seed.write_text(transform(original))
+                confirmation['seed_sha256'] = hashlib.sha256(seed.read_bytes()).hexdigest()
+                confirmation_path.write_text(json.dumps(confirmation))
+                before = {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()}
+                self.assertFalse(json.loads(cli('status', seed.parent))['handoff']['verified'])
+                self.refuses('r', 1, '--here', '--seed-contract', str(seed), '--seed-me-helper', str(HELPER),
+                             message='Seed Me handoff is not verified')
+                self.assertEqual(before, {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()})
+                self.assertEqual((self.path / 'seed-contract.md').read_text(), original)
+                self.assertEqual(self.definitions()['items'][0]['cmd'], 'true')
 
     def test_no_helper_is_an_explicit_error(self):
         seed = self.prepare()
