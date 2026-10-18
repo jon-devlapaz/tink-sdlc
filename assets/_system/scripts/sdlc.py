@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import errno
+import fnmatch
 import fcntl
 import hashlib
 import json
@@ -275,7 +276,7 @@ def marks(path, items):
         try:
             record = read_json(receipt)
             key = (record['time_ns'], receipt.name)
-            if record['item'] in ids and record['result'] in ('passed', 'failed') and isinstance(record['time_ns'], int):
+            if record['item'] in ids and record['result'] in ('passed', 'failed', 'unknown') and isinstance(record['time_ns'], int):
                 if record['item'] not in latest_marks or key > latest_marks[record['item']][0]:
                     latest_marks[record['item']] = (key, record)
         except (ValueError, KeyError, TypeError, OSError):
@@ -440,6 +441,22 @@ def checks_config():
     return config
 
 
+def unlisted_authors(config):
+    """Commits after `authors.since` whose author matches no `authors.allow` pattern (#78); earlier history is never judged."""
+    policy = config.get('authors')
+    if policy is None:
+        return []
+    if (not isinstance(policy, dict) or set(policy) != {'since', 'allow'} or not isinstance(policy['since'], str)
+            or not isinstance(policy['allow'], list) or not policy['allow']
+            or not all(isinstance(p, str) and p.strip() for p in policy['allow'])):
+        raise ValueError('verification.json authors needs a since commit and a nonempty allow list of "Name <email>" patterns.')
+    listed = run_git(ROOT, 'log', '--format=%h %an <%ae>', f"{policy['since']}..HEAD")
+    if listed.returncode:
+        raise ValueError(f"verification.json authors.since is not a commit before HEAD: {git_line(listed)}")
+    return [line for line in listed.stdout.splitlines()
+            if not any(fnmatch.fnmatchcase(line.split(' ', 1)[1], pattern) for pattern in policy['allow'])]
+
+
 def test_lock(path):
     lock = path / 'test-lock.json'
     if not lock.exists():
@@ -599,6 +616,10 @@ def verify(args):
             if missing:
                 raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
             config = checks_config()
+            unlisted = unlisted_authors(config)
+            if unlisted:
+                raise ValueError('Commits by authors verification.json does not allow: ' + '; '.join(unlisted)
+                                 + ' (allowed: ' + ', '.join(config['authors']['allow']) + ')')
             before_files = snapshot_files()
             before = evidence_inputs(path)
             items = load_checklist(path)
@@ -749,12 +770,23 @@ def mark(args):
                              f'(its check runs during: python3 _system/scripts/sdlc.py verify {args.run})')
         if gate(path, 3) != 'approved':
             raise ValueError('Stage 3 needs a current approval receipt before items can be marked.')
+        if args.result == 'unknown' and not item.get('operator_attestation'):
+            raise ValueError('unknown is for an operator observation that does not address this expectation.')
+        shared = sorted(other for other, record in marks(path, items).items() if other != args.item
+                        and record.get('reviewer') and record['evidence'] == evidence)
+        if item.get('operator_attestation') and shared and not args.covers_all:
+            raise ValueError(f"The same evidence already attests {', '.join(shared)}; give evidence for this "
+                             f"expectation ({item['verify']}), mark it unknown, or pass --covers-all if the "
+                             'operator meant it to cover each of them.')
         now = time.time_ns()
         write_json(path / 'marks' / f'{args.item}-{now}-{uuid.uuid4().hex}.json', {
             'item': args.item, 'result': args.result, 'evidence': evidence,
             **({'reviewer': args.reviewer, 'source': args.source, 'seed_definition': item['seed_definition']}
                if item.get('operator_attestation') else {}),
+            **({'covers_all': True} if args.covers_all else {}),
             'candidate': snapshot()['tree'], 'time_ns': now})
+    if item.get('operator_attestation'):
+        print(f"Expectation: {item['verify']}")
     print(f'Recorded {args.result} receipt for {args.item}.')
 
 
@@ -778,7 +810,7 @@ def checklist_view(path, verified=False):
         state = ('passed' if verified else 'pending') if automatic else (record['result'] if record else 'pending')
         result.append({**item, 'status': state, 'automatic': automatic,
                        'proof': 'automated' if automatic else 'attested',
-                       'mark': {key: record.get(key) for key in ('item', 'result', 'evidence', 'candidate', 'time_ns')} if record else None,
+                       'mark': {key: record.get(key) for key in ('item', 'result', 'evidence', 'candidate', 'time_ns', 'covers_all')} if record else None,
                        'needs_recheck': bool(not automatic and record and state == 'passed'
                                              and tree is not None and record.get('candidate') != tree)})
     return {'state': 'defined' if items else 'empty', 'items': result}
@@ -801,6 +833,8 @@ def checklist_text(view):
             lines.append(f"  - {item['id']}: {item['status']}{suffix}")
         elif item['needs_recheck']:
             lines.append(f"  - {item['id']}: attested before the latest changes; re-check it only if the change affects it")
+        elif item['mark'] and item['mark'].get('covers_all'):
+            lines.append(f"  - {item['id']}: passed; the operator's evidence covers several expectations")
     return '\n'.join(lines)
 
 
@@ -1776,10 +1810,12 @@ def main():
     marking = commands.add_parser('mark')
     marking.add_argument('run')
     marking.add_argument('item')
-    marking.add_argument('result', choices=['passed', 'failed'])
+    marking.add_argument('result', choices=['passed', 'failed', 'unknown'])
     marking.add_argument('--evidence', required=True)
     marking.add_argument('--reviewer', help='actual operator attesting a seed check')
     marking.add_argument('--source', help='reference to the operator observation')
+    marking.add_argument('--covers-all', action='store_true',
+                         help='the operator meant this evidence to attest every expectation it is already recorded for')
     baseline = commands.add_parser('lock-tests')
     baseline.add_argument('run')
     baseline.add_argument('paths', nargs='+')
