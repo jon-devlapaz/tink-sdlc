@@ -54,6 +54,32 @@ class WorkflowTests(unittest.TestCase):
         (self.root / 'runs/example/checklist.json').unlink()  # legacy run: no checklist enforcement
         self.approve()
 
+    def commit_as(self, author, name, text):
+        (self.root / name).write_text(text)
+        self.git('add', name)
+        self.git('-c', 'user.name=TEST committer', '-c', 'user.email=test@local',
+                 'commit', '-qm', f'TEST {name}', '--author', author)
+
+    def test_verify_refuses_commits_from_unlisted_authors_since_the_policy_point(self):
+        # #78: Stacker agent commits were authored by a stray local identity (tink-arcade 720b7ff and others).
+        since = subprocess.run(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], capture_output=True,
+                               text=True, check=True).stdout.strip()  # 'Test' authored it; it isn't re-judged.
+        config = json.loads((self.root / '_system/verification.json').read_text())
+        config['authors'] = {'since': since, 'allow': ['Claude session_* <noreply@anthropic.com>', 'Operator <operator@local>']}
+        (self.root / '_system/verification.json').write_text(json.dumps(config))
+        self.commit_as('Claude session_TEST1 <noreply@anthropic.com>', '_system/verification.json',
+                       json.dumps(config))
+        self.commit_as('Operator <operator@local>', 'code.py', 'operator edit')
+        good = subprocess.run(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], capture_output=True,
+                              text=True, check=True).stdout.strip()
+        self.commit_as('sb <sb@x.io>', 'code.py', 'agent edit')
+        self.create_ready()
+        out = self.cli('verify', 'example', ok=False)
+        self.assertIn('sb <sb@x.io>', out)
+        self.assertIn('Claude session_* <noreply@anthropic.com>', out)
+        self.git('reset', '-q', '--hard', good)
+        self.cli('verify', 'example')
+
     def dry_run_items(self, commands):
         self.cli('new', 'example')
         path = self.root / 'runs/example'

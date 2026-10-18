@@ -24,7 +24,7 @@ class SeedChecks(StageBase):
         (self.path / 'seed-checks.json').write_text(json.dumps(value))
 
     def attest(self, item):
-        result = self.sdlc('mark', 'r', item, 'passed', '--evidence', 'synthetic operator observation',
+        result = self.sdlc('mark', 'r', item, 'passed', '--evidence', f'synthetic operator observation of {item}',
                            '--reviewer', 'synthetic-operator', '--source', 'isolated-test')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -85,6 +85,37 @@ class SeedChecks(StageBase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads((self.path / '04-test/output/verification.json').read_text())
                          ['seed_checks']['seed-2'], 'attested')
+
+    def test_one_quote_cannot_attest_several_expectations(self):
+        # #77: the Stacker run recorded one operator quote for four marks (tink-arcade runs/stacker/marks/).
+        sound = dict(command(), expect='sound plays on the intended output device')
+        self.bind([command(), DEFAULT[0], sound, command()])
+        self.approve_all()
+        quote = 'i played it. it was pretty perfect haha'
+
+        def mark(item, *extra, evidence=quote, result='passed'):
+            return self.sdlc('mark', 'r', item, result, '--evidence', evidence, '--reviewer', 'synthetic-operator',
+                             '--source', 'isolated-test', *extra)
+
+        first = mark('seed-1-expect')
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn('exit zero; output looks right', first.stdout)  # The mark shows its own expectation.
+        for item in ('seed-2', 'seed-3-expect', 'seed-4-expect'):
+            refused = mark(item)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn('seed-1-expect', refused.stderr)
+            self.assertIn('--covers-all', refused.stderr)
+        self.assertEqual(len(list((self.path / 'marks').glob('*.json'))), 1)
+        # Distinct evidence passes, an explicit shared record passes and says so, and unknown blocks verify.
+        self.assertEqual(mark('seed-2', evidence='the style matches the arcade').returncode, 0)
+        self.assertEqual(mark('seed-4-expect', '--covers-all').returncode, 0)
+        self.assertEqual(mark('seed-3-expect', evidence='did not listen for the device', result='unknown').returncode, 0)
+        status = self.sdlc('status', 'r').stdout
+        self.assertIn('evidence covers several expectations', status)
+        self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
+        self.assertEqual(mark('seed-3-expect', evidence='heard it on the speakers I meant').returncode, 0)
+        result = self.sdlc('verify', 'r')
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_provisional_activation_requires_evidence_and_renewed_review(self):
         self.bind([provisional('./future')])

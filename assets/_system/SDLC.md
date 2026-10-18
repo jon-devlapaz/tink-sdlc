@@ -117,6 +117,11 @@ python3 _system/scripts/sdlc.py mark <slug> seed-1-expect passed \
   --evidence 'Observed output and why it satisfies the seed expectation'
 ```
 
+Each mark prints its expectation and needs evidence about that expectation. Evidence
+already recorded for another seed item is refused unless `--covers-all` records that the
+operator meant it for each of them; status says so. Mark an expectation `unknown` when
+the operator's observation does not address it; `unknown` blocks verification.
+
 These marks require current definition approval and bind the exact seed item,
 including its activation; old marks cannot satisfy a revised command. Reviewer and
 source are local references, not authentication. This adds no auto-approval or new
@@ -150,6 +155,9 @@ observations still need rechecking when candidate changes affect them.
 Use a separate Git worktree or clone for each code-writing run, never just two branches in one checkout. Keep each run's artifacts in its own checkout. Do not share writable skill directories. Ports, databases, and credentials need separate isolation when used.
 
 Configure `_system/verification.json` with nonempty command argument arrays and timeouts. Fresh installations have an empty check list and fail verification until real project tests, build, lint, and other required checks are configured. Missing commands, missing configuration, failed checks, and timeouts fail verification. Required Tink checks fail if Tink is unavailable. The tool does not infer test coverage from an exit code. A failed check's error ends with `(output: runs/<slug>/04-test/output/test-log.md)`, where the full output is logged.
+To hold commit authorship, add `"authors": {"since": "<commit>", "allow": ["Claude session_* <noreply@anthropic.com>", "Name <email>"]}`.
+Verify then refuses any commit after `since` whose `Name <email>` author matches no `allow` pattern (shell-style `*`), and names it;
+history up to `since` is never judged. Without `authors`, authorship is not checked.
 
 ```sh
 python3 _system/scripts/sdlc.py verify fix-example
@@ -329,7 +337,7 @@ are refused. The ID is not approval or tamper protection: local files are editab
   `result`, `passed`, `candidate`, `log` (digest), and `error`. Only `passed: true`
   means current evidence; receipt internals are not a client contract.
 - `checklist`: normalized items with their definition, `automatic`, `status`
-  (`pending`, `passed`, `failed`), `proof` (`automated`, `attested`), optional
+  (`pending`, `passed`, `failed`, or `unknown` for a seed attestation), `proof` (`automated`, `attested`), optional
   observation `mark`, and `needs_recheck`. `checklist_state` distinguishes
   `defined`, `empty`, `legacy`, `missing`, and `invalid`.
 - `actions.verify` and `actions.mark`: `allowed` (boolean) and `reason` (empty
