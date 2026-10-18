@@ -352,14 +352,16 @@ def git(*args):
 
 
 def strip_generated_rules(data):
-    """Drop each well-formed tink:rules block (so a removed block equals an excluded one); unbalanced markers are left as-is."""
+    """Drop each well-formed tink:rules block and the blank line tink writes before it (#52), so a removed
+    block equals an excluded one; unbalanced markers are left as-is."""
     lines = data.decode('utf-8', errors='surrogateescape').splitlines(keepends=True)
     blocks, problems = rules_blocks(lines)
     if not blocks or any('duplicate' not in problem for problem in problems):
         return data
     out, cursor = [], 0
     for begin, end, _ in blocks:
-        out.append(''.join(lines[cursor:begin]).encode('utf-8', errors='surrogateescape'))
+        separator = begin > cursor and not lines[begin - 1].strip()
+        out.append(''.join(lines[cursor:begin - separator]).encode('utf-8', errors='surrogateescape'))
         cursor = end + 1
     out.append(''.join(lines[cursor:]).encode('utf-8', errors='surrogateescape'))
     return b''.join(out)
@@ -663,7 +665,10 @@ def verify(args):
                     proof['seed_checks'] = seed_results
             write_json(receipt, {'result': 'passed', **before, **proof, 'log': digest(log_path.read_bytes())})
         except Exception as error:
-            write_json(receipt, {'result': 'failed', 'error': describe(error),
+            defined = {}
+            with contextlib.suppress(Exception):
+                defined = {'inputs': inputs(path, 3)}  # Lets status retire this error once definitions change (#75).
+            write_json(receipt, {'result': 'failed', 'error': describe(error), **defined,
                                  **({'seed_checks': seed_results} if seed_results else {})})
             raise
     if seed_results:
@@ -830,6 +835,17 @@ def writer_active(path):
         os.close(fd)
 
 
+def failed_reason(path, record):
+    """A failure's own error while its definitions are current; never an error from definitions since replaced."""
+    try:
+        replaced = 'inputs' in record and record['inputs'] != inputs(path, 3)
+    except (ValueError, OSError, KeyError, TypeError):
+        replaced = False
+    if replaced:
+        return 'The last verification failed against earlier definitions. Run verification again.'
+    return str(record.get('error', 'Verification failed. Inspect the log, then rerun it.'))
+
+
 def status_state(path):
     """One calculation for the human CLI and machine clients; never an approval."""
     meta = require_run(path)
@@ -917,7 +933,7 @@ def status_state(path):
         'current': 'independent PR review and release checks.',
         'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
-        'failed': str(record.get('error', 'Verification failed. Inspect the log, then rerun it.')) if record else '',
+        'failed': failed_reason(path, record) if record else '',
     }.get(state, 'implement the approved brief, then run verification.')
     return {'slug': path.name, 'run_id': meta.get('run_id'),
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},

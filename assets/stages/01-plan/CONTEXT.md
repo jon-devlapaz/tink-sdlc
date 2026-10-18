@@ -1,6 +1,7 @@
 # Stage 01: Define intent
 
-Inputs: originator's request and `_shared/intent-template.md` for full runs.
+Inputs: originator's request, plus `_shared/brief-template.md` for light runs or
+`_shared/intent-template.md` for full runs.
 Read the run's `run.json` to select its profile.
 For Tinkery-originated work, follow [Tinkery intake boundaries](../../_system/SDLC.md#tinkery-ownership-and-handoff)
 before translating the supplied confirmed seed into intent.
@@ -21,7 +22,8 @@ Use `seed-me` only for consequential unresolved decisions.
 Output: `runs/<slug>/brief.md` and `runs/<slug>/checklist.json` (light runs), or
 `runs/<slug>/01-plan/output/intent.md` (full runs).
 
-Gate: actual human acceptance recorded with `sdlc.py decide`; text status tags
+Gate: actual human acceptance recorded with `sdlc.py decide` (light runs: `decide <slug> 3`;
+full runs: `decide <slug> 1`); text status tags
 are not approval evidence. Follow `python3 _system/scripts/sdlc.py status <slug>`.
 See `_system/SDLC.md` for rejection, stale inputs, and authority boundaries.
 

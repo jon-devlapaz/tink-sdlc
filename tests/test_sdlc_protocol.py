@@ -238,6 +238,21 @@ class ProtocolTests(unittest.TestCase):
         self.assertTrue(view['actions']['mark']['allowed'])
         self.assertNotIn('v2 re-intake', view['next_action'])
 
+    def test_failed_verify_before_reintake_does_not_repeat_its_hint(self):
+        # #75: a verify refused for record intake leaves a failed receipt naming re-intake;
+        # once re-intake and review are done, status must name the next real step instead.
+        self.historical_seed_with_retained_approval()
+        self.assertIn('record intake', self.cli('verify', 'example', ok=False))
+        sessions = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-failed-reintake-')
+        self.addCleanup(sessions.cleanup)
+        self.cli('stage', 'example', '1', '--here', '--seed-contract', str(confirmed(sessions.name)),
+                 '--seed-me-helper', str(HELPER))
+        self.approve()
+        view = self.view()
+        self.assertNotIn('re-intake', view['next_action'])
+        self.assertNotIn('re-intake', view['cli_status'])
+        self.assertIn('verification', view['next_action'].lower())
+
     def test_real_light_run_evidence_and_actions(self):
         self.checked_run()
         initial = self.view()

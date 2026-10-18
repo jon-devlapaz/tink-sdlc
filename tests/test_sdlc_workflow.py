@@ -492,6 +492,14 @@ class WorkflowTests(unittest.TestCase):
         self.agents(self.ROUTER)
         self.assertIn('Verification: current', self.cli('status', 'example'))
 
+    def test_generated_rules_block_with_tinks_separator_keeps_evidence_current(self):
+        # #52: tink use appends a blank line before the block; adding or removing both is generated.
+        self.agents_ready(self.ROUTER)
+        self.agents(self.ROUTER + '\n' + self.block('build'))
+        self.assertIn('Verification: current', self.cli('status', 'example'))
+        self.agents(self.ROUTER + '\n')  # A blank line without the block is project text.
+        self.assertIn('stale', self.cli('status', 'example'))
+
     def test_router_or_project_text_outside_block_stales_evidence(self):
         self.agents_ready(self.ROUTER + self.block('build'))
         self.agents(self.ROUTER + 'extra project rule\n' + self.block('build'))
