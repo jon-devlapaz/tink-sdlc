@@ -157,129 +157,32 @@ def validate_checklist(value):
     return items
 
 
-def seed_acceptance_lines(text):
-    """Locate one real section, ignoring fenced examples and refusing partial imports."""
-    active, seen, level, fence = False, False, None, None
-    lines = []
-    for line in text.splitlines():
-        if fence:
-            closing = re.fullmatch(r' {0,3}(' + re.escape(fence[0]) + r'+)[ \t]*', line)
-            if closing and len(closing[1]) >= fence[1]:
-                fence = None
-            continue
-        opening = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line)
-        if opening:
-            if active:
-                raise ValueError('Unsupported fenced content in seed acceptance section; use plain criterion/field lines.')
-            if opening[1][0] == '`' and '`' in opening[2]:
-                raise ValueError('Ambiguous Markdown fence in seed contract.')
-            fence = (opening[1][0], len(opening[1]))
-            continue
-        heading = re.match(r'^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$', line)
-        if heading:
-            if heading[2].lower() in ('acceptance criteria', 'acceptance checks'):
-                if seen:
-                    raise ValueError('Ambiguous seed contract: multiple acceptance sections.')
-                active, seen, level = True, True, len(heading[1])
-            elif active:
-                if len(heading[1]) > level:
-                    raise ValueError('Unsupported nested heading in seed acceptance section; flatten all required criteria.')
-                active = False
-            continue
-        if active:
-            lines.append(line)
-    if fence:
-        raise ValueError('Unclosed Markdown fence in seed contract; acceptance section cannot be determined safely.')
-    if seen and not any(line.strip() for line in lines):
-        raise ValueError('Seed acceptance section is empty; it cannot fall back to legacy no-check behavior.')
-    return lines
+def records_digest(records):
+    return digest(json.dumps(records, sort_keys=True, ensure_ascii=False,
+                             separators=(',', ':'), allow_nan=False).encode('utf-8'))
 
 
-def seed_fields(body):
-    """Unwrap only a whole, matched Markdown span; bare shell backticks are literal."""
-    fields = {}
-    names = r'(cmd|expect|cwd|provisional|you judge)'
-    separator = re.compile(r'[ \t]+\|[ \t]+(?=' + names + r':)')
-    separate_command = bool(re.search(r'(?m)^(?:expect|cwd):', body))
-    for line in body.splitlines():
-        rest = line.strip()
-        while rest:
-            field = re.match(names + r':[ \t]*', rest)
-            if not field:
-                raise ValueError('Unsupported seed acceptance field syntax.')
-            key, tail = field[1], rest[field.end():]
-            if key in fields:
-                raise ValueError(f'Duplicate {key}: in seed acceptance item.')
-            opener = re.match(r'`+', tail)
-            if opener:
-                width = len(opener[0])
-                closing = next((m for m in re.finditer(r'`+', tail[width:]) if len(m[0]) == width), None)
-                if closing is None:
-                    raise ValueError(f'Unclosed or ambiguous Markdown span in seed {key}: field.')
-                end = width + closing.start()
-                value, suffix = tail[width:end], tail[end + width:]
-                delimiter = separator.match(suffix) if not (key == 'cmd' and separate_command) else None
-                if suffix.strip() and delimiter is None:
-                    raise ValueError(f'A seed {key}: Markdown span must enclose the whole field value.')
-                rest = suffix[delimiter.end():] if delimiter else ''
-            else:
-                delimiter = separator.search(tail) if not (key == 'cmd' and separate_command) else None
-                if key == 'cmd' and delimiter and re.search(r'''['"`\\()]''', tail[:delimiter.start()]):
-                    raise ValueError('Ambiguous inline shell command; use an enclosing Markdown span or separate field lines.')
-                value = (tail[:delimiter.start()] if delimiter else tail).strip()
-                rest = tail[delimiter.end():] if delimiter else ''
-            fields[key] = value
-    return fields
+def record_definitions(records):
+    """Seed Me owns validation and rendering; preserve each validated record verbatim."""
+    return {'schema': 1, 'items': [
+        {**record, 'id': f'seed-{index}', 'description': record['statement'],
+         'origin': 'operator-confirmed-seed', 'locked': True}
+        for index, record in enumerate(records, 1)]}
 
 
-def seed_definitions(data):
-    """Read only the Seed Me acceptance section; commands remain verbatim shell text."""
-    blocks, current = [], []
-    for line in seed_acceptance_lines(data.decode('utf-8')):
-        if not line.strip():
-            continue
-        value = re.sub(r'^\s*(?:[-*]\s+(?:\[[ xX]\]\s*)?)?', '', line).strip()
-        if not re.match(r'^(cmd|expect|cwd|provisional|you judge):', value):
-            if current:
-                blocks.append(current)
-            current = [value]
-        else:
-            current.append(value)
-    if current:
-        blocks.append(current)
-    items = []
-    for index, block in enumerate(blocks, 1):
-        description = block[0]
-        body = '\n'.join(block[1:])
-        if not re.search(r'(?m)^(?:cmd|provisional|you judge):', body):
-            raise ValueError(f'Seed acceptance item {index} needs cmd: or you judge: (and expect: and cwd: for commands).')
-        fields = seed_fields(body)
-        if 'you judge' in fields:
-            if set(fields) != {'you judge'} or not fields['you judge']:
-                raise ValueError('you judge: must be a standalone operator attestation.')
-            kind = 'attestation'
-        else:
-            if not all(fields.get(key) for key in ('cmd', 'expect', 'cwd')):
-                raise ValueError(f'Seed acceptance item {index} requires cmd:, expect: and cwd:.')
-            if 'provisional' in fields and not fields['provisional']:
-                raise ValueError('provisional: must name its prerequisite.')
-            kind = 'provisional' if 'provisional' in fields else 'settled'
-        items.append({'id': f'seed-{index}', 'description': description,
-                      'origin': 'operator-confirmed-seed', 'locked': True, 'kind': kind, **fields})
-    return {'schema': 1, 'items': items}
+def relative_check_cwd(cwd):
+    if (not isinstance(cwd, str) or not cwd.strip() or '\x00' in cwd
+            or cwd.startswith('/') or '..' in cwd.split('/') or '\\' in cwd
+            or re.match(r'^[A-Za-z]:', cwd) or '\n' in cwd or '\r' in cwd):
+        raise ValueError('Seed check cwd must be checkout-relative, without traversal or backslashes.')
 
 
 def seed_check_items(path):
-    """Validate imported definitions against the bound seed; only activation is editable."""
+    """Validate the immutable intake snapshot, never re-parse historical seed Markdown."""
     bound = require_run(path).get('seed_contract')
-    if not bound:
-        return []
-    source = Path(bound['path'])
-    source = source if source.is_absolute() else ROOT / source
-    expected = seed_definitions(source.read_bytes())
+    if not bound or 'definitions_sha256' not in bound:
+        return []  # Historical runs remain readable, not eligible for new seed approval.
     target = path / 'seed-checks.json'
-    if not expected['items'] and not target.exists():
-        return []  # Old seeds without acceptance checks remain compatible.
     if not target.is_file():
         raise ValueError('Locked seed checks are missing; rebind the confirmed seed at stage 1.')
     value = read_json(target)
@@ -287,7 +190,7 @@ def seed_check_items(path):
             or type(value['schema']) is not int or value['schema'] != 1 or not isinstance(value['items'], list)):
         raise ValueError('Invalid locked seed checks.')
     definitions = [{k: v for k, v in item.items() if k != 'activation'} for item in value['items'] if isinstance(item, dict)]
-    if encoded(definitions) != encoded(expected['items']):
+    if digest(encoded(definitions)) != bound['definitions_sha256']:
         raise ValueError('Locked seed checks changed; rebind the confirmed seed at stage 1.')
     result = []
     for item in value['items']:
@@ -297,15 +200,19 @@ def seed_check_items(path):
                     or set(activation) != {'cmd', 'cwd', 'evidence'}
                     or not all(isinstance(v, str) and v.strip() for v in activation.values())):
                 raise ValueError('Provisional activation needs a real cmd, cwd and prerequisite evidence.')
+            relative_check_cwd(activation['cwd'])
+            if any('\x00' in value for value in activation.values()):
+                raise ValueError('Provisional activation must not contain NUL.')
         pending = item['kind'] == 'provisional' and activation is None
         base = {'id': item['id'], 'description': item['description'],
-                'verify': item.get('you judge', item.get('expect')), 'origin': item['origin'],
+                'verify': item.get('how_to_judge', item['statement']) if item['kind'] == 'judge' else item['expect'], 'origin': item['origin'],
                 'locked': True, 'pending': pending, 'seed_definition': digest(encoded(item))}
-        if item['kind'] == 'attestation' or pending:
+        if item['kind'] == 'judge' or pending:
             result.append({**base, 'operator_attestation': not pending,
-                           **({'prerequisite': item['provisional']} if pending else {})})
+                           **({'prerequisite': item['missing']} if pending else {})})
             continue
         command = activation or item
+        relative_check_cwd(command['cwd'])
         result.append({**base, 'check': {'argv': ['bash', '-c', command['cmd']],
                                         'timeout_seconds': 120, 'cwd': command['cwd']}})
         result.append({**base, 'id': item['id'] + '-expect', 'operator_attestation': True,
@@ -371,8 +278,7 @@ def inputs(path, stage):
         values['seed-contract'] = digest(source.read_bytes()) if source.is_file() else '<missing>'
     if seed_contract:
         target = path / 'seed-checks.json'
-        has_checks = bool(seed_definitions(source.read_bytes())['items']) if source.is_file() else False
-        if target.exists() or has_checks:
+        if 'definitions_sha256' in seed_contract:
             values['seed-checks'] = digest(target.read_bytes()) if target.is_file() else '<missing>'
     if stage == 3 and checklist_digest(path) is not None:
         values[str((path / 'checklist.json').relative_to(ROOT))] = checklist_digest(path)
@@ -397,7 +303,18 @@ def stages(path):
     return [3] if require_run(path)['profile'] == 'light' else [1, 2, 3]
 
 
+def require_record_intake(path):
+    bound = require_run(path).get('seed_contract')
+    if bound and 'definitions_sha256' not in bound:
+        raise ValueError('Historical seed contract needs verified Seed Me record intake; complete explicit v2 re-intake '
+                         'at stage 1 before new approval or verification: display a fresh draft and obtain Seed Me v2 '
+                         'confirmation, then run: '
+                         f'python3 _system/scripts/sdlc.py stage {path.name} 1 '
+                         '--seed-contract <session>/seed-contract.md --seed-me-helper <trusted-seed-me>/scripts/session.py')
+
+
 def ready(path):
+    require_record_intake(path)
     for stage in stages(path):
         if gate(path, stage) != 'approved':
             raise ValueError(f'Stage {stage} needs a current approval receipt.')
@@ -574,6 +491,7 @@ def decide(args):
             raise ValueError(f'Define at least one checklist item before approval. Edit runs/{args.run}/checklist.json '
                              '(each item needs id, description, verify; optional check).')
         if args.decision == 'approved':
+            require_record_intake(path)
             seed_check_items(path)
             for stage in stages(path):
                 if stage < args.stage and gate(path, stage) != 'approved':
@@ -895,6 +813,11 @@ def status_state(path):
         raise ValueError('Run profile must be light or full.')
     if not isinstance(meta.get('kind', 'feature'), str):
         raise ValueError('Run kind must be a string.')
+    intake_error = None
+    try:
+        require_record_intake(path)
+    except ValueError as error:
+        intake_error = str(error)
     gates, blocked = [], False
     for stage in stages(path):
         state = gate(path, stage)
@@ -902,6 +825,7 @@ def status_state(path):
             raise ValueError(f'Unknown gate state: {state}')
         gates.append({'stage': stage, 'status': state, 'blocked': blocked})
         blocked = blocked or state != 'approved'
+    blocked = blocked or bool(intake_error)
     record_path, _ = verification_files(path)
     record = read_json(record_path) if record_path.exists() else None
     if record is not None:
@@ -932,7 +856,7 @@ def status_state(path):
     else:
         state = {'passed': 'stale', 'failed': 'failed', 'running': 'interrupted'}[record['result']]
     checklist = checklist_view(path, verified)
-    errors = []
+    errors = [intake_error] if intake_error else []
     try:
         config = checks_config()
     except (ValueError, OSError, TypeError, AttributeError) as error:
@@ -959,7 +883,7 @@ def status_state(path):
         elif any(item['automatic'] for item in checklist['items']):
             gate_reason = (f'Run python3 _system/scripts/sdlc.py dry-run {path.name} before definition review; '
                            'inspect each check output, then record the actual human decision.')
-    unavailable = 'A writer already owns this run.' if active else gate_reason
+    unavailable = 'A writer already owns this run.' if active else (intake_error or gate_reason)
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
@@ -1473,19 +1397,45 @@ def require_tink_use(tink):
     raise ValueError(f'{version} has no `tink use` (it compiles the stage disciplines); upgrade tink, then re-run the same command')
 
 
-def stage_seed_contract(value):
-    """Return (resolved path, bytes) of the operator's confirmed Seed Me seed contract.
+def stage_seed_contract(value, helper):
+    """Verify Seed Me's v2 handoff before writes; the supplied helper is trusted code.
 
-    Whether the file is really confirmed is the operator's call: nothing here can tell. What is enforced is the
-    binding: the run keeps its own copy (runs/<run>/seed-contract.md); that copy's digest is recorded in run.json
-    and hashed into approvals and verification."""
-    target = Path(value)
-    if not target.exists() and not target.is_absolute():
-        raise ValueError(f'seed contract file not found: {value}')
-    resolved = target.resolve()
+    Contract: seed-me PR #17, 9ef827f92c79f5d53afd255ac0fb4ae32b85dd4f.
+    """
+    resolved = Path(value).resolve()
     if not resolved.is_file():
         raise ValueError(f'seed contract must be an existing regular file: {value}')
-    return resolved, resolved.read_bytes()
+    if not helper:
+        raise ValueError('--seed-contract requires --seed-me-helper PATH to Seed Me session.py (v2).')
+    if resolved.name != 'seed-contract.md':
+        raise ValueError('Seed Me session input must be named seed-contract.md.')
+    helper = Path(helper).resolve()
+    if not helper.is_file():
+        raise ValueError(f'Seed Me helper not found: {helper}')
+    directory = resolved.parent
+
+    def call(*arguments):
+        result = subprocess.run([sys.executable, str(helper), *arguments, str(directory)],
+                                capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise ValueError(f'Seed Me helper refused intake: {result.stderr.strip()}')
+        return json.loads(result.stdout)
+
+    before = call('status')
+    if before.get('handoff', {}).get('verified') is not True:
+        raise ValueError('Seed Me handoff is not verified: ' + before.get('handoff', {}).get('reason', 'missing v2 binding'))
+    confirmation = read_json(directory / 'seed-confirmation.json')
+    data = resolved.read_bytes()
+    records = call('seed', 'checks', 'show')
+    after = call('status')
+    if (before != after or confirmation != read_json(directory / 'seed-confirmation.json')
+            or data != resolved.read_bytes() or type(confirmation.get('schema_version')) is not int
+            or confirmation['schema_version'] != 2
+            or confirmation.get('seed_sha256') != digest(data)
+            or before.get('seed', {}).get('sha256') != digest(data)
+            or confirmation.get('checks_sha256') != records_digest(records)):
+        raise ValueError('Seed Me v2 confirmation binding changed during intake; confirm and retry.')
+    return resolved, data, record_definitions(records), confirmation
 
 
 def stage_dirty(run):
@@ -1637,9 +1587,11 @@ def stage(args):
             raise ValueError('stage 5 reviews a commit, and these candidate changes are uncommitted: ' + ', '.join(dirty[:5])
                              + (f' (+{len(dirty) - 5} more)' if len(dirty) > 5 else '')
                              + mode_note + '; commit the candidate changes (verify again only if the code changed since it passed)')
-    seed_source, seed_bytes = stage_seed_contract(args.seed_contract) if args.seed_contract else (None, None)
+    if args.seed_me_helper and not args.seed_contract:
+        raise ValueError('--seed-me-helper requires --seed-contract at stage 1.')
+    seed_source, seed_bytes, seed_checks, confirmation = (
+        stage_seed_contract(args.seed_contract, args.seed_me_helper) if args.seed_contract else (None, None, None, None))
     seed_contract = f'runs/{run}/seed-contract.md' if seed_source else None
-    seed_checks = seed_definitions(seed_bytes) if seed_bytes is not None else None
     skillset = stage_skillset(n)
     tink = shutil.which('tink') if skillset else None
     if tink:
@@ -1663,14 +1615,15 @@ def stage(args):
     if seed_contract and not args.check:
         with locked(path / '.writer-lock'):
             copy = ROOT / seed_contract
-            if seed_checks['items'] or (path / 'seed-checks.json').exists():
-                write_json(path / 'seed-checks.json', seed_checks)
+            write_json(path / 'seed-checks.json', seed_checks)
             previous = read_json(path / 'run.json').get('seed_contract', {})
             if seed_source != copy.resolve():
                 copy.write_bytes(seed_bytes)
             source = previous.get('source', str(seed_source)) if seed_source == copy.resolve() else str(seed_source)
             write_json(path / 'run.json', {**read_json(path / 'run.json'),
-                                            'seed_contract': {'path': seed_contract, 'sha256': digest(seed_bytes), 'source': source}})
+                                            'seed_contract': {'path': seed_contract, 'sha256': digest(seed_bytes), 'source': source,
+                                                              'definitions_sha256': digest(encoded(seed_checks['items'])),
+                                                              'confirmation': confirmation}})
     pending = make_worktree and bool(run_git(ROOT, 'status', '--porcelain', '--', f'runs/{run}').stdout.strip())
     if pending and not stage_identity_ok():
         raise ValueError('no committer identity configured; set user.name and user.email (or GIT_COMMITTER_*) so the launcher can commit '
@@ -1804,6 +1757,7 @@ def main():
     where.add_argument('--worktree', metavar='PATH')
     where.add_argument('--here', action='store_true')
     launch.add_argument('--seed-contract', metavar='PATH')
+    launch.add_argument('--seed-me-helper', metavar='PATH', help='trusted Seed Me session.py with v2 handoff verification')
     launch.add_argument('--check', action='store_true', help='validate and print the plan; write nothing')
     lint = commands.add_parser('walk', help='structural walk lint (read-only)')
     lint.add_argument('--json', action='store_true')

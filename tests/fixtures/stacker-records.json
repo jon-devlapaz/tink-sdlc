@@ -1,0 +1,24 @@
+[
+  {
+    "statement": "Matches the tink-arcade style and theme.",
+    "kind": "judge",
+    "source": "Stacker r1: Acceptance criteria, first check",
+    "how_to_judge": "Inspect Stacker alongside existing cabinets; launch checks alone do not establish visual quality."
+  },
+  {
+    "statement": "Has working sounds.",
+    "kind": "provisional",
+    "cwd": ".",
+    "expect": "Successful actions produce audible feedback; repeated playback remains audible, mute works, and audio failure does not prevent play.",
+    "missing": "Stacker-specific event-to-sound assertions and a repeat-playback invocation, followed by listening on the intended device.",
+    "source": "Stacker r1: Acceptance criteria, second check; DESIGN.md:147-164,194-200"
+  },
+  {
+    "statement": "Just works with the right mechanics as the game has.",
+    "kind": "provisional",
+    "cwd": ".",
+    "expect": "Source-grounded stacking, alignment loss, progression, loss and top-win assertions pass; correct timing can win, aiming for the top without a collect-or-continue checkpoint.",
+    "missing": "Read source rules, map settled choices, and add deterministic Stacker assertions including overlap width and zero-overlap loss.",
+    "source": "Stacker r1: Acceptance criteria, third check"
+  }
+]
