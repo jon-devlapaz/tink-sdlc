@@ -4,7 +4,6 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import fcntl
 import hashlib
-from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
@@ -752,79 +751,6 @@ def set_checks(directory, records):
     return {"checks": str(directory / CHECKS_FILE), "count": len(records), "sha256": checks_digest(records)}
 
 
-class HeadingText(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.parts = []
-
-    def handle_data(self, data):
-        self.parts.append(data)
-
-
-def inline_end(value, start):
-    """Skip a balanced link destination or reference, including escapes and quoted titles."""
-    opening = value[start]
-    closing = {"(": ")", "[": "]"}[opening]
-    depth, quote, angle, index = 1, None, False, start + 1
-    while index < len(value):
-        char = value[index]
-        if char == "\\":
-            index += 2
-            continue
-        if quote:
-            if char == quote:
-                quote = None
-        elif angle:
-            if char == ">":
-                angle = False
-        elif opening == "(" and char == "<":
-            angle = True
-        elif opening == "(" and char in "\"'" and (index == start + 1 or value[index - 1].isspace()):
-            quote = char
-        elif char == opening:
-            depth += 1
-        elif char == closing:
-            depth -= 1
-            if not depth:
-                return index + 1
-        index += 1
-    return None
-
-
-def heading_text(value):
-    """Conservatively flatten inline presentation to one case-folded heading identity."""
-    html = HeadingText()
-    html.feed(value)
-    html.close()
-    value = "".join(html.parts)
-    out, index = [], 0
-    while index < len(value):
-        char = value[index]
-        if char == "\\" and index + 1 < len(value):
-            out.append(value[index + 1])
-            index += 2
-            continue
-        if char == "`":
-            marker = re.match(r"`+", value[index:])[0]
-            end = re.search(r"(?<!`)" + re.escape(marker) + r"(?!`)", value[index + len(marker):])
-            if end:
-                out.append(value[index + len(marker):index + len(marker) + end.start()])
-                index += len(marker) + end.end()
-                continue
-        if char == "]" and index + 1 < len(value) and value[index + 1] in "([":
-            end = inline_end(value, index + 1)
-            if end is not None:
-                index = end
-                continue
-        if char == "!" and value[index + 1:index + 2] == "[":
-            index += 1
-            continue
-        if char not in "*_~`[]":
-            out.append(char)
-        index += 1
-    return one_line("".join(out)).casefold()
-
-
 def without_comments(line, inside):
     out, index = [], 0
     while index < len(line):
@@ -843,45 +769,63 @@ def without_comments(line, inside):
     return "".join(out), inside
 
 
-def markdown_headings(body):
-    """Original section offsets, excluding fences and comments, with normalized inline titles."""
-    headings, fence, previous, comment = [], None, None, False
+SEED_HEADINGS = {
+    "full": (
+        "## You are confirming", "## Problem statement", "## Proposed outcome", "## Acceptance criteria",
+        "## Affected users and systems", "## Constraints and boundaries", "## Decisions (from the ledger)",
+        "## Assumed (not confirmed by you)", "## Knowledge map", "## Evidence and uncertainty",
+        "## Suggested first slice", "## Risks and verification", "## Open questions and deferrals",
+        "## Owners and next steps", "## Downstream handoff",
+    ),
+    "lean": (
+        "## You are confirming", "## Now  (the agent keeps these current)", "## Goal",
+        "## Decisions (from the ledger)", "## Assumed (not confirmed by you)", "## Constraints and exclusions",
+        "## Acceptance criteria", "## Open questions", "## Knowledge map", "## Evidence",
+    ),
+}
+
+
+def document_headings(body):
+    """Only literal template headings are content; comments and fenced examples are opaque."""
+    headings, fence, comment = [], None, False
     for match in re.finditer(r"[^\n]*\n|[^\n]+", body):
-        line = split_terminator(match.group())[0]
+        raw = split_terminator(match.group())[0]
         if fence:
-            if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + r"{%s,}[ \t]*" % len(fence), line):
+            if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + r"{%s,}[ \t]*" % len(fence), raw):
                 fence = None
-            previous = None
             continue
-        # Comments in fence info or code are literal data, not comment delimiters.
-        opening = re.match(r" {0,3}(`{3,}|~{3,})(.*)$", line) if not comment else None
+        opening = re.match(r" {0,3}(`{3,}|~{3,})(.*)$", raw) if not comment else None
         if opening and (opening[1][0] == "~" or "`" not in opening[2]):
-            fence, previous = opening[1], None
+            fence = opening[1]
             continue
-        line, comment = without_comments(line, comment)
-        heading = re.match(r" {0,3}(#{1,6})(?:[ \t]+(.*)|$)", line)
-        if heading:
-            title = re.sub(r"[ \t]+#+[ \t]*$", "", heading[2] or "").strip()
-            headings.append((match.start(), len(heading[1]), heading_text(title)))
-            previous = None
-        elif previous and re.fullmatch(r" {0,3}(=+|-+)[ \t]*", line):
-            headings.append((previous[0], 1 if line.lstrip().startswith("=") else 2, heading_text(previous[1])))
-            previous = None
-        else:
-            previous = (match.start(), line.strip()) if line.strip() and not line.startswith("    ") else None
+        line, comment = without_comments(raw, comment)
+        candidate = line.lstrip()
+        while True:
+            require(not re.fullmatch(r"(?:=+|-+)[ \t]*", candidate),
+                    "checks refuse injected Setext heading syntax; body prose cannot contain headings")
+            container = re.match(r"(?:>[ \t]*|(?:[-+*]|\d+[.)])[ \t]+)", candidate)
+            if not container:
+                break
+            candidate = candidate[container.end():].lstrip()
+        if re.match(r"#{1,6}(?:[ \t]+|$)", candidate):
+            require(raw == candidate and line == raw and match.group() == raw + "\n",
+                    "checks refuse injected, indented, commented or non-literal heading lines")
+            headings.append((match.start(), raw))
     return headings
 
 
 def require_seed_checks(directory):
     records = read_checks(directory)
     body = "".join(seed_lines(directory))
-    headings = markdown_headings(body)
-    acceptance = [(offset, title) for offset, _, title in headings
-                  if title in ("acceptance criteria", "acceptance checks")]
-    require(len(acceptance) == 1 and acceptance[0][1] == "acceptance criteria",
-            "checks need exactly one rendered Acceptance criteria section outside fences and HTML comments, with no other acceptance sections; use `seed checks render`")
-    start = acceptance[0][0]
-    end = next((offset for offset, level, _ in headings if offset > start and level <= 2), len(body))
+    headings = document_headings(body)
+    require(headings and re.fullmatch(r"# [^\r\n]*\S", headings[0][1]),
+            "checks need one leading H1 title and canonical Full or Lean section headings")
+    section_titles = tuple(line for _, line in headings[1:])
+    require(section_titles in SEED_HEADINGS.values(),
+            "checks refuse injected, missing, reordered or non-canonical headings; use the Full or Lean template")
+    index = next(i for i, (_, line) in enumerate(headings) if line == "## Acceptance criteria")
+    start = headings[index][0]
+    end = headings[index + 1][0] if index + 1 < len(headings) else len(body)
     require(body[start:end] == checks_block(records), "checks do not match the rendered Acceptance criteria section; use `seed checks render`")
     return records
 

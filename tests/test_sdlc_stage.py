@@ -283,7 +283,7 @@ class HereMode(StageBase):
         target = confirmed(self.base / 'TEST-sessions')
         self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
         self.decide('r', 3)
-        target = confirmed(self.base / 'TEST-revised-sessions', extra='## Revised\nRevised scope.\n')
+        target = confirmed(self.base / 'TEST-revised-sessions', extra='Revised TEST scope.\n')
         self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
         self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), target.read_text())
         self.assertNotIn('Stage 3: approved', self.sdlc('status', 'r').stdout)

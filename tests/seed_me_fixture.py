@@ -1,13 +1,18 @@
-"""Real zero-call Seed Me CLI, pinned to PR #17 aae81876017abfe37ac91b223f26b5b36e9d98fa.
+"""Real zero-call Seed Me CLI, pinned to PR #17 934891aa8b130e8edd0391144bafe9403be84b82.
 
 session.py is a byte-identical upstream test fixture, not a second runtime implementation.
 """
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 
-HELPER = Path(__file__).parent / 'fixtures/seed-me-aae8187/scripts/session.py'
+HELPER = Path(__file__).parent / 'fixtures/seed-me-934891a/scripts/session.py'
+FRAME = HELPER.parents[1] / 'seed_fixture.py'
+_spec = importlib.util.spec_from_file_location('pinned_seed_fixture', FRAME)
+_frame = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_frame)
 DEFAULT = [{'statement': 'Fixture goal', 'kind': 'judge', 'source': 'TEST operator'}]
 
 
@@ -32,18 +37,27 @@ def confirmed(root, records=None, extra='', template=None):
     payload.write_text(json.dumps(records if records is not None else DEFAULT))
     cli('seed', 'checks', 'set', directory, payload)
     seed = directory / 'seed-contract.md'
-    seed.write_text('status: draft\nrevision: r1\n# TEST seed\n## You are confirming\nTEST goal\n'
-                    + cli('seed', 'checks', 'render', directory)
-                    + cli('seed', 'decisions', directory) + extra)
+    checks = cli('seed', 'checks', 'render', directory)
+    decisions = cli('seed', 'decisions', directory)
+    text = _frame.contract_text('status: draft', profile='full', checks=checks, decisions=decisions)
     if template is not None:
-        # Explicit TEST-only new draft: retain the real output's other sections, not its old approval.
-        text = template.decode('utf-8').replace('status: confirmed for intake', 'status: draft', 1)
-        text = '\n'.join(line for line in text.split('\n') if not line.startswith('Confirmed by:'))
-        before, acceptance = text.split('## Acceptance criteria\n', 1)
-        _, after = acceptance.split('## Affected users and systems\n', 1)
-        text = before + cli('seed', 'checks', 'render', directory) + '## Affected users and systems\n' + after
-        text = text.split('## Decisions (from the ledger)\n', 1)[0] + cli('seed', 'decisions', directory)
-        seed.write_text(text)
+        # Explicit TEST-only new draft, not a migration: retain original section prose,
+        # reorder into the pinned Full frame, and replace checks/decisions/confirmation.
+        original = template.decode('utf-8').replace('status: confirmed for intake', 'status: draft', 1)
+        preamble, *blocks = original.split('\n## ')
+        text = '\n'.join(line for line in preamble.split('\n') if not line.startswith('Confirmed by:')) + '\n\n'
+        sections = {}
+        for block in blocks:
+            title, _, body = block.partition('\n')
+            sections['## ' + title] = body
+        for heading in _frame.FULL_HEADINGS:
+            if heading == '## Acceptance criteria':
+                text += checks
+            elif heading == '## Decisions (from the ledger)':
+                text += decisions + '\n'
+            elif heading != '## Assumed (not confirmed by you)':
+                text += heading + '\n' + sections[heading].rstrip('\n') + '\n\n'
+    seed.write_text(text + extra)
     cli('seed', 'confirm', directory, '--revision', 'r1', '--source', 'TEST explicit confirmation')
     return seed
 

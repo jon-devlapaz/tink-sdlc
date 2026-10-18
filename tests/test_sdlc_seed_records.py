@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from seed_me_fixture import HELPER, cli, confirmed, command, provisional, DEFAULT
+from seed_me_fixture import FRAME, HELPER, cli, confirmed, command, provisional, DEFAULT
 from test_sdlc_stage import StageBase, PASSING
 import test_sdlc_seed_checks as seed_fixtures
 
@@ -26,7 +26,9 @@ class RecordIntake(StageBase):
 
     def test_helper_fixture_is_exact_pinned_upstream_source(self):
         self.assertEqual(hashlib.sha256(HELPER.read_bytes()).hexdigest(),
-                         'c694e2bd13cd1444982eaf0b3857dfe1a6628565264448e4ef63ac73e8257113')
+                         '29847ff959da90b2dbb9252af6162332d3325413f26ea071e34bcd7c5204968a')
+        self.assertEqual(hashlib.sha256(FRAME.read_bytes()).hexdigest(),
+                         '24c1fdaf3280200562fb927abe2d73458ab561e185be70de30e3699c17e6e87b')
 
     def test_historical_seeds_are_readable_but_not_new_approval_or_verification(self):
         self.new_run('r', approve=False)

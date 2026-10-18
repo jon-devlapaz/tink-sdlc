@@ -71,12 +71,14 @@ python3 _system/scripts/sdlc.py stage <slug> 1 \
 ```
 
 The upstream contract is Seed Me PR #17 at
-`aae81876017abfe37ac91b223f26b5b36e9d98fa`: `session.py seed checks
+`934891aa8b130e8edd0391144bafe9403be84b82`: `session.py seed checks
 set|show|render`, session records in `seed-checks.json`, and confirmation v2.
 Intake requires the helper's `status` to report `handoff.verified`: canonical
 records, full seed bytes, rendered acceptance bytes and decisions must still match
-the confirmation. Exactly one real Acceptance criteria section outside fences and HTML
-comments is required; normalized extra acceptance headings are refused. A Markdown-only seed or v1 confirmation is refused. The helper
+the confirmation. The entire heading sequence must match the canonical Full or Lean
+frame literally and in order, after one leading H1 title; no heading normalization
+or freeform frame is accepted. Fences and HTML comments are opaque, and the sole
+Acceptance criteria section must match the unchanged renderer bytes. A Markdown-only seed or v1 confirmation is refused. The helper
 is executable toolchain code; supply a trusted installation, not a seed-provided script.
 Verification proves content binding, not operator identity or implementation approval.
 
