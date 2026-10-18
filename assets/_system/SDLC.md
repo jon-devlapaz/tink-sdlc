@@ -231,8 +231,9 @@ that integration; proposals grant no implementation or execution authority.
 
 - The launcher (the human, or a script acting for them) records the gate, then runs
   `python3 _system/scripts/sdlc.py stage <run> <n>` (`--check` previews, `--worktree PATH` or `--here`
-  picks the checkout, `--seed-contract PATH --seed-me-helper PATH` verifies the bound session's v2 handoff and adds its confirmed seed contract to a stage-1 prompt, and the run keeps its own copy at `runs/<slug>/seed-contract.md`, committed with the run; that copy's sha256 is recorded in `run.json` and bound to approvals and verification, so editing the copy makes them stale, and re-running stage 1 with a revised original re-copies and re-binds it). It commits
-  `runs/<run>`, creates the worktree (stage 3: branch `<run>`; stage 5: detached review checkout),
+  picks the checkout, `--seed-contract PATH --seed-me-helper PATH` verifies the bound session's v2 handoff and adds its confirmed seed contract to a stage-1 prompt, and the run keeps its own copy at `runs/<slug>/seed-contract.md`, committed with the run; that copy's sha256 is recorded in `run.json` and bound to approvals and verification, so editing the copy makes them stale, and re-running stage 1 with a revised original re-copies and re-binds it). Only a worktree
+  launch (stages 3 and 5 unless `--here`) commits `runs/<run>`, so the new checkout has the run; other
+  launches commit nothing. It creates the worktree (stage 3: branch `<run>`; stage 5: detached review checkout),
   runs `tink use <skillset> --snapshot runs/<run>/<stage-dir>` inside it, and prints the launch prompt
   for a NEW session. It refuses unless the entry gates are approved and current (stage 5 also needs
   current verification), and it fails closed when the skillset does not compile. Stage 4 runs inside the

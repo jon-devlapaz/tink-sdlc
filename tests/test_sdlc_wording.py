@@ -42,6 +42,18 @@ class WordingTests(unittest.TestCase):
         self.assertNotIn('Inspect code, write the plan,', build)
         self.assertIn('For full runs, write the plan', build)
 
+    def test_stage_one_names_each_profiles_gate_and_template(self):
+        # #54: a planner read the bare stage-1 Gate line as a stage-1 decision for a light run.
+        text = ' '.join((ROOT / 'assets/stages/01-plan/CONTEXT.md').read_text().split())
+        self.assertIn('(light runs: `decide <slug> 3`; full runs: `decide <slug> 1`)', text)
+        self.assertIn('`_shared/brief-template.md` for light runs', text)
+
+    def test_only_worktree_launches_commit_the_run(self):
+        # #53: `stage --here` commits nothing, so the guide must not promise it does.
+        text = ' '.join((ROOT / 'assets/_system/SDLC.md').read_text().split())
+        self.assertIn('Only a worktree launch (stages 3 and 5 unless `--here`) commits `runs/<run>`', text)
+        self.assertNotIn('It commits `runs/<run>`', text)
+
     def test_preapproval_dry_run_preserves_gate_authority(self):
         text = (ROOT / 'assets/_system/SDLC.md').read_text()
         self.assertLess(text.index('sdlc.py dry-run fix-example'), text.index('sdlc.py decide fix-example'))
