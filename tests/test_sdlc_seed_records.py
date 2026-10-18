@@ -24,7 +24,7 @@ class RecordIntake(StageBase):
 
     def test_helper_fixture_is_exact_pinned_upstream_source(self):
         self.assertEqual(hashlib.sha256(HELPER.read_bytes()).hexdigest(),
-                         'df1a08f26dbcb764769787d8edd3c83d6d58b142653d23fc78babcba9db6ec89')
+                         'c694e2bd13cd1444982eaf0b3857dfe1a6628565264448e4ef63ac73e8257113')
 
     def test_historical_seeds_are_readable_but_not_new_approval_or_verification(self):
         self.new_run('r', approve=False)
