@@ -519,6 +519,26 @@ class WorktreeMode(StageBase):
         self.assertEqual(result.stdout.splitlines()[-3:], [f'Checkout: {review}', 'Launch prompt (start a NEW session there):',
                                                             'Begin stage 5 (deploy) of SDLC run `r`.'])
 
+    def test_a_repeat_review_names_both_ways_forward_and_git_keeps_the_previous_findings(self):
+        self.set_checks([PASSING])
+        self.new_run('r')
+        self.commit_run()
+        self.verify_run()
+        self.stage('r', 5, env=IDENT)
+        review = self.root.parent / 'proj-review-r'
+        (self.root.parent / 'proj-review-r-2').mkdir()  # taken, so the suggestion moves on
+        findings = self.root / 'runs/r/05-deploy/output/REVIEW-findings.md'
+        findings.parent.mkdir(parents=True, exist_ok=True)
+        findings.write_text('TEST first review\n')  # the owner brought the findings back
+        result = self.refuses('r', 5, message=f'review checkout already exists: {review}', env=IDENT)
+        self.assertIn(f'git worktree remove {review};', result.stderr)
+        fresh = self.root.parent / 'proj-review-r-3'
+        self.assertIn(f'sdlc.py stage r 5 --worktree {fresh}', result.stderr)
+        self.stage('r', 5, '--worktree', str(fresh), env=IDENT)
+        self.assertEqual(self.git('show', 'HEAD:runs/r/05-deploy/output/REVIEW-findings.md').stdout,
+                         'TEST first review\n')
+        self.assertEqual((fresh / 'runs/r/05-deploy/output/REVIEW-findings.md').read_text(), 'TEST first review\n')
+
     def test_stage_five_refuses_stale_verification(self):
         self.set_checks([PASSING])
         self.new_run('r')

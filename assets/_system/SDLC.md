@@ -252,7 +252,8 @@ that integration; proposals grant no implementation or execution authority.
   need an approved gate), then `python3 _system/scripts/sdlc.py verify`. Checked items are proven by `verify` and need no
   mark. Commit before verifying, because the candidate fingerprint includes uncommitted files.
 - The reviewer works in a separate checkout, writes
-  `runs/<slug>/05-deploy/output/REVIEW-findings.md`, and does not modify code or evidence.
+  `runs/<slug>/05-deploy/output/REVIEW-findings.md`, and does not modify code or evidence. The candidate's
+  owner brings the findings to the PR branch; a repeat review replaces the file and Git keeps the previous one.
 
 ## Skills and concurrency
 
