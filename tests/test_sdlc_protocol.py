@@ -21,6 +21,7 @@ class ProtocolTests(unittest.TestCase):
     config = fixtures.WorkflowTests.config
     cli = fixtures.WorkflowTests.cli
     approve = fixtures.WorkflowTests.approve
+    define_checklist = fixtures.WorkflowTests.define_checklist
     create_ready = fixtures.WorkflowTests.create_ready
 
     def machine(self, *args, ok=True):
@@ -97,22 +98,17 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(json.loads(metadata.read_text())['run_id'], run_id)
         self.assertEqual(self.machine('status')['runs'][0]['run_id'], run_id)
 
-    def test_legacy_run_without_id_stays_usable_and_reads_never_assign_one(self):
+    def test_a_run_without_an_id_is_refused_without_repair(self):
         self.cli('new', 'example')
+        self.cli('new', 'healthy')
         metadata = self.root / 'runs/example/run.json'
         record = json.loads(metadata.read_text())
-        record.pop('run_id', None)
+        record.pop('run_id')
         metadata.write_text(json.dumps(record))
         before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
-        self.assertIsNone(self.view()['run_id'])
-        self.assertIsNone(self.machine('status')['runs'][0]['run_id'])
-        self.cli('status', 'example')
+        self.assert_invalid_run_is_isolated()
+        self.assertIn('run_id must be a canonical UUIDv4', self.cli('status', 'example', ok=False))
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
-        (metadata.parent / 'checklist.json').unlink()  # existing legacy checklist behavior
-        self.approve()
-        self.cli('verify', 'example')
-        self.assertEqual(self.view()['verification_status'], 'current')
-        self.assertEqual(json.loads(metadata.read_text()), record)
 
     def test_malformed_run_ids_are_refused_without_repair_or_hidden_healthy_runs(self):
         self.cli('new', 'example')
@@ -150,108 +146,24 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
         self.assertEqual(view['cli_status'] + '\n', self.cli('status', 'example'))
 
-    def historical_seed_with_retained_approval(self, retained_pass=False):
-        # Review F2: a synthetic retained current receipt, never new approval of an old seed.
-        self.checked_run()
-        if retained_pass:
-            self.mark_manual()
-            self.cli('verify', 'example')
+    def test_a_seed_binding_without_record_intake_is_refused(self):
+        self.cli('new', 'example')
+        self.cli('new', 'healthy')
         path = self.root / 'runs/example'
         seed = path / 'seed-contract.md'
-        seed.write_text('## Acceptance criteria\nTEST historical handwritten requirement\n')
+        seed.write_text('## Acceptance criteria\nTEST handwritten requirement\n')
         metadata = json.loads((path / 'run.json').read_text())
-        metadata.pop('run_id')
         metadata['seed_contract'] = {'path': 'runs/example/seed-contract.md',
                                      'sha256': hashlib.sha256(seed.read_bytes()).hexdigest(),
-                                     'source': '/tmp/TEST-retained-session/seed-contract.md'}
+                                     'source': '/tmp/TEST-session/seed-contract.md'}
         (path / 'run.json').write_text(json.dumps(metadata))
-        with patch.object(fixtures.workflow, 'ROOT', self.root):
-            for receipt in (path / 'decisions').glob('*.json'):
-                value = json.loads(receipt.read_text())
-                value['inputs'] = fixtures.workflow.inputs(path, 3)
-                receipt.write_text(json.dumps(value))
-            if retained_pass:
-                receipt = path / '04-test/output/verification.json'
-                value = json.loads(receipt.read_text())
-                value.update(fixtures.workflow.evidence_inputs(path))
-                receipt.write_text(json.dumps(value))
-        return path
-
-    def assert_record_intake_blocked(self):
         before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
-        view = self.view()
-        self.assertIsNone(view['run_id'])
-        self.assertEqual(view['verification_status'], 'blocked')
-        if view['verification'] is not None:
-            self.assertFalse(view['verification']['passed'])
-        self.assertTrue(any('record intake' in error for error in view['errors']))
-        for action in ('verify', 'mark'):
-            self.assertFalse(view['actions'][action]['allowed'])
-            self.assertIn('v2 re-intake', view['actions'][action]['reason'])
-        self.assertEqual(set(view['actions']['verify']), {'allowed', 'reason', 'timeout_seconds'})
-        self.assertIsNone(view['actions']['verify']['timeout_seconds'])
-        self.assertEqual(set(view['actions']['mark']), {'allowed', 'reason'})
-        for text in ('explicit v2 re-intake', 'stage example 1', '--seed-contract', '--seed-me-helper'):
-            self.assertIn(text, view['next_action'])
-            self.assertIn(text, view['cli_status'])
-        self.assertEqual(view['cli_status'] + '\n', self.cli('status', 'example'))
-        summary = self.machine('status')['runs'][0]
-        self.assertEqual(summary['verification_status'], 'blocked')
-        self.assertEqual(summary['next_action'], view['next_action'])
+        self.assert_invalid_run_is_isolated()
+        for command in (['verify', 'example'],
+                        ['decide', 'example', '3', 'approved', '--reviewer', 'h', '--source', 's', '--reason', 'r']):
+            with self.subTest(command=command[0]):
+                self.assertIn('Seed binding has no record intake', self.cli(*command, ok=False))
         self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
-        return view
-
-    def test_historical_retained_approval_requires_v2_reintake_in_status(self):
-        for retained_pass in (False, True):
-            with self.subTest(retained_pass=retained_pass):
-                self.setUp()
-                self.historical_seed_with_retained_approval(retained_pass)
-                view = self.assert_record_intake_blocked()
-                self.assertEqual(view['gates'], [{'stage': 3, 'status': 'approved', 'blocked': False}])
-                self.assertIn('record intake', self.cli('verify', 'example', ok=False))
-
-    def test_historical_stale_and_pending_gates_prioritize_v2_reintake(self):
-        for gate in ('stale', 'pending'):
-            with self.subTest(gate=gate):
-                self.setUp()
-                path = self.historical_seed_with_retained_approval()
-                if gate == 'stale':
-                    (path / 'brief.md').write_text('TEST changed scope')
-                else:
-                    for receipt in (path / 'decisions').glob('*.json'):
-                        receipt.unlink()
-                view = self.assert_record_intake_blocked()
-                self.assertEqual(view['gates'][0]['status'], gate)
-
-    def test_explicit_v2_reintake_restores_normal_status_actions_after_review(self):
-        self.historical_seed_with_retained_approval()
-        self.assert_record_intake_blocked()
-        sessions = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-reviewed-reintake-')
-        self.addCleanup(sessions.cleanup)
-        seed = confirmed(sessions.name)
-        self.cli('stage', 'example', '1', '--here', '--seed-contract', str(seed), '--seed-me-helper', str(HELPER))
-        self.assertFalse(self.view()['actions']['verify']['allowed'])  # renewed definition review still required
-        self.approve()
-        view = self.view()
-        self.assertEqual(view['errors'], [])
-        self.assertTrue(view['actions']['verify']['allowed'])
-        self.assertTrue(view['actions']['mark']['allowed'])
-        self.assertNotIn('v2 re-intake', view['next_action'])
-
-    def test_failed_verify_before_reintake_does_not_repeat_its_hint(self):
-        # #75: a verify refused for record intake leaves a failed receipt naming re-intake;
-        # once re-intake and review are done, status must name the next real step instead.
-        self.historical_seed_with_retained_approval()
-        self.assertIn('record intake', self.cli('verify', 'example', ok=False))
-        sessions = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-failed-reintake-')
-        self.addCleanup(sessions.cleanup)
-        self.cli('stage', 'example', '1', '--here', '--seed-contract', str(confirmed(sessions.name)),
-                 '--seed-me-helper', str(HELPER))
-        self.approve()
-        view = self.view()
-        self.assertNotIn('re-intake', view['next_action'])
-        self.assertNotIn('re-intake', view['cli_status'])
-        self.assertIn('verification', view['next_action'].lower())
 
     def test_real_light_run_evidence_and_actions(self):
         self.checked_run()
@@ -424,24 +336,23 @@ class ProtocolTests(unittest.TestCase):
         metadata.write_text(json.dumps(original))
         self.assertEqual(self.view()['meta']['kind'], 'feature')
 
-    def test_malformed_historical_decisions_do_not_hide_healthy_runs(self):
+    def test_malformed_decisions_do_not_hide_healthy_runs(self):
         self.create_ready()
         self.cli('new', 'healthy')
         self.approve('3')
         receipt = sorted((self.root / 'runs/example/decisions').glob('*.json'))[0]
         original = json.loads(receipt.read_text())
         malformed = [*({field: value} for field in ('reviewer', 'source', 'reason')
-                       for value in (False, 17, [], {})),
+                       for value in (None, False, 17, [], {})),
                      *({'decision': value} for value in (None, True, [], 'pending', 'stale', 'new-state'))]
         for fields in malformed:
             with self.subTest(decision=fields):
                 receipt.write_text(json.dumps({**original, **fields}))
                 self.assert_invalid_run_is_isolated()
-        receipt.write_text(json.dumps({**original, 'reviewer': None, 'source': None, 'reason': None,
-                                       'future-field': {'extra': True}}))
+        receipt.write_text(json.dumps({**original, 'future-field': {'extra': True}}))
         projected = self.view()['decisions'][0]
         self.assertEqual(projected['decision'], 'approved')
-        self.assertIsNone(projected['reviewer'])
+        self.assertEqual(projected['reviewer'], original['reviewer'])
 
     def test_deep_json_is_isolated_with_a_structured_error(self):
         self.cli('new', 'example')

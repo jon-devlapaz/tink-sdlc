@@ -107,7 +107,7 @@ class WalkBase(unittest.TestCase):
 
 
 class FreshScaffold(WalkBase):
-    def test_older_completed_arcade_runs_do_not_reparse_markdown(self):
+    def test_older_completed_arcade_runs_fail_walk_without_changes(self):
         # Modelled on tink-arcade runs/pacman (item 7) and runs/snake (item 1):
         # old bound seeds, no run_id or imported records, existing completed evidence.
         fixtures = json.loads((ROOT / 'tests/fixtures/older-completed-runs.json').read_text())
@@ -124,8 +124,10 @@ class FreshScaffold(WalkBase):
             self.write(f'runs/{slug}/05-deploy/output/release.md', 'TEST completed cabinet\n')
         before = tree_hash(self.root)
         code, data = self.walk()
-        self.assertEqual(code, 0, json.dumps(data, indent=2))
-        self.assertEqual(self.check(data, 'W6')['status'], 'pass')
+        self.assertEqual(code, 1, json.dumps(data, indent=2))
+        items = self.check(data, 'W6')['items']
+        self.assertEqual(len(items), len(fixtures), items)
+        self.assertTrue(all('run_id must be a canonical UUIDv4' in item for item in items), items)
         self.assertEqual(tree_hash(self.root), before)
 
     def test_fresh_scaffold_has_no_warnings_or_failures(self):
@@ -434,11 +436,14 @@ class W6Status(WalkBase):
         self.assertEqual(c['status'], 'fail')
         self.assertTrue(any('alpha' in i for i in c['items']), c['items'])
 
-    def test_legacy_run_without_run_json_skipped(self):
-        self.write('runs/legacy/brief.md', 'old')
+    def test_a_runs_directory_without_run_json_fails(self):
+        self.write('runs/old/brief.md', 'old')
         self.write('runs/.hidden/run.json', '{not json')
         c = self.status_of('W6')
-        self.assertEqual(c['status'], 'pass')
+        self.assertEqual(c['status'], 'fail')
+        self.assertEqual(len(c['items']), 1, c['items'])
+        self.assertIn('runs/old', c['items'][0])
+        self.assertIn('Run has no run.json', c['items'][0])
 
 
 class W7Rules(WalkBase):

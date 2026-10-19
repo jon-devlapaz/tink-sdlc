@@ -100,17 +100,22 @@ def locked(path, timeout=5.0, poll_interval=0.05):
 
 
 def require_run(path):
+    """The one supported run shape; anything else is refused with what it lacks."""
     if not path.is_dir() or not (path / 'run.json').is_file():
-        raise ValueError('Run is missing or legacy. Create a new run; legacy artifacts remain readable but are not approved evidence.')
+        raise ValueError('Run has no run.json; create runs with sdlc.py new.')
     meta = read_json(path / 'run.json')
-    if isinstance(meta, dict) and 'run_id' in meta:
-        value = meta['run_id']
-        try:
-            identity = uuid.UUID(value) if isinstance(value, str) else None
-        except ValueError:
-            identity = None
-        if identity is None or identity.version != 4 or str(identity) != value:
-            raise ValueError('Run run_id must be a canonical UUIDv4 string.')
+    if not isinstance(meta, dict):
+        raise ValueError('Run run.json must be an object.')
+    value = meta.get('run_id')
+    try:
+        identity = uuid.UUID(value) if isinstance(value, str) else None
+    except ValueError:
+        identity = None
+    if identity is None or identity.version != 4 or str(identity) != value:
+        raise ValueError('Run run_id must be a canonical UUIDv4 string; create runs with sdlc.py new.')
+    bound = meta.get('seed_contract')
+    if bound and 'definitions_sha256' not in bound:
+        raise ValueError('Seed binding has no record intake; create a new run and bind the confirmed seed at stage 1.')
     return meta
 
 
@@ -179,10 +184,10 @@ def relative_check_cwd(cwd):
 
 
 def seed_check_items(path):
-    """Validate the immutable intake snapshot, never re-parse historical seed Markdown."""
+    """Validate the immutable intake snapshot; seed Markdown is never parsed."""
     bound = require_run(path).get('seed_contract')
-    if not bound or 'definitions_sha256' not in bound:
-        return []  # Historical runs remain readable, not eligible for new seed approval.
+    if not bound:
+        return []
     target = path / 'seed-checks.json'
     if not target.is_file():
         raise ValueError('Locked seed checks are missing; rebind the confirmed seed at stage 1.')
@@ -242,8 +247,11 @@ def missing_cited_evidence(path):
     return missing
 
 
+MISSING_CHECKLIST = 'checklist.json is missing; restore it from Git.'
+
+
 def load_checklist(path):
-    """None for legacy runs without checklist.json; otherwise the validated item list."""
+    """None when checklist.json was deleted (sdlc.py new always writes one); otherwise the validated items."""
     target = path / 'checklist.json'
     seed_items = seed_check_items(path)
     if not target.exists():
@@ -325,18 +333,9 @@ def stages(path):
     return [3] if require_run(path)['profile'] == 'light' else [1, 2, 3]
 
 
-def require_record_intake(path):
-    bound = require_run(path).get('seed_contract')
-    if bound and 'definitions_sha256' not in bound:
-        raise ValueError('Historical seed contract needs verified Seed Me record intake; complete explicit v2 re-intake '
-                         'at stage 1 before new approval or verification: display a fresh draft and obtain Seed Me v2 '
-                         'confirmation, then run: '
-                         f'python3 _system/scripts/sdlc.py stage {path.name} 1 '
-                         '--seed-contract <session>/seed-contract.md --seed-me-helper <trusted-seed-me>/scripts/session.py')
-
-
 def ready(path):
-    require_record_intake(path)
+    if load_checklist(path) is None:
+        raise ValueError(MISSING_CHECKLIST)
     for stage in stages(path):
         if gate(path, stage) != 'approved':
             raise ValueError(f'Stage {stage} needs a current approval receipt.')
@@ -527,18 +526,19 @@ def decide(args):
                 if not source.is_file() or digest(source.read_bytes()) != bound['sha256']:
                     raise ValueError(f"The seed contract {bound['path']} changed or is missing since stage 1 was opened; "
                                      f'confirm it again, then run: sdlc.py stage {args.run} 1 --seed-contract {bound.get("source", bound["path"])}')
-        if args.decision == 'approved' and args.stage == 3 and load_checklist(path) == []:
+        items = load_checklist(path) if args.decision == 'approved' and args.stage == 3 else ()
+        if items is None:
+            raise ValueError(MISSING_CHECKLIST)
+        if items == []:
             raise ValueError(f'Define at least one checklist item before approval. Edit runs/{args.run}/checklist.json '
                              '(each item needs id, description, verify; optional check).')
         if args.decision == 'approved':
-            require_record_intake(path)
             seed_check_items(path)
             for stage in stages(path):
                 if stage < args.stage and gate(path, stage) != 'approved':
                     raise ValueError(f'Approve stage {stage} first.')
         write_json(path / 'decisions' / f'{args.stage}-{time.time_ns()}-{uuid.uuid4().hex}.json', {
             'inputs': inputs(path, args.stage), 'decision': args.decision,
-            **({'has_checklist': True} if args.stage == 3 and (path / 'checklist.json').exists() else {}),
             'reviewer': args.reviewer, 'source': args.source, 'reason': args.reason})
     print('Recorded local review receipt. Release approval must be independently authenticated by the forge.')
 
@@ -756,7 +756,7 @@ def mark(args):
     with locked(path / '.writer-lock'):
         items = load_checklist(path)
         if items is None:
-            raise ValueError('Run has no checklist.json (legacy run); nothing to mark.')
+            raise ValueError(MISSING_CHECKLIST)
         if args.item not in {item['id'] for item in items}:
             ids = ', '.join(item['id'] for item in items)
             raise ValueError(f'Unknown checklist item: {args.item} (items: {ids})')
@@ -796,8 +796,7 @@ def checklist_view(path, verified=False):
     except (ValueError, TypeError) as error:
         return {'state': 'invalid', 'items': [], 'error': str(error)}
     if items is None:
-        decision = latest(path, 3)
-        return {'state': 'missing' if decision and decision.get('has_checklist') else 'legacy', 'items': []}
+        return {'state': 'missing', 'items': []}
     try:
         tree = snapshot()['tree'] if items else None
     except (ValueError, OSError, subprocess.SubprocessError):
@@ -817,7 +816,7 @@ def checklist_view(path, verified=False):
 
 
 def checklist_text(view):
-    messages = {'missing': 'MISSING (deleted after approval)', 'legacy': 'none (legacy run)',
+    messages = {'missing': 'MISSING (restore checklist.json from Git)',
                 'empty': 'no items defined', 'invalid': f"invalid ({view.get('error')})"}
     if view['state'] in messages:
         return 'Checklist: ' + messages[view['state']]
@@ -887,11 +886,6 @@ def status_state(path):
         raise ValueError('Run profile must be light or full.')
     if not isinstance(meta.get('kind', 'feature'), str):
         raise ValueError('Run kind must be a string.')
-    intake_error = None
-    try:
-        require_record_intake(path)
-    except ValueError as error:
-        intake_error = str(error)
     gates, blocked = [], False
     for stage in stages(path):
         state = gate(path, stage)
@@ -899,7 +893,6 @@ def status_state(path):
             raise ValueError(f'Unknown gate state: {state}')
         gates.append({'stage': stage, 'status': state, 'blocked': blocked})
         blocked = blocked or state != 'approved'
-    blocked = blocked or bool(intake_error)
     record_path, _ = verification_files(path)
     record = read_json(record_path) if record_path.exists() else None
     if record is not None:
@@ -930,7 +923,7 @@ def status_state(path):
     else:
         state = {'passed': 'stale', 'failed': 'failed', 'running': 'interrupted'}[record['result']]
     checklist = checklist_view(path, verified)
-    errors = [intake_error] if intake_error else []
+    errors = []
     try:
         config = checks_config()
     except (ValueError, OSError, TypeError, AttributeError) as error:
@@ -952,12 +945,12 @@ def status_state(path):
     first_gate = next((g for g in gates if g['status'] != 'approved'), None)
     gate_reason = f"revise/review stage {first_gate['stage']}; record the human decision." if first_gate else ''
     if first_gate and first_gate['stage'] == 3:
-        if meta['profile'] == 'light' and (not (path / 'brief.md').is_file() or checklist['state'] in ('empty', 'missing', 'legacy', 'invalid')):
+        if meta['profile'] == 'light' and (not (path / 'brief.md').is_file() or checklist['state'] in ('empty', 'missing', 'invalid')):
             gate_reason = f'Define brief.md and checklist.json in runs/{path.name} before requesting human review.'
         elif any(item['automatic'] for item in checklist['items']):
             gate_reason = (f'Run python3 _system/scripts/sdlc.py dry-run {path.name} before definition review; '
                            'inspect each check output, then record the actual human decision.')
-    unavailable = 'A writer already owns this run.' if active else (intake_error or gate_reason)
+    unavailable = 'A writer already owns this run.' if active else gate_reason
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
@@ -969,7 +962,7 @@ def status_state(path):
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',
     }.get(state, 'implement the approved brief, then run verification.')
-    return {'slug': path.name, 'run_id': meta.get('run_id'),
+    return {'slug': path.name, 'run_id': meta['run_id'],
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active,
             'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
@@ -1040,8 +1033,8 @@ def run_view(slug):
         if not isinstance(record, dict) or record.get('decision') not in ('approved', 'changes-requested'):
             raise ValueError(f'Unrecognized decision receipt: {file.name}')
         for key in ('reviewer', 'source', 'reason'):
-            if record.get(key) is not None and not isinstance(record[key], str):
-                raise ValueError(f'Decision {key} must be a string or null: {file.name}')
+            if not isinstance(record.get(key), str):
+                raise ValueError(f'Decision {key} must be a string: {file.name}')
         decisions.append({'id': file.stem, 'stage': int(identity[1]), 'timestamp_ns': int(identity[2]),
                           **{key: record.get(key) for key in ('decision', 'reviewer', 'source', 'reason')}})
     view['decisions'] = decisions
@@ -1330,7 +1323,7 @@ def walk_w6(root):
     name = 'status-derivable'
     script = root / '_system/scripts/sdlc.py'
     runs_dir = root / 'runs'
-    slugs = sorted(p.name for p in runs_dir.iterdir() if p.is_dir() and not p.name.startswith('.') and (p / 'run.json').is_file()) if runs_dir.is_dir() else []
+    slugs = sorted(p.name for p in runs_dir.iterdir() if p.is_dir() and not p.name.startswith('.')) if runs_dir.is_dir() else []
     if not slugs:
         return walk_result('W6', name, 'pass', 'sdlc.py is present', 'no runs')
     bad = []

@@ -49,9 +49,14 @@ class WorkflowTests(unittest.TestCase):
     def approve(self, stage='3'):
         self.cli('decide', 'example', stage, 'approved', '--reviewer', 'human', '--source', 'review:1', '--reason', 'accepted')
 
+    def define_checklist(self):
+        # One item whose check always passes, so verify proves it with no mark.
+        (self.root / 'runs/example/checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+            {'id': 'ok', 'description': 'd', 'verify': 'v', 'check': {'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 5}}]}))
+
     def create_ready(self, *args):
         self.cli('new', 'example', *args)
-        (self.root / 'runs/example/checklist.json').unlink()  # legacy run: no checklist enforcement
+        self.define_checklist()
         self.approve()
 
     def commit_as(self, author, name, text):
@@ -306,7 +311,7 @@ class WorkflowTests(unittest.TestCase):
     def test_full_dependency_chain(self):
         self.cli('new', 'example', '--profile', 'full')
         self.cli('decide', 'example', '2', 'approved', '--reviewer', 'human', '--source', 'review:1', '--reason', 'yes', ok=False)
-        (self.root / 'runs/example/checklist.json').unlink()  # legacy run
+        self.define_checklist()
         for stage in ['1', '2', '3']:
             self.approve(stage)
         (self.root / 'runs/example/01-plan/output/intent.md').write_text('changed intent')
@@ -958,18 +963,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('Verification: current', self.cli('status', 'example'))
         self.assertIn('checklist', record)
 
-    def test_legacy_run_without_checklist_unaffected(self):
+    def test_a_run_without_its_checklist_is_refused(self):
         self.cli('new', 'example')
         self.checklist_path().unlink()
-        self.approve()
         out = self.cli('status', 'example')
-        self.assertIn('Checklist: none (legacy run)', out)
-        self.assertIn('Stage 3: approved', out)
-        self.mark('alpha', ok=False)
-        self.cli('verify', 'example')
-        receipt = json.loads((self.root / 'runs/example/04-test/output/verification.json').read_text())
-        self.assertNotIn('checklist', receipt)
-        self.assertIn('Verification: current', self.cli('status', 'example'))
+        self.assertIn('Checklist: MISSING (restore checklist.json from Git)', out)
+        for command in (['decide', 'example', '3', 'approved', '--reviewer', 'human', '--source', 'review:1', '--reason', 'r'],
+                        ['mark', 'example', 'alpha', 'passed', '--evidence', 'e'], ['verify', 'example']):
+            with self.subTest(command=command[0]):
+                self.assertIn('checklist.json is missing; restore it from Git.', self.cli(*command, ok=False))
+        self.assertEqual(list((self.root / 'runs/example/decisions').glob('*.json')), [])
 
     def test_concurrent_marks_leave_valid_receipts(self):
         self.checklist_ready(('alpha', 'beta'))
@@ -1145,30 +1148,11 @@ class WorkflowTests(unittest.TestCase):
 
     def test_deleted_checklist_after_approval_reported_missing(self):
         self.checklist_ready()
-        decision = sorted((self.root / 'runs/example/decisions').glob('3-*.json'))[-1]
-        self.assertTrue(json.loads(decision.read_text())['has_checklist'])
         self.checklist_path().unlink()
         out = self.cli('status', 'example')
-        self.assertIn('Checklist: MISSING (deleted after approval)', out)
-        self.assertNotIn('legacy run', out)
+        self.assertIn('Checklist: MISSING (restore checklist.json from Git)', out)
         self.assertIn('Stage 3: stale', out)
-
-    def test_legacy_decisions_do_not_record_or_report_checklist(self):
-        self.create_ready()
-        decision = sorted((self.root / 'runs/example/decisions').glob('3-*.json'))[-1]
-        self.assertNotIn('has_checklist', json.loads(decision.read_text()))
-        self.assertIn('Checklist: none (legacy run)', self.cli('status', 'example'))
-        self.cli('verify', 'example')
-        self.assertNotIn('checklist_items', self.receipt())
-
-    def test_decision_without_field_behaves_as_before(self):
-        self.checklist_ready()
-        decision = sorted((self.root / 'runs/example/decisions').glob('3-*.json'))[-1]
-        record = json.loads(decision.read_text())
-        del record['has_checklist']
-        decision.write_text(json.dumps(record))
-        self.checklist_path().unlink()
-        self.assertIn('Checklist: none (legacy run)', self.cli('status', 'example'))
+        self.assertIn('checklist.json is missing; restore it from Git.', self.cli('verify', 'example', ok=False))
 
     LOG_HINT = ' (output: runs/example/04-test/output/test-log.md)'
 

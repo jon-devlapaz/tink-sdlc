@@ -30,21 +30,6 @@ class RecordIntake(StageBase):
         self.assertEqual(hashlib.sha256(FRAME.read_bytes()).hexdigest(),
                          '24c1fdaf3280200562fb927abe2d73458ab561e185be70de30e3699c17e6e87b')
 
-    def test_historical_seeds_are_readable_but_not_new_approval_or_verification(self):
-        self.new_run('r', approve=False)
-        path = self.root / 'runs/r'
-        seed = path / 'seed-contract.md'
-        seed.write_text('## Acceptance criteria\nHandwritten old check\n')
-        meta = json.loads((path / 'run.json').read_text())
-        meta['seed_contract'] = {'path': 'runs/r/seed-contract.md',
-                                 'sha256': hashlib.sha256(seed.read_bytes()).hexdigest()}
-        (path / 'run.json').write_text(json.dumps(meta))
-        self.assertEqual(self.sdlc('status', 'r').returncode, 0)
-        result = self.sdlc('decide', 'r', '3', 'approved', '--reviewer', 'h', '--source', 's', '--reason', 'r')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('record intake', result.stderr)
-        self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
-
     def test_every_kind_locks_source_and_optional_fields(self):
         records = [command(), provisional(), provisional('false'), {**DEFAULT[0], 'how_to_judge': 'Inspect'}]
         self.intake(self.prepare(records))
