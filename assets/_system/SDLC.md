@@ -11,14 +11,7 @@ python3 _system/scripts/sdlc.py new fix-example --kind bug
 python3 _system/scripts/sdlc.py status fix-example
 ```
 
-### Claude Code command access
-
-Dogfood observed Claude Code permission prompts for `python3` and `git`. Review each
-command before allowing it; this note is not a blanket allowlist. Optional Tink
-integrations also invoke `tink` and `tink-route` when installed. Recheck the actual
-prompts and commands before release.
-
-The default `light` profile creates one `brief.md`: problem, acceptance criteria, approach, risks, and verification, plus `checklist.json` for the implementation checklist. Use `--profile full` for consequential architecture or policy changes; it creates the existing intent/spec/plan artifacts. A human selects the appropriate profile. Legacy artifacts without run metadata remain drafts; text approval tags are not imported as evidence.
+The default `light` profile creates one `brief.md` (problem, acceptance criteria, approach, risks, verification) plus `checklist.json`. A human picks `--profile full` for consequential architecture or policy changes; it creates intent, spec and plan. Legacy artifacts without run metadata remain drafts; text approval tags are not evidence.
 
 Before asking for definition-gate approval, review the checklist commands and offer a dry run:
 
@@ -26,21 +19,8 @@ Before asking for definition-gate approval, review the checklist commands and of
 python3 _system/scripts/sdlc.py dry-run fix-example
 ```
 
-This runs every checklist `check` in the repository root with its declared timeout,
-without needing an approval. It executes real commands, not a sandbox: review their
-side effects first and use the intended verification environment. Output goes to
-`runs/<slug>/checklist-dry-run.log`; each invocation replaces that log. All checks
-are attempted, with launch errors, timeouts and nonzero exits reported per item.
-No check process survives its check: dry-run and verification checks start in a new
-session; on normal exit or timeout, remaining members of that process group are
-killed and the direct child is reaped before proceeding. Commands must not escape
-that session; process-group cleanup is not a sandbox.
-Inspect output to distinguish an expected reproduction failure from a broken command
-or environment (including an unsuitable `TMPDIR`); nonzero exits need review, not
-necessarily a passing reproduction. Correct command/environment problems before
-review, then rerun. Attested items are not executed. The dry run records no decision,
-mark or verification receipt, does not enforce a new approval prerequisite, and does
-not replace `verify`, which still requires current approval and passing checks.
+It runs every checklist `check` in the repository root with its timeout, with no approval needed. These are real commands, not a sandbox: review their side effects and use the intended verification environment. Output replaces `runs/<slug>/checklist-dry-run.log`, reporting launch errors, timeouts and nonzero exits per item. No check process survives its check: each starts in a new session, and on normal exit or timeout the rest of its process group is killed and the child reaped. Commands must not escape that session; process-group cleanup is not a sandbox either.
+Read the output to tell an expected reproduction failure from a broken command or environment (such as an unsuitable `TMPDIR`), fix the latter, then rerun. Attested items are not executed. The dry run records no decision, mark or receipt, does not enforce a new approval prerequisite, and does not replace `verify`, which still requires current approval and passing checks.
 
 After the human accepts the brief, record the actual review reference:
 
@@ -50,7 +30,7 @@ python3 _system/scripts/sdlc.py decide fix-example 3 approved \
   --reason 'Accepted scope, approach, and acceptance criteria'
 ```
 
-Light runs have ONE definition gate, recorded as stage 3 (`sdlc.py decide <run> 3 ...`): the approved `brief.md` + `checklist.json` are the intent, design and plan. Full runs record decisions for stages 1, 2, and 3 in order. Markdown stays editable. `changes-requested` records rejection using the same command. Editing an artifact or contract makes dependent decisions stale; older receipts remain available. No agent should invent a reviewer or approval. These local receipts track workflow; they do not authenticate identity or authorize a release.
+Light runs have ONE definition gate, recorded as stage 3 (`sdlc.py decide <run> 3 ...`): the approved `brief.md` + `checklist.json` are the intent, design and plan. Full runs record stages 1, 2 and 3 in order. `changes-requested` records rejection with the same command. Editing an artifact or contract makes dependent decisions stale; older receipts remain. Never invent a reviewer or approval. Local receipts track workflow; they do not authenticate identity or authorize a release.
 
 ## Checklist
 
@@ -58,7 +38,9 @@ Light runs have ONE definition gate, recorded as stage 3 (`sdlc.py decide <run> 
 
 An item may carry `check`: `{"argv":[...],"timeout_seconds":N}`, validated like `verification.json` checks. `verify` runs every item's `check` in the repository root after the configured checks, logging to `test-log.md`; a failure or timeout fails verification (`Checklist check failed: <id>`). A passing check proves the item in that verify run and needs no mark, so `mark` is refused for checked items. Review the commands at approval: they execute like verification checks and are bound to the approval digest, so editing one makes approval stale.
 
-An item without `check` is attested. Agents record it with `sdlc.py mark <run> <item-id> passed|failed --evidence <text>`, which needs a current stage 3 approval and appends a receipt under `marks/`; the latest receipt per item wins, and `verify` requires it to be `passed`. The passed verification records a digest of each attested item's latest receipt (so editing one also stales it), so any later `mark` (pass or fail) makes it stale: mark first, then run `verify` again. Attested marks are self-reported claims: independent review should challenge them. Status flags an attested item marked on an older candidate as attested before the latest changes; re-check it only if the change affects it. The passed verification receipt records each item as `proven` or `attested`. Runs without `checklist.json` are legacy and unaffected (so deleting the file downgrades a run to legacy; status says `Checklist: none (legacy run)`; local files are not a tamper boundary, and neither are receipts you can delete or `git update-index --skip-worktree`, so trusted CI and forge review are the boundary); status reports a checklist deleted after approval as MISSING.
+An item without `check` is attested: record it with `sdlc.py mark <run> <item-id> passed|failed --evidence <text>`, which needs a current stage 3 approval and appends a receipt under `marks/`. The latest receipt per item wins, and `verify` requires `passed`. Verification binds a digest of each latest receipt, so any later mark or edit makes it stale: mark first, then verify. Attested marks are self-reported claims for independent review to challenge. Status flags an item marked on an older candidate; re-check it only if the change affects it. The passed receipt records each item as `proven` or `attested`.
+
+Runs without `checklist.json` are legacy (`Checklist: none (legacy run)`); a checklist deleted after approval reads as MISSING. Local files, deletable receipts and `git update-index --skip-worktree` are not a tamper boundary: trusted CI and forge review are.
 
 ### Locked seed acceptance checks
 
@@ -84,11 +66,9 @@ is executable toolchain code; supply a trusted installation, not a seed-provided
 Verification proves content binding, not operator identity or implementation approval.
 
 Intake copies the confirmed seed and preserves every record's fields in locked
-`runs/<slug>/seed-checks.json` items with stable `seed-N` IDs. The run metadata
-retains the v2 confirmation and immutable definitions digest. There is no Markdown
-acceptance parser or legacy intake fallback. Historical runs remain readable by
-status/walk without parsing their seeds; new approvals or verification of old
-seed-bound runs require explicit v2 re-intake.
+`runs/<slug>/seed-checks.json` items with stable `seed-N` IDs; run metadata keeps the
+v2 confirmation and definitions digest. There is no Markdown parser or legacy fallback:
+older seed-bound runs stay readable, but new approval or verification needs v2 re-intake.
 
 Imported items are **LOCKED, operator-confirmed** definitions, distinct from the
 worker's editable `checklist.json`; `seed-` IDs are reserved. They participate in
@@ -152,9 +132,9 @@ observations still need rechecking when candidate changes affect them.
 
 ## Implementation and verification
 
-Use a separate Git worktree or clone for each code-writing run, never just two branches in one checkout. Keep each run's artifacts in its own checkout. Do not share writable skill directories. Ports, databases, and credentials need separate isolation when used.
+Give each code-writing run its own Git worktree or clone, never just a second branch in one checkout, and keep its artifacts there. Ports, databases and credentials need their own isolation when used.
 
-Configure `_system/verification.json` with nonempty command argument arrays and timeouts. Fresh installations have an empty check list and fail verification until real project tests, build, lint, and other required checks are configured. Missing commands, missing configuration, failed checks, and timeouts fail verification. Required Tink checks fail if Tink is unavailable. The tool does not infer test coverage from an exit code. A failed check's error ends with `(output: runs/<slug>/04-test/output/test-log.md)`, where the full output is logged.
+Configure `_system/verification.json` with nonempty argv arrays and timeouts. A fresh install has no checks and fails verification until real tests, build, lint and other required checks are selected; file-name heuristics are not evidence a command is right, and the runner should reject zero tests, since an exit code alone proves no coverage. Missing configuration, failed checks, timeouts, and required Tink checks without Tink all fail. A failed check's error ends with `(output: runs/<slug>/04-test/output/test-log.md)`.
 To hold commit authorship, add `"authors": {"since": "<commit>", "allow": ["Claude session_* <noreply@anthropic.com>", "Name <email>"]}`.
 Verify then refuses any commit after `since` whose `Name <email>` author matches no `allow` pattern (shell-style `*`), and names it;
 history up to `since` is never judged. Without `authors`, authorship is not checked.
@@ -163,9 +143,13 @@ history up to `since` is never judged. Without `authors`, authorship is not chec
 python3 _system/scripts/sdlc.py verify fix-example
 ```
 
-Verification writes the actual check output and a generated receipt under `04-test/output/`. The receipt binds the Git revision, tracked and nonignored untracked file contents/modes (excluding disposable untracked Python caches), artifact inputs, policy, test lock, and log digest. It excludes `runs/`; do not place application source or test infrastructure there. Ignored files and external services are outside this fingerprint: pin dependencies and environments in trusted CI. Generated `tink:rules` blocks in the root `AGENTS.md` are session context and are excluded from the candidate fingerprint (`sdlc.py walk` and `tink use --check` verify them); all other `AGENTS.md` text still counts. If the candidate changes while checks run, the error lists up to five changed paths, and hints when tracked bytecode files are the cause or when a check created new untracked files (add generated output to `.gitignore`; the next run is stable once the file exists unchanged). Commit code changes before final verification. The receipt records the observed commit for provenance; status compares candidate contents, so committing only run evidence does not invalidate unchanged code. CI must still verify the actual revision being merged. Avoid modifying the checkout while checks run.
+Verification writes the check output and a receipt under `04-test/output/`. The receipt binds the commit, the contents and modes of tracked and nonignored untracked files (not untracked Python caches), artifact inputs, policy, test lock and log digest.
+- `runs/` is outside the fingerprint, so keep application source and test infrastructure out of it. Committing only run evidence does not stale unchanged code.
+- Ignored files and external services are outside it too: pin dependencies and environments in trusted CI, which must still verify the revision being merged.
+- Generated `tink:rules` blocks in the root `AGENTS.md` are excluded from the candidate fingerprint (`walk` and `tink use --check` verify them); all other `AGENTS.md` text counts.
+- Commit before final verification and leave the checkout alone while checks run. If it changes anyway, the error lists up to five paths and hints at tracked bytecode or new untracked output (add that to `.gitignore`).
 
-A preexisting log is never passing evidence. Failed or interrupted verification cannot reuse an older passing receipt. Local status is not deployment status.
+A preexisting log is never passing evidence, and failed or interrupted verification never reuses an older passing receipt. Local status is not deployment status.
 
 ## Bug reproduction baseline
 
@@ -177,7 +161,7 @@ python3 _system/scripts/sdlc.py lock-tests fix-example tests/test_regression.py 
   --failure-evidence 'Actual failing CI job or retained reproduction evidence'
 ```
 
-Include relevant fixtures, snapshots, discovery configuration, and runner helpers in the locked paths. Bug runs cannot verify without a lock; changed or missing locked files fail. Add `--reproduce '["python3","-m","unittest","tests.test_regression"]'` (a JSON argv array) to run the reproduction at lock time: the lock is refused if it passes, and the exit code and log digest are recorded and shown by `status` (`reproduction` in `status --json`). Without it the lock records review evidence only, `status` says the failure was not run locally, and CI must confirm it. A mistaken baseline requires an independently reviewed replacement run, linked to the previous one. This conservative PoC does not silently unlock tests.
+Include relevant fixtures, snapshots, discovery configuration, and runner helpers in the locked paths. Bug runs cannot verify without a lock; changed or missing locked files fail. Add `--reproduce '["python3","-m","unittest","tests.test_regression"]'` (a JSON argv array) to run the reproduction at lock time: the lock is refused if it passes, and the exit code and log digest are recorded and shown by `status` (`reproduction` in `status --json`). Without it the lock records review evidence only, `status` says the failure was not run locally, and CI must confirm it. A mistaken baseline requires an independently reviewed replacement run, linked to the previous one; tests are never unlocked silently.
 
 This detects local changes, not adversarial tampering. Strict protection requires CI to fetch the accepted test revision independently, protect verification policy, run against the candidate revision, and require the resulting check before merge. Agent-writable lock files and hooks are not an authorization boundary. This scaffold does not configure a forge or deployment environment.
 
@@ -239,7 +223,8 @@ that integration; proposals grant no implementation or execution authority.
 
 - The launcher (the human, or a script acting for them) records the gate, then runs
   `python3 _system/scripts/sdlc.py stage <run> <n>` (`--check` previews, `--worktree PATH` or `--here`
-  picks the checkout, `--seed-contract PATH --seed-me-helper PATH` verifies the bound session's v2 handoff and adds its confirmed seed contract to a stage-1 prompt, and the run keeps its own copy at `runs/<slug>/seed-contract.md`, committed with the run; that copy's sha256 is recorded in `run.json` and bound to approvals and verification, so editing the copy makes them stale, and re-running stage 1 with a revised original re-copies and re-binds it). Only a worktree
+  picks the checkout, and at stage 1 `--seed-contract PATH --seed-me-helper PATH` binds a run-local copy at
+  `runs/<slug>/seed-contract.md`, as in Locked seed acceptance checks; editing the copy stales approvals and verification). Only a worktree
   launch (stages 3 and 5 unless `--here`) commits `runs/<run>`, so the new checkout has the run; other
   launches commit nothing. It creates the worktree (stage 3: branch `<run>`; stage 5: detached review checkout),
   runs `tink use <skillset> --snapshot runs/<run>/<stage-dir>` inside it, and prints the launch prompt
@@ -279,9 +264,9 @@ tink use <name>-skillset --snapshot runs/<slug>/<stage-dir>  # at stage open, th
 tink-route --receipt runs/<slug>/skills.jsonl "<what you need>"
 ```
 
-`required` lists the disciplines that `tink use` compiles into `AGENTS.md` at stage open, so each stage gets a fresh session that re-reads it. The starting set is every `principle-*` member of the pin; it is provisional and to be tuned later by ablation. Capability skills come only through `tink-route` for genuine gaps (stdout is the skill); exit 1 or 2 means continue without a skill.
+`required` lists the disciplines that `tink use` compiles into `AGENTS.md` at stage open, so each stage gets a fresh session that re-reads it. The starting set is every `principle-*` member of the pin, provisional until tuned by ablation. Capability skills come only through `tink-route` for genuine gaps; exit 1 or 2 means continue without a skill.
 
-`tink-route` searches the whole skill library and never reads `AGENTS.md`, so the command is identical in every stage. In our routing eval 56% of the skills a stage needed were not on that stage's shelf, and the whole library was as precise as the shelf where both applied. `--skillset NAME` restricts a call to one skillset (exit 1 may then add `Hint: <skill> fits but is on another shelf (<skillset>); it was not delivered.`); `--anywhere` is the default spelled out.
+`tink-route` searches the whole skill library and never reads `AGENTS.md`, so the command is identical in every stage: in our routing eval 56% of the skills a stage needed were not on its shelf, and the whole library was as precise. `--skillset NAME` restricts a call to one skillset (exit 1 may then add `Hint: <skill> fits but is on another shelf (<skillset>); it was not delivered.`); `--anywhere` is the default spelled out.
 
 `seed-me` is human-invoked and belongs to no stage skillset. Install it separately with `tink skill add jon-devlapaz/tink-skills --skill seed-me`. Its confirmed seed contract is the input to 01-plan: give the agent that file's path in the stage-1 launch prompt.
 
@@ -289,9 +274,11 @@ tink-route --receipt runs/<slug>/skills.jsonl "<what you need>"
 
 ## Recovery and release
 
-Creation validates names and publishes a complete run atomically. Each run has one writer at a time. Busy or interrupted operations fail with the lock path. After a crash, confirm no process owns the operation before removing its lock directory, then rerun. Status is derived from receipts; do not hand-edit generated records. To check that the workspace stays legible to an agent with no memory, run the structural walk lint (see Walk lint).
+Runs are created atomically and have one writer at a time; busy or interrupted operations fail with the lock path. After a crash, confirm no process owns the operation before removing its lock directory, then rerun. Status is derived from receipts; never hand-edit generated records.
 
-Use protected branches, current required CI results, independent code-owner approval, and deployment checks in your forge. When to open a PR: once the candidate is committed and verification is current (end of stage 4, and `stage <slug> 5` enforces it). Plans and design (stages 1-2) need no PR; a draft PR during build is optional and is not review. The agent may open the PR. Only a human authorizes a merge, directly or through a recorded standing approval that names merging; with that authorization the agent may merge, within the forge's rules. Manual delivery: `git push -u origin <run>`, then `gh pr create --fill` (or open the PR in the forge). `stage <slug> 3` and `stage <slug> 5` warn, without refusing, when there is no `origin` remote or a GitHub `origin` has no usable `gh`; if that warning appeared, hand the owner these commands at the end instead of stopping silently. Changing code after it is open means verifying again. PR creation and review findings do not prove deployment. Retain deployed revision, deployment result, and rollback references in the deployment system. A run ends when its closure record exists: once review/rework is finished, write `runs/<run>/closure.md` (PR URL, merge revision, outcome) and commit it, then record it from the substrate with `python3 -m tink_substrate archive --checkout <path> --project <repo> --run <run> --phase closure` (see its `docs/finish-a-change.md`); strip only after that. `status` describes candidate evidence and never marks a run merged or closed.
+Use protected branches, current required CI, independent code-owner approval and deployment checks in your forge. Open the PR once the candidate is committed and verification is current (end of stage 4; `stage <slug> 5` enforces it); stages 1-2 need none, and a draft PR during build is not review. Delivery, merge authority and the no-`origin` warning are owned by `stages/05-deploy/CONTEXT.md`; `stage <slug> 3` prints that warning early, without refusing. PR creation and review findings do not prove deployment: keep deployed revision, result and rollback references in the deployment system.
+
+A run ends when its closure record exists: after review and rework, commit `runs/<run>/closure.md` (PR URL, merge revision, outcome), then record it with `python3 -m tink_substrate archive --checkout <path> --project <repo> --run <run> --phase closure` (see tink-substrate's `docs/finish-a-change.md`); strip only after that. `status` describes candidate evidence and never marks a run merged or closed.
 
 Maintenance is optional intake, not a required completion stage. Enable it only after defining metric-specific thresholds, deduplication, cooldowns, and run limits. Alerts create drafts for service-owner triage, never fabricated approvals.
 
@@ -315,14 +302,12 @@ and capabilities are additive; removing fields or changing their meaning require
 a new API major. Unknown critical states, malformed responses, and unsupported
 majors must fail closed, never fall back to parsing the human CLI.
 
-From scaffold 1.24.0, `new` stores a random UUIDv4 `run_id` in `run.json`.
-SDLC operations preserve it, including seed rebinding and worktree copies.
-Recreating a deleted run with the same slug creates a different ID. Both JSON
-status forms return this ID; the slug and workspace locate the run, not identify
-its creation. A legacy record without the field returns `run_id: null` and stays
-usable. Reads never assign an ID; legacy adoption is not implemented. A present
-field must be a canonical lowercase, hyphenated UUIDv4 string; malformed values
-are refused. The ID is not approval or tamper protection: local files are editable.
+From scaffold 1.24.0, `new` stores a random UUIDv4 `run_id` in `run.json`; SDLC
+operations, seed rebinding and worktree copies preserve it, and recreating a deleted
+slug creates a new one. The slug and workspace locate a run; `run_id` identifies its
+creation. Legacy records return `run_id: null` and stay usable; reads never assign one.
+A present value must be a canonical lowercase, hyphenated UUIDv4, or it is refused.
+The ID is not approval or tamper protection.
 
 `status --json` returns `runs`: summaries with `slug`, `run_id`, `profile`, `kind`,
 `verification_status`, `next_action`, `has_lock`, and `checklist_summary`
@@ -345,10 +330,9 @@ are refused. The ID is not approval or tamper protection: local files are editab
   when allowed). Verification also has `timeout_seconds`, a total execution budget
   or null when blocked. These are UI hints, not authorization: `verify <run>` and
   `mark <run> <item> passed|failed --evidence <text>` recheck their own rules.
-  Historical seed bindings without record intake remain readable, but their status
-  errors and action reasons require explicit v2 re-intake at stage 1 before renewed
-  definition review. Even retained current gates or old passing receipts cannot
-  make verification eligible/current; `next_action` names re-intake, not reapproval alone.
+  Historical seed bindings without record intake stay readable, but their errors, action
+  reasons and `next_action` name v2 re-intake at stage 1; retained gates or old passing
+  receipts never make them eligible or current.
 - `artifacts` (named text), `decisions` (normalized stage, nanosecond timestamp,
   decision, reviewer, source, reason, and opaque id). Decision values are `approved`
   or `changes-requested`; reviewer, source, and reason are strings or null when
@@ -369,10 +353,6 @@ a pass: refresh structured status. Launch verification in its own process group;
 on cancellation, disconnect, timeout, or shutdown, terminate and reap that group,
 including check descendants. Local evidence still grants no release authority.
 
-The provider contract tests execute the shipped payload on disposable light/full
-runs, including failure, stale inputs, lock contention, and log tampering. Keep
-these tests in release validation when evolving the runtime.
-
 ## Walk lint
 
 ```sh
@@ -381,15 +361,13 @@ python3 _system/scripts/sdlc.py walk [--json]
 
 A read-only, deterministic check of the structural preconditions of the ICM walk test: an agent with no memory should orient, act, and report status from the files alone. No network, no model, and it writes nothing. It checks: W1 the `AGENTS.md` entry file (router markers present, the router block at most 60 lines, generated blocks within their cap; project instructions kept beside the router past 60 lines total are a warning, not a failure); W2 backticked `_system/`, `_shared/`, `stages/`, `.tink/`, `.agents/` pointers in the router and stage contracts resolve (`runs/` paths are exempt); W3 each stage contract names Inputs, Output, and a human Gate; W4 estimated context tokens per stage (warn above 8000, fail above 16000); W5 every `*-skillset` name has a pin and every pin is named; W6 `sdlc.py status` runs for every run; W7 the compiled `tink:rules` block is current (`tink use <name> --check`, skipped when `tink` is absent).
 
-This is structural. It cannot prove that a cold agent can actually orient; a real walk by a fresh agent stays the test. A `tink:rules` block written by `tink use` (delimited by `<!-- tink:rules begin ... -->` and `<!-- tink:rules end -->`) is allowed router payload up to 8192 bytes, a deliberate divergence from ICM's rule that the router holds no content; the router block is bounded by the 60-line rule, and other `AGENTS.md` text that the installer preserved only draws a W1 warning once the file passes 60 lines. Exit 0 when nothing fails (warnings do not fail), 1 when a check fails, 2 for usage errors.
+It is structural: a real walk by a fresh agent stays the test. A `tink:rules` block written by `tink use` (between `<!-- tink:rules begin ... -->` and `<!-- tink:rules end -->`) may hold up to 8192 bytes, a deliberate divergence from ICM's content-free router. Exit 0 when nothing fails (warnings do not fail), 1 when a check fails, 2 for usage errors.
 
 ## Installation and migration
 
 The installed `_system/scaffold.json` identifies the package and its original hashes.
-Verification starts unconfigured (`checks: []`). Select real checks before verification;
-file-name heuristics are not evidence that a test command is correct. An exit code
-alone does not establish useful coverage; ensure the selected runner rejects zero tests.
-Git must have an initial commit before candidate verification can run.
+Verification starts unconfigured (see Implementation and verification), and Git needs an
+initial commit before it can run.
 
 The installer requires an explicit target. `--check` previews a fresh installation
 or validates an existing one. Repeat initialization preserves the project verification
@@ -435,5 +413,5 @@ the filesystem; neither folder existence nor Markdown approval labels advance it
 Stage numbers are fixed protocol identifiers, not configurable ordering labels.
 
 Templates live in `_shared/`; `brief-template.md` is the light-profile edit surface.
-Run outputs belong under `runs/`. Do not place application code there. Read the
-active contract and immediate inputs rather than loading the full factory.
+Run outputs belong under `runs/`. Read the active contract and immediate inputs rather
+than loading the full factory.
