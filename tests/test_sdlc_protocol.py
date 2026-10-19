@@ -13,6 +13,7 @@ import uuid
 from unittest.mock import patch
 
 import test_sdlc_workflow as fixtures
+from test_sdlc_stage import StageBase
 
 
 class ProtocolTests(unittest.TestCase):
@@ -384,6 +385,95 @@ class ProtocolTests(unittest.TestCase):
         brief.symlink_to(self.root / 'code.py')
         result = self.machine('status', 'example', ok=False)
         self.assertIn('symlink', result['error']['message'].lower())
+
+
+class SeedBindingStatusTests(StageBase):
+    machine = ProtocolTests.machine
+
+    def bound_run(self):
+        self.new_run('example', profile='full', approve=False)
+        seed = confirmed(self.base / 'TEST-sessions')
+        self.stage('example', 1, '--seed-contract', str(seed), '--seed-me-helper', str(HELPER))
+        metadata = json.loads((self.root / 'runs/example/run.json').read_text())
+        return {key: metadata['seed_contract'][key] for key in ('path', 'sha256', 'source')}
+
+    def test_seed_binding_in_run_view(self):
+        expected = self.bound_run()
+        self.new_run('unbound', approve=False)
+        self.assertEqual(self.machine('status', 'example')['run']['seed_contract'], expected)
+        self.assertIsNone(self.machine('status', 'unbound')['run']['seed_contract'])
+        metadata = self.root / 'runs/unbound/run.json'
+        metadata.write_text(json.dumps({**json.loads(metadata.read_text()), 'seed_contract': None}))
+        self.assertIsNone(self.machine('status', 'unbound')['run']['seed_contract'])
+
+    def test_seed_binding_in_run_list(self):
+        expected = self.bound_run()
+        self.new_run('unbound', approve=False)
+        listed = {run['slug']: run for run in self.machine('status')['runs']}
+        self.assertEqual(listed['example']['seed_contract'], expected)
+        self.assertIsNone(listed['unbound']['seed_contract'])
+        metadata = self.root / 'runs/unbound/run.json'
+        metadata.write_text(json.dumps({**json.loads(metadata.read_text()), 'seed_contract': None}))
+        listed = {run['slug']: run for run in self.machine('status')['runs']}
+        self.assertIsNone(listed['unbound']['seed_contract'])
+
+    def tree(self):
+        return {str(p.relative_to(self.root)): p.read_bytes() if p.is_file() else None
+                for p in self.root.rglob('*')}
+
+    def test_seed_status_is_read_only_and_human_matches_cli_status(self):
+        expected = self.bound_run()
+        self.new_run('unbound', approve=False)
+        # Reads report intake metadata, not a newly hashed or adopted seed.
+        (self.root / expected['path']).write_text('TEST changed run-local copy')
+        source = self.base / 'TEST-sessions'
+        for seed in source.rglob('seed-contract.md'):
+            seed.unlink()
+        before = self.tree()
+        listed = {run['slug']: run for run in self.machine('status')['runs']}
+        self.assertEqual(self.tree(), before)
+        for slug, binding in [('example', expected), ('unbound', None)]:
+            with self.subTest(slug=slug):
+                view = self.machine('status', slug)['run']
+                self.assertEqual(self.tree(), before)
+                human = self.sdlc('status', slug)
+                self.assertEqual(human.returncode, 0, human.stderr)
+                self.assertEqual(self.tree(), before)
+                self.assertEqual(human.stdout, view['cli_status'] + '\n')
+                self.assertEqual(view['seed_contract'], binding)
+                self.assertEqual(listed[slug]['seed_contract'], binding)
+                lines = [line for line in human.stdout.splitlines() if line.startswith('Seed contract:')]
+                self.assertEqual(lines, [f"Seed contract: {expected['path']} (sha256: {expected['sha256']}; source: {expected['source']})"]
+                                 if binding else [])
+
+    def test_malformed_seed_bindings_are_invalid_without_repair_or_hidden_healthy_runs(self):
+        self.bound_run()
+        self.new_run('healthy', approve=False)
+        metadata = self.root / 'runs/example/run.json'
+        original = json.loads(metadata.read_text())
+        binding = original['seed_contract']
+        malformed = [False, True, 17, '', 'seed', [], {},
+                     *({k: v for k, v in binding.items() if k != field}
+                       for field in ('path', 'sha256', 'source', 'definitions_sha256')),
+                     *({**binding, field: value} for field in ('path', 'sha256', 'source')
+                       for value in (None, False, 17, [], {}, '', ' ')),
+                     *({**binding, 'sha256': value} for value in ('bad-digest', 'a' * 63, 'G' * 64, 'A' * 64))]
+        for value in malformed:
+            with self.subTest(binding=value):
+                metadata.write_text(json.dumps({**original, 'seed_contract': value}))
+                before = self.tree()
+                detail = self.machine('status', 'example', ok=False)
+                self.assertEqual(detail['error']['code'], 'invalid-state')
+                self.assertIn('Seed binding', detail['error']['message'])
+                listed = {run['slug']: run for run in self.machine('status')['runs']}
+                self.assertEqual(listed['example']['verification_status'], 'invalid')
+                self.assertIn('Seed binding', listed['example']['error'])
+                self.assertEqual(listed['healthy']['verification_status'], 'blocked')
+                self.assertIsNone(listed['healthy']['seed_contract'])
+                human = self.sdlc('status', 'example')
+                self.assertNotEqual(human.returncode, 0)
+                self.assertIn('Seed binding', human.stderr)
+                self.assertEqual(self.tree(), before)
 
 
 if __name__ == '__main__':
