@@ -136,7 +136,7 @@ class StageBase(unittest.TestCase):
 
 class Refusals(StageBase):
     def test_missing_run(self):
-        self.refuses('ghost', 1, message='Run is missing')
+        self.refuses('ghost', 1, message='Run has no run.json')
 
     def test_stage_four_is_refused(self):
         self.new_run('r')

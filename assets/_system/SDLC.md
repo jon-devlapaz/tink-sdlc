@@ -11,7 +11,7 @@ python3 _system/scripts/sdlc.py new fix-example --kind bug
 python3 _system/scripts/sdlc.py status fix-example
 ```
 
-The default `light` profile creates one `brief.md` (problem, acceptance criteria, approach, risks, verification) plus `checklist.json`. A human picks `--profile full` for consequential architecture or policy changes; it creates intent, spec and plan. Legacy artifacts without run metadata remain drafts; text approval tags are not evidence.
+The default `light` profile creates one `brief.md` (problem, acceptance criteria, approach, risks, verification) plus `checklist.json`. A human picks `--profile full` for consequential architecture or policy changes; it creates intent, spec and plan. Only runs created by `new` are supported; anything else is refused, and text approval tags are not evidence.
 
 Before asking for definition-gate approval, review the checklist commands and offer a dry run:
 
@@ -40,7 +40,7 @@ An item may carry `check`: `{"argv":[...],"timeout_seconds":N}`, validated like 
 
 An item without `check` is attested: record it with `sdlc.py mark <run> <item-id> passed|failed --evidence <text>`, which needs a current stage 3 approval and appends a receipt under `marks/`. The latest receipt per item wins, and `verify` requires `passed`. Verification binds a digest of each latest receipt, so any later mark or edit makes it stale: mark first, then verify. Attested marks are self-reported claims for independent review to challenge. Status flags an item marked on an older candidate; re-check it only if the change affects it. The passed receipt records each item as `proven` or `attested`.
 
-Runs without `checklist.json` are legacy (`Checklist: none (legacy run)`); a checklist deleted after approval reads as MISSING. Local files, deletable receipts and `git update-index --skip-worktree` are not a tamper boundary: trusted CI and forge review are.
+`new` always writes `checklist.json`; if it is deleted, status reads MISSING and verification refuses until it is restored from Git. Local files, deletable receipts and `git update-index --skip-worktree` are not a tamper boundary: trusted CI and forge review are.
 
 ### Locked seed acceptance checks
 
@@ -66,8 +66,8 @@ Verification proves content binding, not operator identity or implementation app
 
 Intake copies the confirmed seed and preserves every record's fields in locked
 `runs/<slug>/seed-checks.json` items with stable `seed-N` IDs; run metadata keeps the
-v2 confirmation and definitions digest. There is no Markdown parser or legacy fallback:
-older seed-bound runs stay readable, but new approval or verification needs v2 re-intake.
+v2 confirmation and definitions digest. Seed Markdown is never read as checks; a seed binding
+without record intake is refused.
 
 Imported items are **LOCKED, operator-confirmed** definitions, distinct from the
 worker's editable `checklist.json`; `seed-` IDs are reserved. They participate in
@@ -301,12 +301,10 @@ and capabilities are additive; removing fields or changing their meaning require
 a new API major. Unknown critical states, malformed responses, and unsupported
 majors must fail closed, never fall back to parsing the human CLI.
 
-From scaffold 1.24.0, `new` stores a random UUIDv4 `run_id` in `run.json`; SDLC
-operations, seed rebinding and worktree copies preserve it, and recreating a deleted
-slug creates a new one. The slug and workspace locate a run; `run_id` identifies its
-creation. Legacy records return `run_id: null` and stay usable; reads never assign one.
-A present value must be a canonical lowercase, hyphenated UUIDv4, or it is refused.
-The ID is not approval or tamper protection.
+`new` stores a random UUIDv4 `run_id` in `run.json`; SDLC operations, seed rebinding
+and worktree copies preserve it, and recreating a deleted slug creates a new one. The slug
+and workspace locate a run; `run_id` identifies its creation. It must be a canonical
+lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or tamper protection.
 
 `status --json` returns `runs`: summaries with `slug`, `run_id`, `profile`, `kind`,
 `verification_status`, `next_action`, `has_lock`, and `checklist_summary`
@@ -324,18 +322,15 @@ The ID is not approval or tamper protection.
 - `checklist`: normalized items with their definition, `automatic`, `status`
   (`pending`, `passed`, `failed`, or `unknown` for a seed attestation), `proof` (`automated`, `attested`), optional
   observation `mark`, and `needs_recheck`. `checklist_state` distinguishes
-  `defined`, `empty`, `legacy`, `missing`, and `invalid`.
+  `defined`, `empty`, `missing`, and `invalid`.
 - `actions.verify` and `actions.mark`: `allowed` (boolean) and `reason` (empty
   when allowed). Verification also has `timeout_seconds`, a total execution budget
   or null when blocked. These are UI hints, not authorization: `verify <run>` and
   `mark <run> <item> passed|failed --evidence <text>` recheck their own rules.
-  Historical seed bindings without record intake stay readable, but their errors, action
-  reasons and `next_action` name v2 re-intake at stage 1; retained gates or old passing
-  receipts never make them eligible or current.
 - `artifacts` (named text), `decisions` (normalized stage, nanosecond timestamp,
   decision, reviewer, source, reason, and opaque id). Decision values are `approved`
-  or `changes-requested`; reviewer, source, and reason are strings or null when
-  historical metadata is absent. Known malformed fields invalidate that run rather
+  or `changes-requested`; reviewer, source, and reason are strings. Known malformed or
+  missing fields invalidate that run rather
   than being coerced into display text. Also included: `verification_config`
   (display-only checks/policy or null), `errors`, `next_action`, and `cli_status`
   (display-only human output). Human and machine status share one calculation.
@@ -384,7 +379,6 @@ Preview, then apply (the receipt `_system/scaffold.json` is the trust baseline):
 - Managed files (stages, `_shared/`, `_system/` except `verification.json`) are updated
   when unmodified, restored when missing, removed when dropped upstream and unmodified.
 - Project-owned files (`_system/verification.json`, `.tink/skillsets/*.json`) are never overwritten; locally changed ones are kept and reported. New upstream pins are created.
-- Files a release retires are removed only when they are unchanged copies of what was installed; edited ones are kept and reported. From 1.22.0 this retires the stations files (`stages/*/TRIGGERS*.json`, `.tink/pool.lock.json`, `.tink/pool-overlay.json`, `_system/scripts/stations.py`).
 - A managed file you customized blocks the upgrade: nothing is written, and the plan lists
   each file with a `diff` to compare. Merge your changes by hand, or commit them and rerun
   with `--overwrite-customized` to take the package version (git keeps your old copy).
