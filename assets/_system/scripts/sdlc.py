@@ -1474,7 +1474,7 @@ def require_tink_use(tink):
 def stage_seed_contract(value, helper):
     """Verify Seed Me's v2 handoff before writes; the supplied helper is trusted code.
 
-    Contract: seed-me PR #17, 9ef827f92c79f5d53afd255ac0fb4ae32b85dd4f.
+    Contract: seed-me c9d766760dbeac0c05c92108165f9e968bec0a66.
     """
     resolved = Path(value).resolve()
     if not resolved.is_file():
