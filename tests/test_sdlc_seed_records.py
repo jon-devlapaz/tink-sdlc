@@ -26,7 +26,7 @@ class RecordIntake(StageBase):
 
     def test_helper_fixture_is_exact_pinned_upstream_source(self):
         self.assertEqual(hashlib.sha256(HELPER.read_bytes()).hexdigest(),
-                         '22e506bf40018666d6d1b5246299dd0ee88bdebffc7c9a92c165b864bc49111b')
+                         '47b6e13c545d5016f62eb16ea5ff75689ec13ae6435b99894069c72cde5a5451')
         self.assertEqual(hashlib.sha256(FRAME.read_bytes()).hexdigest(),
                          '24c1fdaf3280200562fb927abe2d73458ab561e185be70de30e3699c17e6e87b')
 
@@ -105,7 +105,9 @@ class RecordIntake(StageBase):
                     (directory / 'seed-checks.json').unlink()
                 else:
                     # Even rebinding the seed hash cannot bless handwritten rendered bytes.
-                    seed.write_bytes(original['seed-contract.md'].replace(b'```json', b'```JSON'))
+                    tampered = original['seed-contract.md'].replace(b'\ncheck: ', b'\nCHECK: ')
+                    self.assertNotEqual(tampered, original['seed-contract.md'], 'the tamper must change the rendered checks')
+                    seed.write_bytes(tampered)
                     record = json.loads(original['seed-confirmation.json'])
                     record['seed_sha256'] = hashlib.sha256(seed.read_bytes()).hexdigest()
                     (directory / 'seed-confirmation.json').write_text(json.dumps(record))
