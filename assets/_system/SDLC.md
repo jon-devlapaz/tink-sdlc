@@ -196,10 +196,10 @@ For a Tinkery-originated run:
   PR/result revision. Link each claimed completion condition to evidence for that result;
   name unresolved conditions and findings. Keep automated proof, manual attestation, independent review and operator acceptance
   separate. This assembled handoff is human-readable only, not a normalized machine interface.
-  API 1 already exposes run_id and verification candidate provenance, but not the
-  seed_contract binding or an explicit PR reference. Until those fields are exposed,
-  do not treat this prose as input to Tinkery's machine binding or reader; that API
-  work is proposed separately in [#68](https://github.com/jon-devlapaz/tink-sdlc/issues/68).
+  API 1 exposes run_id, the seed_contract binding and verification candidate provenance,
+  but not an explicit PR reference. Use structured status for the seed binding, not this
+  prose as input to Tinkery's machine binding or reader. A binding is evidence of intake,
+  not approval, goal identity or release authority.
   Acceptance or correction returns to the existing external review process
   for the displayed result. Copying a handoff records no verdict and starts nothing;
   recheck current state before recording any external decision.
@@ -307,7 +307,7 @@ and workspace locate a run; `run_id` identifies its creation. It must be a canon
 lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or tamper protection.
 
 `status --json` returns `runs`: summaries with `slug`, `run_id`, `profile`, `kind`,
-`verification_status`, `next_action`, `has_lock`, and `checklist_summary`
+`seed_contract`, `verification_status`, `next_action`, `has_lock`, and `checklist_summary`
 (`total`, `passed`). An unreadable run instead has `verification_status: "invalid"`,
 `error`, and an empty summary; it does not hide valid runs.
 
@@ -315,6 +315,14 @@ lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or t
 
 - `slug`, `run_id`, `meta` (`profile`, `kind`), and `gates` (`stage`, `status`, `blocked`).
   Gate states are `approved`, `pending`, `stale`, or `changes-requested`.
+- `seed_contract`: exactly `path`, `sha256`, and `source` from run.json, or null
+  when unbound (absent or null in run.json). Both status forms expose this binding;
+  human run status adds one `Seed contract:` line when bound. A binding must be an
+  object with nonempty strings for all three fields and a lowercase 64-character
+  SHA-256 hex digest, plus the existing record-intake marker `definitions_sha256`.
+  Malformed bindings invalidate the run. Reads never adopt, repair or rewrite a
+  binding or require its original source to remain available.
+  This is intake evidence, not approval, goal identity or release authority.
 - `verification_status`: `blocked`, `running`, `not-run`, `current`, `stale`,
   `failed`, or `interrupted`. `verification` is null or a normalized record with
   `result`, `passed`, `candidate`, `log` (digest), and `error`. Only `passed: true`

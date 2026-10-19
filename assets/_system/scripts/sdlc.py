@@ -114,8 +114,16 @@ def require_run(path):
     if identity is None or identity.version != 4 or str(identity) != value:
         raise ValueError('Run run_id must be a canonical UUIDv4 string; create runs with sdlc.py new.')
     bound = meta.get('seed_contract')
-    if bound and 'definitions_sha256' not in bound:
-        raise ValueError('Seed binding has no record intake; create a new run and bind the confirmed seed at stage 1.')
+    if bound is not None:
+        if not isinstance(bound, dict):
+            raise ValueError('Seed binding must be an object or null.')
+        for key in ('path', 'sha256', 'source'):
+            if not isinstance(bound.get(key), str) or not bound[key].strip():
+                raise ValueError(f'Seed binding {key} must be a nonempty string.')
+        if not re.fullmatch(r'[0-9a-f]{64}', bound['sha256']):
+            raise ValueError('Seed binding sha256 must be a lowercase SHA-256 hex digest.')
+        if 'definitions_sha256' not in bound:
+            raise ValueError('Seed binding has no record intake; create a new run and bind the confirmed seed at stage 1.')
     return meta
 
 
@@ -962,7 +970,9 @@ def status_state(path):
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',
     }.get(state, 'implement the approved brief, then run verification.')
-    return {'slug': path.name, 'run_id': meta['run_id'],
+    bound = meta.get('seed_contract')
+    seed_contract = {key: bound[key] for key in ('path', 'sha256', 'source')} if bound is not None else None
+    return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract,
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active,
             'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
@@ -976,7 +986,8 @@ def status_state(path):
 
 
 def status_text(view):
-    lines = []
+    bound = view['seed_contract']
+    lines = [f"Seed contract: {bound['path']} (sha256: {bound['sha256']}; source: {bound['source']})"] if bound else []
     for gate_info in view['gates']:
         stage, state, blocked = gate_info['stage'], gate_info['status'], gate_info['blocked']
         lines.append(f'Stage {stage}: {state}' + (' (blocked by upstream gate)' if blocked else ''))
@@ -1079,6 +1090,7 @@ def status(args):
         try:
             view = run_view(name)
             runs.append({'slug': name, 'run_id': view['run_id'], **view['meta'], 'verification_status': view['verification_status'],
+                         'seed_contract': view['seed_contract'],
                          'next_action': view['next_action'], 'has_lock': view['has_lock'],
                          'checklist_summary': {'total': len(view['checklist']),
                                                'passed': sum(i['status'] == 'passed' for i in view['checklist'])}})
