@@ -1730,7 +1730,7 @@ def stage(args):
     detached = n != 3
     if make_worktree:
         target = Path(os.path.abspath(args.worktree)) if args.worktree else (
-            ROOT.parent / (f'{ROOT.name}-review-{run}' if n == 5 else f'{ROOT.name}-{run}'))
+            Path.home() / 'dev/worktrees' / ROOT.name / (f'review-{run}' if n == 5 else run))
         first_existing = target.parent
         while not first_existing.exists():
             first_existing = first_existing.parent
