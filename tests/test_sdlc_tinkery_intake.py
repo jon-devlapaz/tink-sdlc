@@ -75,12 +75,29 @@ class TinkeryIntake(StageBase):
         executable.write_text('not an executable format\n')
         self.refuse(executable, 'Tinkery could not run')
 
-    def test_failed_status_and_checks_hide_library_output(self):
+    def test_failed_status_and_checks_preserve_recorded_refusal_reason(self):
+        refusal = corpus()['refusals']['missing']['checks']
+        self.assertNotEqual(refusal['returncode'], 0)
+        reason = refusal['stderr'].strip()
+        self.assertTrue(reason)
         for command in ('status', 'checks'):
             with self.subTest(command=command):
                 responses = copy.deepcopy(self.responses)
-                responses[command] = {'returncode': 7, 'stdout': '{}', 'stderr': 'TEST library error Debug(...)'}
-                self.refuse(self.verifier(responses), 'Tinkery refused seed intake')
+                responses[command] = refusal
+                result = self.refuse(self.verifier(responses), f'Tinkery refused seed intake: {reason}')
+                self.assertEqual(result.stderr,
+                                 f'Error: Tinkery refused seed intake: {reason}; '
+                                 'check the session in Tinkery and retry.\n')
+
+    def test_failed_status_and_checks_without_stderr_keep_plain_next_step(self):
+        for command in ('status', 'checks'):
+            for stderr in ('', ' \n '):
+                with self.subTest(command=command, stderr=stderr):
+                    responses = copy.deepcopy(self.responses)
+                    responses[command] = {'returncode': 7, 'stdout': '{}', 'stderr': stderr}
+                    result = self.refuse(self.verifier(responses), 'Tinkery refused seed intake')
+                    self.assertEqual(result.stderr, 'Error: Tinkery refused seed intake; '
+                                                   'check the session in Tinkery and retry.\n')
 
     def test_malformed_json_and_shapes_refuse_plainly(self):
         invalid = {'status': ['{', '[]', 'null', '17', '{}', 'NaN', 'Infinity', '[' * 20000 + '0' + ']' * 20000,

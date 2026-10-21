@@ -1508,7 +1508,9 @@ def stage_seed_contract(value, tinkery):
         except (OSError, subprocess.SubprocessError, UnicodeError):
             raise ValueError('Tinkery could not run the seed verifier; check --tinkery PATH and retry.') from None
         if result.returncode:
-            raise ValueError('Tinkery refused seed intake; check the session in Tinkery and retry.')
+            reason = result.stderr.strip()
+            detail = f': {reason}; ' if reason else '; '
+            raise ValueError(f'Tinkery refused seed intake{detail}check the session in Tinkery and retry.')
         try:
             return json.loads(result.stdout, parse_constant=invalid_constant)
         except (ValueError, RecursionError):
