@@ -1546,6 +1546,10 @@ def stage_seed_contract(value, tinkery):
     if before['handoff']['verified'] is not True:
         raise ValueError('Tinkery handoff is not verified; confirm the current seed in Tinkery and retry.')
     confirmation = read_confirmation()
+    if type(confirmation.get('schema_version')) is int and confirmation['schema_version'] == 3:
+        raise ValueError('Tinkery agent-confirmed receipts are not supported yet; '
+                         'intake requires a schema 2 (human-confirmed) receipt. '
+                         'Have a human confirm the seed in Tinkery, then retry intake.')
     data = read_seed()
     seed_sha256 = digest(data)
     records = call('checks')

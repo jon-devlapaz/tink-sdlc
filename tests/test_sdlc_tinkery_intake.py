@@ -121,6 +121,20 @@ class TinkeryIntake(StageBase):
         responses['status']['stdout'] = json.dumps(status)
         self.refuse(self.verifier(responses), 'Tinkery handoff is not verified')
 
+    def test_agent_confirmed_v3_receipt_refuses_with_human_confirmation_next_step(self):
+        receipt = self.seed.parent / 'seed-confirmation.json'
+        # Minimal synthetic v3 fixture derived from recorded v2 bindings, not Tinkery v3 output.
+        confirmation = json.loads(receipt.read_text())
+        confirmation.update(schema_version=3, operator='agent')
+        receipt.write_text(json.dumps(confirmation))
+        result = self.refuse(self.verifier(), 'agent-confirmed receipts are not supported yet')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr,
+                         'Error: Tinkery agent-confirmed receipts are not supported yet; '
+                         'intake requires a schema 2 (human-confirmed) receipt. '
+                         'Have a human confirm the seed in Tinkery, then retry intake.\n')
+        self.assertNotIn('binding changed during intake', result.stderr)
+
     def test_changed_handoff_between_commands_refuses(self):
         body = ('if len(calls) == 2:\n'
                 f'    status = json.loads({self.responses["status"]["stdout"]!r})\n'
