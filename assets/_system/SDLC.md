@@ -231,7 +231,7 @@ that integration; proposals grant no implementation or execution authority.
   picks the checkout, and at stage 1 `--seed-contract PATH --tinkery PATH` binds a run-local copy at
   `runs/<slug>/seed-contract.md`, as in Locked seed acceptance checks; editing the copy stales approvals and verification). Only a worktree
   launch (stages 3 and 5 unless `--here`) commits `runs/<run>`, so the new checkout has the run; other
-  launches commit nothing. It creates the worktree (stage 3: branch `<run>`; stage 5: detached review checkout),
+  launches commit nothing. It creates the worktree under `~/dev/worktrees/<repo>/` (stage 3: `<run>` on branch `<run>`; stage 5: detached `review-<run>`),
   runs `tink use <skillset> --snapshot runs/<run>/<stage-dir>` inside it, and prints the launch prompt
   for a NEW session. It refuses unless the entry gates are approved and current (stage 5 also needs
   current verification), and it fails closed when the skillset does not compile. Stage 4 runs inside the

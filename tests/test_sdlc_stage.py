@@ -63,6 +63,7 @@ class StageBase(unittest.TestCase):
         shim.chmod(0o755)
         self.home = base / 'home'
         self.home.mkdir()
+        self.wt = self.home / 'dev/worktrees/proj'
         tools = base / 'tools'  # only python3 and git from the host, so a real tink-route on the host PATH cannot leak in
         tools.mkdir()
         (tools / 'python3').symlink_to(PYTHON)
@@ -115,7 +116,7 @@ class StageBase(unittest.TestCase):
 
     def snapshot_state(self):
         return (tree_hash(self.root), self.git('worktree', 'list').stdout, self.git('log', '--oneline', '--all').stdout,
-                self.git('branch', '--list').stdout, self.git('status', '--porcelain').stdout, sorted(p.name for p in self.root.parent.iterdir()))
+                self.git('branch', '--list').stdout, self.git('status', '--porcelain').stdout, sorted(p.name for p in self.root.parent.iterdir()), (self.home / 'dev').exists())
 
     def refuses(self, *args, message, env=None):
         before = self.snapshot_state()
@@ -209,8 +210,8 @@ class Refusals(StageBase):
 
     def test_path_exists_refused(self):
         self.new_run('r')
-        target = self.root.parent / 'proj-r'
-        target.mkdir()
+        target = self.wt / 'r'
+        target.mkdir(parents=True)
         result = self.refuses('r', 3, message=str(target), env=IDENT)
         self.assertIn('git worktree remove', result.stderr)
 
@@ -337,7 +338,7 @@ class HereMode(StageBase):
 
     def test_failed_worktree_creation_leaves_no_branch(self):
         self.new_run('r')
-        ghost = self.root.parent / 'proj-r'
+        ghost = self.wt / 'r'
         self.git('worktree', 'add', '--detach', str(ghost), 'HEAD')
         shutil.rmtree(ghost)
         self.stage('r', 3, ok=False, env=IDENT)
@@ -404,16 +405,16 @@ class HereMode(StageBase):
         self.assertEqual(self.tink_calls(), [])
         out = result.stdout
         self.assertIn('Would commit: yes', out)
-        self.assertIn(f'Would create worktree: {self.root.parent}/proj-r (branch r)', out)
+        self.assertIn(f'Would create worktree: {self.wt}/r (branch r)', out)
         self.assertIn('Would run: tink use build-skillset --snapshot runs/r/03-build', out)
         self.assertEqual(out.splitlines()[-1], 'Begin stage 3 (build) of SDLC run `r`.')
 
     def test_check_names_no_checkout_it_does_not_create(self):
         self.new_run('r')
         out = self.stage('r', 3, '--check', env=IDENT).stdout
-        self.assertNotIn(f'Checkout: {self.root.parent}', out)
+        self.assertNotIn(f'Checkout: {self.wt}', out)
         self.assertIn('Checkout: none yet', out)
-        self.assertFalse((self.root.parent / 'proj-r').exists())
+        self.assertFalse((self.wt / 'r').exists())
 
     def test_check_here_and_without_tink(self):
         self.new_run('r', approve=False)
@@ -442,8 +443,9 @@ class WorktreeMode(StageBase):
     def test_light_build_opens_a_worktree(self):
         self.new_run('r')
         result = self.stage('r', 3, env=IDENT)
-        worktree = self.root.parent / 'proj-r'
+        worktree = self.wt / 'r'
         self.assertTrue(worktree.is_dir())
+        self.assertEqual(sorted(p.name for p in self.root.parent.iterdir()), ['proj'])  # nothing lands beside the checkout
         # one new commit, touching only runs/r
         self.assertEqual(self.git('log', '--oneline').stdout.count('\n'), 2)
         self.assertEqual(self.git('log', '-1', '--format=%s').stdout.strip(), 'stage 3 open: r (approved artifacts and receipts)')
@@ -461,7 +463,7 @@ class WorktreeMode(StageBase):
     def test_walk_lint_still_passes_after_a_launch(self):
         self.new_run('r')
         self.stage('r', 3, env=IDENT)
-        worktree = self.root.parent / 'proj-r'
+        worktree = self.wt / 'r'
         walk = self.sdlc('walk', root=worktree, cwd=worktree)
         self.assertEqual(walk.returncode, 0, walk.stdout + walk.stderr)
 
@@ -485,7 +487,7 @@ class WorktreeMode(StageBase):
         (self.root / 'stray.txt').write_text('x')
         result = self.stage('r', 3, env=IDENT)
         self.assertIn('warning: not carried into the new checkout: stray.txt', result.stdout)
-        self.assertFalse((self.root.parent / 'proj-r/stray.txt').exists())
+        self.assertFalse((self.wt / 'r/stray.txt').exists())
         self.assertNotIn('runs/r', result.stdout.split('warning:')[1].split('\n')[0])
 
     def test_warning_lists_at_most_five(self):
@@ -511,7 +513,7 @@ class WorktreeMode(StageBase):
         verify = self.run_cmd([PYTHON, str(self.root / '_system/scripts/sdlc.py'), 'verify', 'r'], cwd=self.root)
         self.assertIn('passed', verify.stdout)
         result = self.stage('r', 5, env=IDENT)
-        review = self.root.parent / 'proj-review-r'
+        review = self.wt / 'review-r'
         self.assertTrue(review.is_dir())
         self.assertEqual(self.git('branch', '--show-current', cwd=review).stdout.strip(), '')
         self.assertIn('(detached HEAD)', self.git('worktree', 'list').stdout)
@@ -525,14 +527,14 @@ class WorktreeMode(StageBase):
         self.commit_run()
         self.verify_run()
         self.stage('r', 5, env=IDENT)
-        review = self.root.parent / 'proj-review-r'
-        (self.root.parent / 'proj-review-r-2').mkdir()  # taken, so the suggestion moves on
+        review = self.wt / 'review-r'
+        (self.wt / 'review-r-2').mkdir()  # taken, so the suggestion moves on
         findings = self.root / 'runs/r/05-deploy/output/REVIEW-findings.md'
         findings.parent.mkdir(parents=True, exist_ok=True)
         findings.write_text('TEST first review\n')  # the owner brought the findings back
         result = self.refuses('r', 5, message=f'review checkout already exists: {review}', env=IDENT)
         self.assertIn(f'git worktree remove {review};', result.stderr)
-        fresh = self.root.parent / 'proj-review-r-3'
+        fresh = self.wt / 'review-r-3'
         self.assertIn(f'sdlc.py stage r 5 --worktree {fresh}', result.stderr)
         self.stage('r', 5, '--worktree', str(fresh), env=IDENT)
         self.assertEqual(self.git('show', 'HEAD:runs/r/05-deploy/output/REVIEW-findings.md').stdout,
@@ -607,7 +609,7 @@ class WorktreeMode(StageBase):
         self.git('commit', '-qm', 'implementation', env=IDENT)
         self.verify_run()
         self.stage('r', 5, env=IDENT)
-        review = self.root.parent / 'proj-review-r'
+        review = self.wt / 'review-r'
         self.assertEqual((review / 'cand.py').read_text(), 'value = "verified"\n')
         status = self.sdlc('status', 'r', root=review, cwd=review)
         self.assertIn('Verification: current', status.stdout)
@@ -721,7 +723,7 @@ class WorktreeMode(StageBase):
         self.assertEqual(self.tink_calls(), [])
         check = self.stage('r', 3, '--check', ok=False, env=old)
         self.assertIn("has no `tink use`", check.stderr)
-        self.assertFalse((self.base / 'work' / 'proj-r').exists())
+        self.assertFalse((self.wt / 'r').exists())
 
     def test_a_tink_with_use_passes_the_capability_check_silently(self):
         self.new_run('r')
@@ -732,7 +734,7 @@ class WorktreeMode(StageBase):
         self.new_run('r')
         run_id = json.loads((self.root / 'runs/r/run.json').read_text())['run_id']
         result = self.stage('r', 3, ok=False, env={**IDENT, 'TINK_FAIL': '1'})
-        worktree = self.root.parent / 'proj-r'
+        worktree = self.wt / 'r'
         self.assertFalse(worktree.exists())
         self.assertEqual(self.git('branch', '--list', 'r').stdout.strip(), '')
         self.assertNotIn(str(worktree) + '\n', self.git('worktree', 'list').stdout)
@@ -751,7 +753,7 @@ class WorktreeMode(StageBase):
         self.commit_run()
         self.verify_run()
         self.stage('r', 5, ok=False, env={**IDENT, 'TINK_FAIL': '1'})
-        self.assertFalse((self.root.parent / 'proj-review-r').exists())
+        self.assertFalse((self.wt / 'review-r').exists())
         self.stage('r', 5, env=IDENT)
 
     def test_worktree_failure_after_commit_says_what_was_committed(self):
@@ -791,7 +793,7 @@ class DeliveryWarning(StageBase):
     def opened(self, result):
         self.assertIn('Launch prompt', result.stdout)
         self.assertNotIn(self.SECRET, result.stdout + result.stderr)
-        self.assertTrue((self.base / 'work' / 'proj-r').is_dir() or (self.base / 'work' / 'proj-review-r').is_dir())
+        self.assertTrue((self.wt / 'r').is_dir() or (self.wt / 'review-r').is_dir())
 
     def assert_commands(self, out):
         self.assertIn('git push -u origin r', out)
