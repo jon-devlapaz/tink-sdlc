@@ -1,6 +1,6 @@
 """Operator-confirmed seed checks are independent acceptance evidence (#194)."""
 import json
-from seed_me_fixture import HELPER, confirmed, command, provisional, DEFAULT
+from tinkery_fixture import TINKERY, confirmed, command, provisional, DEFAULT
 
 from test_sdlc_stage import StageBase, PASSING
 
@@ -9,7 +9,7 @@ class SeedChecks(StageBase):
     def bind(self, checks, profile='light'):
         self.new_run('r', profile=profile, approve=False)
         seed = confirmed(self.base / 'TEST-sessions', checks)
-        self.stage('r', 1, '--seed-contract', str(seed), '--seed-me-helper', str(HELPER))
+        self.stage('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY))
         self.path = self.root / 'runs/r'
         self.set_checks([PASSING])
 
@@ -209,5 +209,5 @@ class SeedChecks(StageBase):
         self.new_run('r', approve=False)
         seed = self.base / 'seed-contract.md'
         seed.write_text('## Acceptance criteria\nCommand: true\n')
-        self.refuses('r', 1, '--seed-contract', str(seed), '--seed-me-helper', str(HELPER),
-                     message='Seed Me')
+        self.refuses('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY),
+                     message='Tinkery')

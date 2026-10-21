@@ -44,25 +44,31 @@ An item without `check` is attested: record it with `sdlc.py mark <run> <item-id
 
 ### Locked seed acceptance checks
 
-At stage-1 intake, use the bound Seed Me session and its trusted helper:
+At stage-1 intake, use the explicitly supplied session and a trusted Tinkery executable:
 
 ```sh
 python3 _system/scripts/sdlc.py stage <slug> 1 \
   --seed-contract <session>/seed-contract.md \
-  --seed-me-helper <seed-me>/scripts/session.py
+  --tinkery <path>/tinkery
 ```
 
-The upstream contract is Seed Me at `c9d7667` (plain-language acceptance checks): `session.py seed checks
-set|show|render`, session records in `seed-checks.json`, and confirmation v2.
-Intake requires the helper's `status` to report `handoff.verified`: canonical
-records, full seed bytes, rendered acceptance bytes and decisions must still match
-the confirmation. The entire heading sequence must match the canonical Full or Lean
-frame literally and in order, after one leading H1 title; no heading normalization
-or freeform frame is accepted. Fences and HTML comments are opaque, and the sole
-Acceptance criteria section must match the unchanged renderer bytes. Lone CR is refused;
-metadata/prose line endings may be LF or CRLF, while canonical headings/helper blocks remain LF. A Markdown-only seed or v1 confirmation is refused. The helper
-is executable toolchain code; supply a trusted installation, not a seed-provided script.
-Verification proves content binding, not operator identity or implementation approval.
+Tinkery is the single seed verifier. Intake invokes exactly `PATH seed status --json DIR`
+and `PATH seed checks DIR`, where PATH is the supplied executable and DIR is the seed's
+session directory. Status is read again to detect changes during intake. Its existing
+JSON shapes supply `handoff.verified`, the seed digest and canonical check records;
+no viewer fields or network probe are needed. Tinkery alone verifies the human v2
+confirmation against seed bytes, decisions, records, the canonical heading sequence
+and rendered acceptance section. SDLC retains the intake snapshot/digest protections,
+not a second session verifier. Missing or unavailable executables, failed commands,
+malformed output, simulated sessions, missing confirmation and changed bindings refuse
+before any intake or checkout writes. Supply trusted executable toolchain code, never
+a seed-provided script. Verification proves content binding, not operator identity or
+implementation approval.
+
+`--seed-me-helper` is removed; any use refuses with a pointer to `--tinkery`.
+The remaining migration gate is Tinkery's separate copied-command switch and consumer
+pin bump; that pin bump waits for the operator's explicit "merge". This package does
+not change Tinkery's command or consumer pin.
 
 Intake copies the confirmed seed and preserves every record's fields in locked
 `runs/<slug>/seed-checks.json` items with stable `seed-N` IDs; run metadata keeps the
@@ -74,7 +80,7 @@ worker's editable `checklist.json`; `seed-` IDs are reserved. They participate i
 status, dry runs and verification. Their file is bound to every definition gate:
 editing or deleting a check (or the file) stales approval, and `decide` refuses
 imports that disagree with the locked digest. Revised records require a newly
-displayed draft, renewed Seed Me confirmation, explicit stage-1 rebind and definition
+displayed draft, renewed Tinkery confirmation, explicit stage-1 rebind and definition
 review. Rebinding replaces activations too; retain prior evidence in Git.
 Changes to the original session after intake do not change the run-local snapshot.
 
@@ -168,7 +174,7 @@ This detects local changes, not adversarial tampering. Strict protection require
 
 SDLC can operate standalone or as Tinkery's external implementation workflow.
 SDLC owns run identity, implementation orchestration, technical review and local
-verification freshness. Seed Me owns the seed and its discovery decisions.
+verification freshness. Tinkery owns the seed and its discovery decisions.
 Tinkery owns the intended goal-to-result presentation, not another set of SDLC
 approvals. The operator judges usefulness and authorizes merging; the forge
 owns remote checks and enforces configured release requirements. Technical review
@@ -222,7 +228,7 @@ that integration; proposals grant no implementation or execution authority.
 
 - The launcher (the human, or a script acting for them) records the gate, then runs
   `python3 _system/scripts/sdlc.py stage <run> <n>` (`--check` previews, `--worktree PATH` or `--here`
-  picks the checkout, and at stage 1 `--seed-contract PATH --seed-me-helper PATH` binds a run-local copy at
+  picks the checkout, and at stage 1 `--seed-contract PATH --tinkery PATH` binds a run-local copy at
   `runs/<slug>/seed-contract.md`, as in Locked seed acceptance checks; editing the copy stales approvals and verification). Only a worktree
   launch (stages 3 and 5 unless `--here`) commits `runs/<run>`, so the new checkout has the run; other
   launches commit nothing. It creates the worktree (stage 3: branch `<run>`; stage 5: detached review checkout),
@@ -267,7 +273,9 @@ tink-route --receipt runs/<slug>/skills.jsonl "<what you need>"
 
 `tink-route` searches the whole skill library and never reads `AGENTS.md`, so the command is identical in every stage: in our routing eval 56% of the skills a stage needed were not on its shelf, and the whole library was as precise. `--skillset NAME` restricts a call to one skillset (exit 1 may then add `Hint: <skill> fits but is on another shelf (<skillset>); it was not delivered.`); `--anywhere` is the default spelled out.
 
-`seed-me` is human-invoked and belongs to no stage skillset. Install it separately with `tink skill add jon-devlapaz/tink-skills --skill seed-me`. Its confirmed seed contract is the input to 01-plan: give the agent that file's path in the stage-1 launch prompt.
+Tinkery's operator-confirmed seed contract is the input to 01-plan; bind it at stage 1
+as described in Locked seed acceptance checks. Shaping is not a stage skillset or
+permission to implement.
 
 `tink use` and `tink-route` are optional integrations; runs work without them. `tink-route` 0.10.0 or newer is required for whole-library routing (older versions scope routing to the stage shelf in the `AGENTS.md` rules block); `sdlc.py stage` warns when an older one is on PATH.
 

@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from seed_me_fixture import HELPER, confirmed
+from tinkery_fixture import TINKERY, confirmed
 import shutil
 import subprocess
 import tempfile
@@ -244,7 +244,7 @@ class HereMode(StageBase):
         self.new_run('r', approve=False)
         target = confirmed(self.base / 'TEST-sessions')
         result = self.stage('r', 1, '--seed-contract', os.path.relpath(target, self.root),
-                            '--seed-me-helper', str(HELPER), cwd=self.root)
+                            '--tinkery', str(TINKERY), cwd=self.root)
         self.assertEqual(result.stdout.splitlines()[-1],
                          'Begin stage 1 (plan) of SDLC run `r`. The operator-confirmed seed contract is at runs/r/seed-contract.md; '
                          'it is input, not authorization.')
@@ -254,7 +254,7 @@ class HereMode(StageBase):
         self.new_run('r', approve=False)
         outside = confirmed(self.base / 'TEST-sessions')
         original = outside.read_text()
-        result = self.stage('r', 1, '--seed-contract', str(outside), '--seed-me-helper', str(HELPER))
+        result = self.stage('r', 1, '--seed-contract', str(outside), '--tinkery', str(TINKERY))
         self.assertIn('seed contract is at runs/r/seed-contract.md;', result.stdout.splitlines()[-1])
         self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), original)
         self.assertEqual(outside.read_text(), original)
@@ -262,7 +262,7 @@ class HereMode(StageBase):
     def test_the_run_binds_its_own_copy_not_the_original(self):
         self.new_run('r', approve=False)
         target = confirmed(self.base / 'TEST-sessions')
-        self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
+        self.stage('r', 1, '--seed-contract', str(target), '--tinkery', str(TINKERY))
         recorded = json.loads((self.root / 'runs/r/run.json').read_text())['seed_contract']
         self.assertEqual({k: recorded[k] for k in ('path', 'sha256', 'source')},
                          {'path': 'runs/r/seed-contract.md', 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
@@ -281,10 +281,10 @@ class HereMode(StageBase):
         metadata = self.root / 'runs/r/run.json'
         run_id = json.loads(metadata.read_text())['run_id']
         target = confirmed(self.base / 'TEST-sessions')
-        self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
+        self.stage('r', 1, '--seed-contract', str(target), '--tinkery', str(TINKERY))
         self.decide('r', 3)
         target = confirmed(self.base / 'TEST-revised-sessions', extra='Revised TEST scope.\n')
-        self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
+        self.stage('r', 1, '--seed-contract', str(target), '--tinkery', str(TINKERY))
         self.assertEqual((self.root / 'runs/r/seed-contract.md').read_text(), target.read_text())
         self.assertNotIn('Stage 3: approved', self.sdlc('status', 'r').stdout)
         self.assertEqual(json.loads(metadata.read_text())['run_id'], run_id)
@@ -293,7 +293,7 @@ class HereMode(StageBase):
         self.new_run('r', approve=False)
         target = confirmed(self.base / 'TEST-sessions')
         before = (self.root / 'runs/r/run.json').read_text()
-        out = self.stage('r', 1, '--check', '--seed-contract', str(target), '--seed-me-helper', str(HELPER)).stdout
+        out = self.stage('r', 1, '--check', '--seed-contract', str(target), '--tinkery', str(TINKERY)).stdout
         self.assertIn('Would copy', out)
         self.assertFalse((self.root / 'runs/r/seed-contract.md').exists())
         self.assertEqual((self.root / 'runs/r/run.json').read_text(), before)
@@ -301,7 +301,7 @@ class HereMode(StageBase):
     def test_decide_refuses_a_run_copy_that_no_longer_matches_the_record(self):
         self.new_run('r', approve=False)
         target = confirmed(self.base / 'TEST-sessions')
-        self.stage('r', 1, '--seed-contract', str(target), '--seed-me-helper', str(HELPER))
+        self.stage('r', 1, '--seed-contract', str(target), '--tinkery', str(TINKERY))
         copy = self.root / 'runs/r/seed-contract.md'
         for change in ('overwrite', 'delete'):
             with self.subTest(change=change):
@@ -321,7 +321,7 @@ class HereMode(StageBase):
         run_id = json.loads((self.root / 'runs/r/run.json').read_text())['run_id']
         self.commit_run()
         target = confirmed(self.base / 'TEST-sessions')
-        self.stage('r', 1, '--worktree', str(self.base / 'wt1'), '--seed-contract', str(target), '--seed-me-helper', str(HELPER), env=IDENT)
+        self.stage('r', 1, '--worktree', str(self.base / 'wt1'), '--seed-contract', str(target), '--tinkery', str(TINKERY), env=IDENT)
         bound = json.loads((self.base / 'wt1/runs/r/run.json').read_text())
         self.assertEqual(bound['run_id'], run_id)
         self.assertEqual(json.loads((self.root / 'runs/r/run.json').read_text())['run_id'], run_id)

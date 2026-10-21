@@ -81,7 +81,7 @@ class WordingTests(unittest.TestCase):
         section = ' '.join(text.split('## Tinkery ownership and handoff', 1)[1].split('\n## ', 1)[0].split())
         for rule in [
             'SDLC owns run identity, implementation orchestration, technical review',
-            'Seed Me owns the seed and its discovery decisions',
+            'Tinkery owns the seed and its discovery decisions',
             'Tinkery owns the intended goal-to-result presentation',
             'The operator judges usefulness and authorizes merging',
             'Load only the explicitly supplied, operator-confirmed seed',

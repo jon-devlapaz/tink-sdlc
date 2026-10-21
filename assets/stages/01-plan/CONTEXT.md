@@ -5,8 +5,8 @@ Inputs: originator's request, plus `_shared/brief-template.md` for light runs or
 Read the run's `run.json` to select its profile.
 For Tinkery-originated work, follow [Tinkery intake boundaries](../../_system/SDLC.md#tinkery-ownership-and-handoff)
 before translating the supplied confirmed seed into intent.
-Stage-1 `--seed-contract <session>/seed-contract.md --seed-me-helper <path>/session.py`
-verifies the v2 confirmation binding and imports records into `runs/<slug>/seed-checks.json`
+Stage-1 `--seed-contract <session>/seed-contract.md --tinkery <path>/tinkery`
+uses Tinkery to verify the v2 confirmation binding and imports records into `runs/<slug>/seed-checks.json`
 as LOCKED operator-confirmed items, separate from worker checks. Do not edit or drop
 these definitions. Preserve pending provisional checks; when a prerequisite exists,
 add a real command and prerequisite evidence via `activation` and obtain renewed
@@ -18,7 +18,7 @@ constraints and exclusions, approach, risks, and verification. Define the implem
 item definitions in `runs/<slug>/checklist.json` (id, description, verify, and a `check` whenever an automated proof exists). Combine stages 01–03
 into one human-reviewed definition. Light runs have ONE definition gate, recorded as stage 3 (`sdlc.py decide <run> 3 ...`): the approved `brief.md` + `checklist.json` are the intent, design and plan.
 For full runs, write `runs/<slug>/01-plan/output/intent.md`.
-Use `seed-me` only for consequential unresolved decisions.
+Return consequential unresolved discovery decisions to Tinkery Shape.
 Output: `runs/<slug>/brief.md` and `runs/<slug>/checklist.json` (light runs), or
 `runs/<slug>/01-plan/output/intent.md` (full runs).
 

@@ -86,7 +86,7 @@ class StagePinTests(unittest.TestCase):
         files = json.loads((ASSETS / 'manifest.json').read_text())['files']
         for name in STAGES.values():
             self.assertIn(f'.tink/skillsets/{name}.json', files)
-        self.assertEqual(json.loads((ASSETS / 'manifest.json').read_text())['version'], '1.33.0')
+        self.assertEqual(json.loads((ASSETS / 'manifest.json').read_text())['version'], '1.34.0')
 
     def test_no_gitignore_hides_pins(self):
         self.assertFalse(list(ASSETS.rglob('.gitignore')))
@@ -167,7 +167,7 @@ class StagePinTests(unittest.TestCase):
     def test_sdlc_doc_stage_skills(self):
         text = (ASSETS / '_system/SDLC.md').read_text()
         self.assertEqual(text.count('## Stage skills'), 1)
-        for needle in ['seed-me', 'tink skill add jon-devlapaz/tink-skills --skill seed-me',
+        for needle in ['Tinkery', '--tinkery <path>/tinkery',
                        'tink library fetch', 'tink use', 'tink-route --receipt', '--anywhere', 'Hint:', '.tink/skillsets/',
                        'required', 'AGENTS.md', 'seed contract', 'optional']:
             self.assertIn(needle, text)

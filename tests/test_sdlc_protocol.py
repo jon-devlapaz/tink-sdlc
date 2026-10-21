@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 
-from seed_me_fixture import HELPER, confirmed
+from tinkery_fixture import TINKERY, confirmed
 import unittest
 import uuid
 from unittest.mock import patch
@@ -393,7 +393,7 @@ class SeedBindingStatusTests(StageBase):
     def bound_run(self):
         self.new_run('example', profile='full', approve=False)
         seed = confirmed(self.base / 'TEST-sessions')
-        self.stage('example', 1, '--seed-contract', str(seed), '--seed-me-helper', str(HELPER))
+        self.stage('example', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY))
         metadata = json.loads((self.root / 'runs/example/run.json').read_text())
         return {key: metadata['seed_contract'][key] for key in ('path', 'sha256', 'source')}
 
