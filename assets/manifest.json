@@ -1,5 +1,5 @@
 {
-  "version": "1.35.0",
+  "version": "1.35.1",
   "files": {
     ".tink/skillsets/build-skillset.json": "8e4b6397b31e9d830a7baa6d887891505d1b3354a3482ef2c9a876dbdb291445",
     ".tink/skillsets/deployment-skillset.json": "9a89b7593f86f593afe3d81878d97b14ee0143d734eeb4fd0adca6ef8f7a6732",
@@ -13,7 +13,7 @@
     "_shared/plan-template.md": "fe93363211dcc70b73843b0fa7827f8f9ca7b26e185db7a6b6e9d2adf5a42c00",
     "_shared/spec-template.md": "1d2ed67fa0611f0bb7fc2eac110346cc3a7d4184443324fded0eb8324b6eac28",
     "_system/SDLC.md": "1d1a363e9c27d4ea604f48c0a02ab20ef2b0f60624f8b21edae8fdb8bfa965db",
-    "_system/scripts/sdlc.py": "f3761b17a6ff19e09a1121c78128a1a070aece9470c8ca14c007d58c8ef5374f",
+    "_system/scripts/sdlc.py": "c06e154323e9c70c737aaf8c0ca108f6da7781c77e8ff55efbbfb7bdc0539d3f",
     "_system/verification.json": "1308d67c7c43c1a8f5c90cde99a69e217a7fa7c553cece572ecf3228b50fa937",
     "stages/01-plan/CONTEXT.md": "fc8143414a8dfb9ddd2965b97adbf6df8770ed0e21e2332e38a8fc8002c935f6",
     "stages/02-design/CONTEXT.md": "c23139482f386045b6a40d8efd3211e3a558393a2cfd21d4b3beb8f519182f94",
