@@ -1,11 +1,9 @@
 """Record-bound intake regressions; no Markdown acceptance parser remains (#73)."""
 import hashlib
 import json
-import subprocess
-import sys
 from pathlib import Path
 
-from seed_me_fixture import FRAME, HELPER, cli, confirmed, command, provisional, DEFAULT
+from tinkery_fixture import FIXTURES, TINKERY, changed, cli, confirmed, corpus, command, provisional, DEFAULT
 from test_sdlc_stage import StageBase, PASSING
 import test_sdlc_seed_checks as seed_fixtures
 
@@ -21,14 +19,17 @@ class RecordIntake(StageBase):
         return confirmed(self.base / 'TEST-sessions', records)
 
     def intake(self, seed):
-        self.stage('r', 1, '--seed-contract', str(seed), '--seed-me-helper', str(HELPER))
+        self.stage('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY))
         self.path = self.root / 'runs/r'
 
-    def test_helper_fixture_is_exact_pinned_upstream_source(self):
-        self.assertEqual(hashlib.sha256(HELPER.read_bytes()).hexdigest(),
-                         '47b6e13c545d5016f62eb16ea5ff75689ec13ae6435b99894069c72cde5a5451')
-        self.assertEqual(hashlib.sha256(FRAME.read_bytes()).hexdigest(),
-                         '24c1fdaf3280200562fb927abe2d73458ab561e185be70de30e3699c17e6e87b')
+    def test_fixture_is_pinned_to_recorded_rust_confirmation(self):
+        self.assertEqual(hashlib.sha256(FIXTURES.read_bytes()).hexdigest(),
+                         '74d1267a94d3ab8006ad3badaf5735a2522aadf566fb1a8afb46726ca4a9db00')
+        data = corpus()
+        self.assertEqual(data['provenance']['commit'], '785a6937f2d946fc78afebcdb6e4f811430056a1')
+        for case in data['cases']:
+            self.assertTrue(json.loads(case['status']['stdout'])['handoff']['verified'])
+            self.assertNotIn('viewer', json.loads(case['status']['stdout']))
 
     def test_every_kind_locks_source_and_optional_fields(self):
         records = [command(), provisional(), provisional('false'), {**DEFAULT[0], 'how_to_judge': 'Inspect'}]
@@ -67,36 +68,19 @@ class RecordIntake(StageBase):
 
     def test_stale_or_legacy_handoff_refuses_without_mutation(self):
         seed = self.prepare([command()])
-        directory = seed.parent
-        names = ['seed-checks.json', 'seed-contract.md', 'ledger.json', 'seed-confirmation.json']
-        original = {name: (directory / name).read_bytes() for name in names}
-        for mutation in ['records', 'seed', 'decisions', 'v1', 'missing', 'rendered']:
+        original = {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()}
+        for mutation in ('records', 'seed', 'decisions', 'v1', 'missing', 'missing-confirmation',
+                         'simulated', 'rendered'):
             with self.subTest(mutation=mutation):
+                changed(seed, mutation)
+                status = json.loads(cli('seed', 'status', '--json', seed.parent))
+                self.assertIs(status['handoff']['verified'], False)
+                session_before = {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()}
+                self.refuses('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY),
+                             message='Tinkery handoff is not verified')
+                self.assertEqual(session_before, {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()})
                 for name, data in original.items():
-                    (directory / name).write_bytes(data)
-                if mutation == 'records':
-                    (directory / 'seed-checks.json').write_text(json.dumps([command('false')]))
-                elif mutation == 'seed':
-                    seed.write_bytes(original['seed-contract.md'] + b'changed\n')
-                elif mutation == 'decisions':
-                    ledger = json.loads(original['ledger.json'])
-                    ledger['goal'] = 'changed goal'
-                    (directory / 'ledger.json').write_text(json.dumps(ledger))
-                elif mutation == 'v1':
-                    record = json.loads(original['seed-confirmation.json'])
-                    record['schema_version'] = 1
-                    (directory / 'seed-confirmation.json').write_text(json.dumps(record))
-                elif mutation == 'missing':
-                    (directory / 'seed-checks.json').unlink()
-                else:
-                    # Even rebinding the seed hash cannot bless handwritten rendered bytes.
-                    tampered = original['seed-contract.md'].replace(b'\ncheck: ', b'\nCHECK: ')
-                    self.assertNotEqual(tampered, original['seed-contract.md'], 'the tamper must change the rendered checks')
-                    seed.write_bytes(tampered)
-                    record = json.loads(original['seed-confirmation.json'])
-                    record['seed_sha256'] = hashlib.sha256(seed.read_bytes()).hexdigest()
-                    (directory / 'seed-confirmation.json').write_text(json.dumps(record))
-                self.refuses('r', 1, '--seed-contract', str(seed), '--seed-me-helper', str(HELPER), message='Seed Me')
+                    (seed.parent / name).write_bytes(data)
 
     def test_record_formatting_is_not_content_and_source_changes_do_not_change_lock(self):
         seed = self.prepare([command()])
@@ -104,7 +88,6 @@ class RecordIntake(StageBase):
         checks.write_text(json.dumps(json.loads(checks.read_text()), sort_keys=True, separators=(',', ':')))
         self.intake(seed)
         self.approve_all()
-        cli('seed', 'checks', 'set', seed.parent, seed.parent / 'TEST-input.json')
         checks.write_text(json.dumps([command('false')]))
         self.assertIn('Stage 3: approved', self.sdlc('status', 'r').stdout)
 
@@ -119,45 +102,23 @@ class RecordIntake(StageBase):
                 self.assertNotEqual(result.returncode, 0)
 
     def test_review_f1_hidden_acceptance_repros_refuse_real_intake(self):
+        seed = self.prepare([command()])
+        self.intake(seed)
+        original = seed.read_text()
         for variant in ('emphasized-heading', 'comment-only'):
             with self.subTest(variant=variant):
-                self.setUp()
-                seed = self.prepare([command()])
-                self.intake(seed)  # real CLI positive control: the sole true record is imported
-                original = seed.read_text()
-                rendered = cli('seed', 'checks', 'render', seed.parent)
-                confirmation_path = seed.parent / 'seed-confirmation.json'
-                confirmation = json.loads(confirmation_path.read_text())
-
-                def transform(body):
-                    replacement = (rendered + '## **Acceptance checks**\nTEST additional failing requirement\n'
-                                   'cmd: false\nexpect: exit zero\ncwd: .\n\n' if variant == 'emphasized-heading'
-                                   else '<!--\n' + rendered + '## End example\n-->\n\n')
-                    return body.replace(rendered, replacement, 1)
-
-                # New confirmation must refuse both reviewer repros without writing.
-                draft = '\n'.join(line for line in original.split('\n') if not line.startswith('Confirmed by:'))
-                seed.write_text(transform(draft.replace('status: confirmed for intake', 'status: draft', 1)))
+                # Recorded from Rust status with a matching seed hash: hidden checks still refuse.
+                changed(seed, variant)
+                self.assertEqual(json.loads((seed.parent / 'seed-confirmation.json').read_text())['seed_sha256'],
+                                 hashlib.sha256(seed.read_bytes()).hexdigest())
                 before = {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()}
-                refused = subprocess.run([sys.executable, str(HELPER), 'seed', 'confirm', str(seed.parent),
-                                          '--revision', 'r1', '--source', 'TEST reviewer repro'],
-                                         capture_output=True, text=True)
-                self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
-                self.assertIn('checks', refused.stderr)
-                self.assertEqual(before, {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()})
-
-                # Model a receipt admitted by the old helper: all hashes still match.
-                seed.write_text(transform(original))
-                confirmation['seed_sha256'] = hashlib.sha256(seed.read_bytes()).hexdigest()
-                confirmation_path.write_text(json.dumps(confirmation))
-                before = {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()}
-                self.assertFalse(json.loads(cli('status', seed.parent))['handoff']['verified'])
-                self.refuses('r', 1, '--here', '--seed-contract', str(seed), '--seed-me-helper', str(HELPER),
-                             message='Seed Me handoff is not verified')
+                self.assertFalse(json.loads(cli('seed', 'status', '--json', seed.parent))['handoff']['verified'])
+                self.refuses('r', 1, '--here', '--seed-contract', str(seed), '--tinkery', str(TINKERY),
+                             message='Tinkery handoff is not verified')
                 self.assertEqual(before, {p.name: p.read_bytes() for p in seed.parent.iterdir() if p.is_file()})
                 self.assertEqual((self.path / 'seed-contract.md').read_text(), original)
                 self.assertEqual(self.definitions()['items'][0]['cmd'], 'true')
 
-    def test_no_helper_is_an_explicit_error(self):
+    def test_no_tinkery_is_an_explicit_error(self):
         seed = self.prepare()
-        self.refuses('r', 1, '--seed-contract', str(seed), message='--seed-me-helper')
+        self.refuses('r', 1, '--seed-contract', str(seed), message='--tinkery')

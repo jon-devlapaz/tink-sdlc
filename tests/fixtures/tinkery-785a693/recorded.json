@@ -1,0 +1,672 @@
+{
+  "provenance": {
+    "repository": "https://github.com/jon-devlapaz/tinkery.git",
+    "commit": "785a6937f2d946fc78afebcdb6e4f811430056a1",
+    "confirmation": "ledger::confirm_seed via confirm.rs; synthetic TEST action, no model or human approval",
+    "commands": [
+      "PATH seed status --json DIR",
+      "PATH seed checks DIR"
+    ],
+    "build": "cargo +stable build --locked",
+    "provider_calls": 0
+  },
+  "cases": [
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nFixture goal\nyou judge: Fixture goal\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"3fd7ef579d7f3832984f7120ef94d8e5a6e999e8aee25dc17c46dd5419247a5c\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"93a17da1a6ac510f0305c34cef894d9be91346f7423f0c7fb0d4d59c077239ac\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"93a17da1a6ac510f0305c34cef894d9be91346f7423f0c7fb0d4d59c077239ac\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Fixture goal",
+            "kind": "judge",
+            "source": "TEST operator"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "true",
+            "cwd": ".",
+            "expect": "exit zero; output looks right"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nFuture check\nnot yet runnable: executable exists\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"1db596ba64749671c097c40e49eaff869fd91aa2502b2dd2311b34450181b032\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"f001afff2ae30b20abc1922662d5788fac36d8b55cbb9fac7c8d36cc2c106248\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"f001afff2ae30b20abc1922662d5788fac36d8b55cbb9fac7c8d36cc2c106248\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Future check",
+            "kind": "provisional",
+            "source": "TEST operator",
+            "cwd": ".",
+            "expect": "works",
+            "missing": "executable exists"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nFuture check\nnot yet runnable: executable exists\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\",\n    \"cmd\": \"false\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"39c83404804d19441e5088e40c2a3aac1e151d10af97284dbc74512d2e0cd523\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"f001afff2ae30b20abc1922662d5788fac36d8b55cbb9fac7c8d36cc2c106248\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"f001afff2ae30b20abc1922662d5788fac36d8b55cbb9fac7c8d36cc2c106248\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\",\n    \"cmd\": \"false\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Future check",
+            "kind": "provisional",
+            "source": "TEST operator",
+            "cwd": ".",
+            "expect": "works",
+            "missing": "executable exists",
+            "cmd": "false"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nFuture check\nnot yet runnable: executable exists\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\",\n    \"cmd\": \"./future\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"14d5b9e2d26241fd13936096c2e82658b67d88d4f9ea87f225714b62df3feb9f\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"f001afff2ae30b20abc1922662d5788fac36d8b55cbb9fac7c8d36cc2c106248\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"f001afff2ae30b20abc1922662d5788fac36d8b55cbb9fac7c8d36cc2c106248\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\",\n    \"cmd\": \"./future\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Future check",
+            "kind": "provisional",
+            "source": "TEST operator",
+            "cwd": ".",
+            "expect": "works",
+            "missing": "executable exists",
+            "cmd": "./future"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `test -f accepted`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"test -f accepted\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"83b47e88796b957a86e06d31200a9365ad956f151c8c73a642dd746b294b1e25\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"f27002197e09bf1a9e349f39cd4bbb472e17a9256e3f8c7e941fdb80dc9ae990\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"f27002197e09bf1a9e349f39cd4bbb472e17a9256e3f8c7e941fdb80dc9ae990\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"test -f accepted\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "test -f accepted",
+            "cwd": ".",
+            "expect": "exit zero; output looks right"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\nFixture goal\nyou judge: Fixture goal\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  },\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"fcc9fd2461ace892e5830c37619f4f067bdd5d9cb9af36263a5a1c9829f41846\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"e1345256687819cc8ce5af8c1a9f2a55ab8a7379e7d03f31d9637c5b9b7cdf6c\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"e1345256687819cc8ce5af8c1a9f2a55ab8a7379e7d03f31d9637c5b9b7cdf6c\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  },\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "true",
+            "cwd": ".",
+            "expect": "exit zero; output looks right"
+          },
+          {
+            "statement": "Fixture goal",
+            "kind": "judge",
+            "source": "TEST operator"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\nFixture goal\nyou judge: Fixture goal\n\nIndependent check\ncheck: `true`\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  },\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\"\n  },\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"sound plays on the intended output device\"\n  },\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"af6a95a5a5853c785be3e7c274b1de63e2b46d486426542baa2f8893b18238f0\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"587569c0014b8d94b279ef4428872e5a3e4a70c5e3bad837a544e634f69de24f\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"587569c0014b8d94b279ef4428872e5a3e4a70c5e3bad837a544e634f69de24f\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  },\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\"\n  },\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"sound plays on the intended output device\"\n  },\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "true",
+            "cwd": ".",
+            "expect": "exit zero; output looks right"
+          },
+          {
+            "statement": "Fixture goal",
+            "kind": "judge",
+            "source": "TEST operator"
+          },
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "true",
+            "cwd": ".",
+            "expect": "sound plays on the intended output device"
+          },
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "true",
+            "cwd": ".",
+            "expect": "exit zero; output looks right"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: ``test -d `pwd` && printf \"%s\" \"literal | expect: not a field\"``\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"test -d `pwd` && printf \\\"%s\\\" \\\"literal | expect: not a field\\\"\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"c990bb1eeae6206a5958b696d3ab249633b2877947273be1d796133e9863f53b\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"189148c2e1e2d09b42c352af9fdc7295aaebeaa77144ab2e23a5def98d2b18c3\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"189148c2e1e2d09b42c352af9fdc7295aaebeaa77144ab2e23a5def98d2b18c3\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"test -d `pwd` && printf \\\"%s\\\" \\\"literal | expect: not a field\\\"\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "test -d `pwd` && printf \"%s\" \"literal | expect: not a field\"",
+            "cwd": ".",
+            "expect": "exit zero; output looks right"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `cat proof | grep \"exact output\"`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"cat proof | grep \\\"exact output\\\"\",\n    \"cwd\": \"sub\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"b027cbff7971f2d2ba1fee911f52627d7baf9c113fc2172bfa4ebe852b89a654\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"b5b712293cb910aa561133e0087531d4dbd0a15e001738392d06cdc4a7cb81b0\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"b5b712293cb910aa561133e0087531d4dbd0a15e001738392d06cdc4a7cb81b0\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"cat proof | grep \\\"exact output\\\"\",\n    \"cwd\": \"sub\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "cat proof | grep \"exact output\"",
+            "cwd": "sub",
+            "expect": "exit zero; output looks right"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\nFuture check\nnot yet runnable: executable exists\n\nFuture check\nnot yet runnable: executable exists\n\nFixture goal\nyou judge: Inspect\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  },\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\"\n  },\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\",\n    \"cmd\": \"false\"\n  },\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\",\n    \"how_to_judge\": \"Inspect\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"45e2e75ec30f5b22be648471ef77822c7b692fe5a3130c6460cbca8e29fa09c7\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"36ffe47d0050097f149fdb3d7a9f311c0af4b38cd3aebc19c54981f1d86f321a\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"36ffe47d0050097f149fdb3d7a9f311c0af4b38cd3aebc19c54981f1d86f321a\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  },\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\"\n  },\n  {\n    \"statement\": \"Future check\",\n    \"kind\": \"provisional\",\n    \"source\": \"TEST operator\",\n    \"cwd\": \".\",\n    \"expect\": \"works\",\n    \"missing\": \"executable exists\",\n    \"cmd\": \"false\"\n  },\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\",\n    \"how_to_judge\": \"Inspect\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Independent check",
+            "kind": "cmd",
+            "source": "TEST operator",
+            "cmd": "true",
+            "cwd": ".",
+            "expect": "exit zero; output looks right"
+          },
+          {
+            "statement": "Future check",
+            "kind": "provisional",
+            "source": "TEST operator",
+            "cwd": ".",
+            "expect": "works",
+            "missing": "executable exists"
+          },
+          {
+            "statement": "Future check",
+            "kind": "provisional",
+            "source": "TEST operator",
+            "cwd": ".",
+            "expect": "works",
+            "missing": "executable exists",
+            "cmd": "false"
+          },
+          {
+            "statement": "Fixture goal",
+            "kind": "judge",
+            "source": "TEST operator",
+            "how_to_judge": "Inspect"
+          }
+        ],
+        "extra": "",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nFixture goal\nyou judge: Fixture goal\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\nRevised TEST scope.\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"3fd7ef579d7f3832984f7120ef94d8e5a6e999e8aee25dc17c46dd5419247a5c\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"8b4e889ddda4dd2955345940548ffcee0b2d0a9980e53765df33b9a439c3f3a2\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"8b4e889ddda4dd2955345940548ffcee0b2d0a9980e53765df33b9a439c3f3a2\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Fixture goal\",\n    \"kind\": \"judge\",\n    \"source\": \"TEST operator\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Fixture goal",
+            "kind": "judge",
+            "source": "TEST operator"
+          }
+        ],
+        "extra": "Revised TEST scope.\n",
+        "template": null
+      }
+    },
+    {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nYou are confirming the goal: create a software version of Stacker.\nYou are confirming what gets built: a tink-arcade cabinet with working sounds and the right mechanics.\nYou are confirming what does not: simulated payout interference or a collect-or-continue checkpoint.\nYou are confirming accepted unchanged: none recorded; two gameplay choices explicitly chosen.\nYou are confirming unknowns: source-game rule details and verification results; no earlier decision is reversed.\n\n## Problem statement\nYou played Stacker at Dave and Busters today, liked it, and found it fun. You want a software version in this arcade. Earlier investigation found no registered Stacker cabinet; see Evidence and uncertainty for receipts.\n\n## Proposed outcome\nCreate Stacker matching the tink-arcade style and theme, with working sounds and the right mechanics as the game has, subject to your settled skill-only and aim-for-the-top choices. Refer to Accepted decisions and assumed defaults for their exact authority and wording.\n\n## Acceptance criteria\n\nMatches the tink-arcade style and theme.\nyou judge: Inspect Stacker alongside existing cabinets; launch checks alone do not establish visual quality.\n\nHas working sounds.\nnot yet runnable: Stacker-specific event-to-sound assertions and a repeat-playback invocation, followed by listening on the intended device.\n\nJust works with the right mechanics as the game has.\nnot yet runnable: Read source rules, map settled choices, and add deterministic Stacker assertions including overlap width and zero-overlap loss.\n\n## Affected users and systems\nPlayers launching cabinets through the terminal menu. Proposed change surface: a new Stacker package, game-specific tests, arcade_menu/games.json, and documentation. Reuse the shared renderer and audio facilities; shared changes, if needed, could affect every cabinet.\n\n## Constraints and boundaries\nSoftware, with the confirmed style, sound and mechanics requirements. Preserve the settled gameplay choices. Repository conventions separate rules from terminal presentation and require playable degradation without audio or color. Technical structure and checks here are proposals, not implementation approval.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nWhat we know, with proof: refer to Evidence and uncertainty and Accepted decisions and assumed defaults rather than duplicating their entries. File observations in this step were made on 2026-10-18; re-check if those files change before implementation.\nWhat we know we don't know: the implementing agent must read the linked Stacker rules and establish exact progression and timing details; the operator owns any newly discovered player-visible alternatives not settled by the goal or ledger.\nWhat we have not read: the external article, all existing game implementations and tests, and audio backend internals. No complete close checklist was supplied.\nWhat could surprise us: Probe: source-game details may conflict with the selected skill-only, top-only experience. Surface such conflicts instead of silently changing the choices. Probe: successful audio calls may still produce silence. Where we did not look: live gameplay and the operator's audio device. Concrete contrary signals are a conflicting source rule, failed regression, or inaudible repeated playback.\n\n## Evidence and uncertainty\nGrounded in:\n- AGENTS.md\n- DESIGN.md\n- README.md\n- _system/SDLC.md\n- arcade_common/audio.py\n- arcade_common/theme.py\n- arcade_menu/games.json\n- scripts/check_all.py\n- scripts/check_arcade.py\n\nProvenance unavailable: reported reads do not verify filesystem origins or unrecorded reads. Some recorded findings have no attributable read path.\n\nChecked by read-only file tools in /Users/jondev/dev/active/factory/tink-arcade-taste; citation not found: arcade_menu/games.json has 166 lines, not 167:\n- README.md:1-29; arcade_menu/games.json:1-167: This is an offline Python terminal arcade. The documented new-game structure is engine.py, a PaperRenderer-based ui.py, __main__.py, and a menu registration. The complete menu has no Stacker entry. The likely blast radius is a new game package, menu registration, documentation, and game-specific tests. (observed 2026-10-18)\nChecked by read-only file tools in /Users/jondev/dev/active/factory/tink-arcade-taste:\n- DESIGN.md:5-16,126-164; arcade_common/theme.py:1-33; arcade_common/audio.py:9-19: Existing conventions supply paper/ink/jade visuals and short mechanical keyboard sounds, with silent automatic motion and feedback for successful actions. Shared renderer and cue definitions can support the new game; modifying these shared pieces could affect every cabinet. The design also requires playable degradation without sound or color. (observed 2026-10-18)\n- scripts/check_all.py:1-26; scripts/check_arcade.py:37-60: The aggregate check runs unittest discovery and the menu PTY check. Registering Stacker extends that PTY check automatically: it expects paper styling, visible sound-on status, mute feedback, quitting, and return to the menu. A new cabinet that deviates from these conventions could break this integration path. Neither check establishes Stacker mechanics without new behavior-specific assertions. (observed 2026-10-18)\n- AGENTS.md:1-10; _system/SDLC.md:21-23,42-44: Later code-writing work requires an isolated worktree or clone and separate human workflow decisions. This investigation has not run commands, tested gameplay, or approved implementation. (observed 2026-10-18)\n- DESIGN.md:106-108,194-198: The existing game design explicitly values fairness and separates game-rule tests from presentation checks. No inspected source settles Stacker's skill-versus-payout behavior. The linked external rules have not been read with the available file tools. (observed 2026-10-18)\n- README.md:19-29: A new cabinet uses a rules-only engine.py, a PaperRenderer-based ui.py, __main__.py, and menu registration. The proposed blast radius remains the new Stacker package, game-specific tests, arcade_menu/games.json, and documentation; shared rendering and audio can be reused rather than changed. (observed 2026-10-18)\n- scripts/check_arcade.py:37-60: The menu integration check launches every uncredentialed registered game and asserts paper styling, visible sound-on status, mute feedback, and return to the menu. Stacker registration will bring its launch and exit behavior into this existing check; incompatible UI or controls could break it. (observed 2026-10-18)\n- DESIGN.md:126-164,194-200: The sound contract requires successful-action feedback, silent automatic motion, visible mute status, and playable audio failure. Audio verification includes real repeated playback rather than successful API calls alone. Rules tests must remain separate from presentation tests. (observed 2026-10-18)\n- arcade_menu/games.json:139-166: The registry's final entries illustrate cabinet metadata and controls. A checkpoint choice would need corresponding player-facing controls and explanatory copy in the new cabinet and its registration. (observed 2026-10-18)\n- README.md:19-29; DESIGN.md:126-164: These repository conventions settle integration and sound direction, but do not specify Stacker's collect-or-continue rule. The linked external rules remain unread; checkpoint behavior is a proposed product choice, not verified source-game evidence. (observed 2026-10-18)\n- README.md:19-29: The documented new-game surface is a rules-only engine.py, PaperRenderer-based ui.py, __main__.py, and menu registration. Shared rendering and audio are available; proposed additions also need game tests and documentation. (observed 2026-10-18)\n- scripts/check_all.py:8-12,16-23; scripts/check_arcade.py:37-60: The aggregate runner invokes unit discovery and the menu PTY check. The latter launches every eligible registered cabinet and asserts styling, sound status, mute feedback and return to the menu. Registering Stacker expands this integration blast radius; incompatible launch or controls can break it. (observed 2026-10-18)\n- DESIGN.md:133-164,194-200: Sound conventions require successful-action feedback, silent automatic motion, visible mute status and playable audio failure. Real repeated playback and rendered-signal checks are required, not successful API calls alone. Rules tests remain separate from presentation tests; no checks were run in this step. (observed 2026-10-18)\n\n## Suggested first slice\nProposal only: establish the existing baseline before adding the rules-only Stacker slice and its regression tests.\ncmd: python3 -B scripts/check_all.py\ncwd: /Users/jondev/dev/active/factory/tink-arcade-taste\nThis is a suggested first implementation-stage check, not authorization to run or implement anything now.\n\n## Risks and verification\nMisreading the source rules could produce recognizable-looking but incorrect gameplay; ground the rule tests before UI work. New registration extends the existing menu integration path and can expose incompatible launch, mute or exit behavior.\nFor a targeted integration reversion, remove the new cabinet's paper styling after registration: the existing PAPER assertion in scripts/check_arcade.py:49 should fail. This is intended red behavior, not an observed result. The proposed invocation above is established; registration and the reversion probe remain prerequisites.\nRepeated audio can silently fail despite successful API calls; verify real playback as well as event mapping. All checks remain proposed and unrun. The aggregate suite is a baseline and compatibility check, not a replacement for Stacker regressions.\n\n## Open questions and deferrals\nNo unresolved operator decision blocks this draft. Exact source-rule details and test invocations remain agent research tasks before implementation. If that research reveals distinguishable gameplay alternatives not already settled, return the choice to the operator rather than choosing silently. Session location and confirmation identity are not supplied here.\n\n## Owners and next steps\nOperator: review and confirm or revise this seed; confirmation is not implementation approval.\nImplementing agent: read outstanding source rules, establish missing tests, and follow the repository's isolated-workspace and downstream workflow requirements before code changes.\nLedger mapping: confirmed goal and gameplay choices are settled; missing rule evidence and verification are risks requiring research. Guardrails are source-grounded rule assertions, menu integration checks, and real repeated-audio verification.\n\n## Downstream handoff\nThe helper supplies Evidence and uncertainty and Accepted decisions and assumed defaults from the recorded findings and ledger. The handoff is the session's seed-contract.md, ledger.json and seed-confirmation.json; its actual session path is not supplied. A consumer checks session.py status <session> and requires handoff.verified to be true. That proves confirmed content, not confirmer identity. This seed is discovery input, not an implementation plan, approved specification or review receipt. Preserve accepted constraints and surface downstream conflicts; no downstream profile or stage approval is selected here.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Matches the tink-arcade style and theme.\",\n    \"kind\": \"judge\",\n    \"source\": \"Stacker r1: Acceptance criteria, first check\",\n    \"how_to_judge\": \"Inspect Stacker alongside existing cabinets; launch checks alone do not establish visual quality.\"\n  },\n  {\n    \"statement\": \"Has working sounds.\",\n    \"kind\": \"provisional\",\n    \"cwd\": \".\",\n    \"expect\": \"Successful actions produce audible feedback; repeated playback remains audible, mute works, and audio failure does not prevent play.\",\n    \"missing\": \"Stacker-specific event-to-sound assertions and a repeat-playback invocation, followed by listening on the intended device.\",\n    \"source\": \"Stacker r1: Acceptance criteria, second check; DESIGN.md:147-164,194-200\"\n  },\n  {\n    \"statement\": \"Just works with the right mechanics as the game has.\",\n    \"kind\": \"provisional\",\n    \"cwd\": \".\",\n    \"expect\": \"Source-grounded stacking, alignment loss, progression, loss and top-win assertions pass; correct timing can win, aiming for the top without a collect-or-continue checkpoint.\",\n    \"missing\": \"Read source rules, map settled choices, and add deterministic Stacker assertions including overlap width and zero-overlap loss.\",\n    \"source\": \"Stacker r1: Acceptance criteria, third check\"\n  }\n]\n",
+        "seed-confirmation.json": "{\n  \"schema_version\": 2,\n  \"checks_sha256\": \"c1f48cca57bd465c61fd652bf8877af0c8f27ce9a642753c2fe6fa175ec91d41\",\n  \"session_id\": \"TEST-session\",\n  \"operator\": \"human\",\n  \"revision\": \"r1\",\n  \"source\": \"TEST explicit confirmation; not operator approval\",\n  \"confirmed_at\": \"2026-10-21T00:00:00+00:00\",\n  \"seed_sha256\": \"41962a391ad3a2d59054f41704798b6d9106dd608a3522337df0fa1283a0e88f\",\n  \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"\n}\n"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"41962a391ad3a2d59054f41704798b6d9106dd608a3522337df0fa1283a0e88f\"\n  },\n  \"handoff\": {\n    \"verified\": true,\n    \"reason\": \"revision r1 as confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Matches the tink-arcade style and theme.\",\n    \"kind\": \"judge\",\n    \"source\": \"Stacker r1: Acceptance criteria, first check\",\n    \"how_to_judge\": \"Inspect Stacker alongside existing cabinets; launch checks alone do not establish visual quality.\"\n  },\n  {\n    \"statement\": \"Has working sounds.\",\n    \"kind\": \"provisional\",\n    \"cwd\": \".\",\n    \"expect\": \"Successful actions produce audible feedback; repeated playback remains audible, mute works, and audio failure does not prevent play.\",\n    \"missing\": \"Stacker-specific event-to-sound assertions and a repeat-playback invocation, followed by listening on the intended device.\",\n    \"source\": \"Stacker r1: Acceptance criteria, second check; DESIGN.md:147-164,194-200\"\n  },\n  {\n    \"statement\": \"Just works with the right mechanics as the game has.\",\n    \"kind\": \"provisional\",\n    \"cwd\": \".\",\n    \"expect\": \"Source-grounded stacking, alignment loss, progression, loss and top-win assertions pass; correct timing can win, aiming for the top without a collect-or-continue checkpoint.\",\n    \"missing\": \"Read source rules, map settled choices, and add deterministic Stacker assertions including overlap width and zero-overlap loss.\",\n    \"source\": \"Stacker r1: Acceptance criteria, third check\"\n  }\n]\n",
+        "stderr": ""
+      },
+      "request": {
+        "records": [
+          {
+            "statement": "Matches the tink-arcade style and theme.",
+            "kind": "judge",
+            "source": "Stacker r1: Acceptance criteria, first check",
+            "how_to_judge": "Inspect Stacker alongside existing cabinets; launch checks alone do not establish visual quality."
+          },
+          {
+            "statement": "Has working sounds.",
+            "kind": "provisional",
+            "cwd": ".",
+            "expect": "Successful actions produce audible feedback; repeated playback remains audible, mute works, and audio failure does not prevent play.",
+            "missing": "Stacker-specific event-to-sound assertions and a repeat-playback invocation, followed by listening on the intended device.",
+            "source": "Stacker r1: Acceptance criteria, second check; DESIGN.md:147-164,194-200"
+          },
+          {
+            "statement": "Just works with the right mechanics as the game has.",
+            "kind": "provisional",
+            "cwd": ".",
+            "expect": "Source-grounded stacking, alignment loss, progression, loss and top-win assertions pass; correct timing can win, aiming for the top without a collect-or-continue checkpoint.",
+            "missing": "Read source rules, map settled choices, and add deterministic Stacker assertions including overlap width and zero-overlap loss.",
+            "source": "Stacker r1: Acceptance criteria, third check"
+          }
+        ],
+        "extra": "",
+        "template": "status: confirmed for intake\n# Seed: I have created a software version of stacker (https://en.wikipedia.org/wiki/Stacker_(arcade_game)).\nrevision: r1\nConfirmed by: \"i confirm\" (revision r1, 2026-10-18). Not approved for implementation.\ndate: 2026-10-18\n\n## You are confirming\nYou are confirming the goal: create a software version of Stacker.\nYou are confirming what gets built: a tink-arcade cabinet with working sounds and the right mechanics.\nYou are confirming what does not: simulated payout interference or a collect-or-continue checkpoint.\nYou are confirming accepted unchanged: none recorded; two gameplay choices explicitly chosen.\nYou are confirming unknowns: source-game rule details and verification results; no earlier decision is reversed.\n\n## Problem statement\nYou played Stacker at Dave and Busters today, liked it, and found it fun. You want a software version in this arcade. Earlier investigation found no registered Stacker cabinet; see Evidence and uncertainty for receipts.\n\n## Proposed outcome\nCreate Stacker matching the tink-arcade style and theme, with working sounds and the right mechanics as the game has, subject to your settled skill-only and aim-for-the-top choices. Refer to Accepted decisions and assumed defaults for their exact authority and wording.\n\n## Acceptance criteria\nMatches the tink-arcade style and theme.\nProposed integration check, sourced from scripts/check_all.py:8-12 and scripts/check_arcade.py:37-60; requires Stacker registration. Existing assertions cover paper styling, sound status, mute feedback, quitting, and return to the menu.\ncmd: python3 -B scripts/check_arcade.py\nexpect: PASS for every eligible registered cabinet, including Stacker; exit status 0.\ncwd: /Users/jondev/dev/active/factory/tink-arcade-taste\nyou judge: inspect Stacker alongside the existing cabinets for matching style and theme; automated launch checks alone do not establish visual quality.\n\nHas working sounds.\nProvisional: Stacker-specific event-to-sound assertions and a repeat-playback verification invocation must be identified or added before this criterion is executable.\ncmd: not yet established\nexpect: successful Stacker actions produce the intended audible feedback; repeated playback remains audible, mute works, and audio failure does not prevent play.\ncwd: /Users/jondev/dev/active/factory/tink-arcade-taste\nFollow DESIGN.md:147-164,194-200: verify rendered-signal advancement and levels, then listen on the intended output device. Listening is necessary but does not replace code-checkable audio assertions.\n\nJust works with the right mechanics as the game has.\nProvisional: read the linked source rules, document their mapping to the settled choices, and add Stacker-specific deterministic rule assertions; no Stacker regression invocation is established yet.\ncmd: not yet established\nexpect: the source-grounded stacking, alignment loss, progression, loss and top-win rules pass deterministic assertions; correct timing can win, and play aims for the top without a collect-or-continue checkpoint.\ncwd: /Users/jondev/dev/active/factory/tink-arcade-taste\nProposed behavior-specific regression: a partially overlapping placement retains exactly the overlapping blocks, while zero overlap ends the round. A targeted reversion retaining nonoverlapping blocks should fail the overlap-width assertion. This assertion does not exist in the inspected evidence; neither red nor green has been observed.\n\n## Affected users and systems\nPlayers launching cabinets through the terminal menu. Proposed change surface: a new Stacker package, game-specific tests, arcade_menu/games.json, and documentation. Reuse the shared renderer and audio facilities; shared changes, if needed, could affect every cabinet.\n\n## Constraints and boundaries\nSoftware, with the confirmed style, sound and mechanics requirements. Preserve the settled gameplay choices. Repository conventions separate rules from terminal presentation and require playable degradation without audio or color. Technical structure and checks here are proposals, not implementation approval.\n\n## Knowledge map\nWhat we know, with proof: refer to Evidence and uncertainty and Accepted decisions and assumed defaults rather than duplicating their entries. File observations in this step were made on 2026-10-18; re-check if those files change before implementation.\nWhat we know we don't know: the implementing agent must read the linked Stacker rules and establish exact progression and timing details; the operator owns any newly discovered player-visible alternatives not settled by the goal or ledger.\nWhat we have not read: the external article, all existing game implementations and tests, and audio backend internals. No complete close checklist was supplied.\nWhat could surprise us: Probe: source-game details may conflict with the selected skill-only, top-only experience. Surface such conflicts instead of silently changing the choices. Probe: successful audio calls may still produce silence. Where we did not look: live gameplay and the operator's audio device. Concrete contrary signals are a conflicting source rule, failed regression, or inaudible repeated playback.\n\n## Suggested first slice\nProposal only: establish the existing baseline before adding the rules-only Stacker slice and its regression tests.\ncmd: python3 -B scripts/check_all.py\ncwd: /Users/jondev/dev/active/factory/tink-arcade-taste\nThis is a suggested first implementation-stage check, not authorization to run or implement anything now.\n\n## Risks and verification\nMisreading the source rules could produce recognizable-looking but incorrect gameplay; ground the rule tests before UI work. New registration extends the existing menu integration path and can expose incompatible launch, mute or exit behavior.\nFor a targeted integration reversion, remove the new cabinet's paper styling after registration: the existing PAPER assertion in scripts/check_arcade.py:49 should fail. This is intended red behavior, not an observed result. The proposed invocation above is established; registration and the reversion probe remain prerequisites.\nRepeated audio can silently fail despite successful API calls; verify real playback as well as event mapping. All checks remain proposed and unrun. The aggregate suite is a baseline and compatibility check, not a replacement for Stacker regressions.\n\n## Open questions and deferrals\nNo unresolved operator decision blocks this draft. Exact source-rule details and test invocations remain agent research tasks before implementation. If that research reveals distinguishable gameplay alternatives not already settled, return the choice to the operator rather than choosing silently. Session location and confirmation identity are not supplied here.\n\n## Owners and next steps\nOperator: review and confirm or revise this seed; confirmation is not implementation approval.\nImplementing agent: read outstanding source rules, establish missing tests, and follow the repository's isolated-workspace and downstream workflow requirements before code changes.\nLedger mapping: confirmed goal and gameplay choices are settled; missing rule evidence and verification are risks requiring research. Guardrails are source-grounded rule assertions, menu integration checks, and real repeated-audio verification.\n\n## Downstream handoff\nThe helper supplies Evidence and uncertainty and Accepted decisions and assumed defaults from the recorded findings and ledger. The handoff is the session's seed-contract.md, ledger.json and seed-confirmation.json; its actual session path is not supplied. A consumer checks session.py status <session> and requires handoff.verified to be true. That proves confirmed content, not confirmer identity. This seed is discovery input, not an implementation plan, approved specification or review receipt. Preserve accepted constraints and surface downstream conflicts; no downstream profile or stage approval is selected here.\n\n## Evidence and uncertainty\nGrounded in:\n- AGENTS.md\n- DESIGN.md\n- README.md\n- _system/SDLC.md\n- arcade_common/audio.py\n- arcade_common/theme.py\n- arcade_menu/games.json\n- scripts/check_all.py\n- scripts/check_arcade.py\n\nProvenance unavailable: reported reads do not verify filesystem origins or unrecorded reads. Some recorded findings have no attributable read path.\n\nChecked by read-only file tools in /Users/jondev/dev/active/factory/tink-arcade-taste; citation not found: arcade_menu/games.json has 166 lines, not 167:\n- README.md:1-29; arcade_menu/games.json:1-167: This is an offline Python terminal arcade. The documented new-game structure is engine.py, a PaperRenderer-based ui.py, __main__.py, and a menu registration. The complete menu has no Stacker entry. The likely blast radius is a new game package, menu registration, documentation, and game-specific tests. (observed 2026-10-18)\nChecked by read-only file tools in /Users/jondev/dev/active/factory/tink-arcade-taste:\n- DESIGN.md:5-16,126-164; arcade_common/theme.py:1-33; arcade_common/audio.py:9-19: Existing conventions supply paper/ink/jade visuals and short mechanical keyboard sounds, with silent automatic motion and feedback for successful actions. Shared renderer and cue definitions can support the new game; modifying these shared pieces could affect every cabinet. The design also requires playable degradation without sound or color. (observed 2026-10-18)\n- scripts/check_all.py:1-26; scripts/check_arcade.py:37-60: The aggregate check runs unittest discovery and the menu PTY check. Registering Stacker extends that PTY check automatically: it expects paper styling, visible sound-on status, mute feedback, quitting, and return to the menu. A new cabinet that deviates from these conventions could break this integration path. Neither check establishes Stacker mechanics without new behavior-specific assertions. (observed 2026-10-18)\n- AGENTS.md:1-10; _system/SDLC.md:21-23,42-44: Later code-writing work requires an isolated worktree or clone and separate human workflow decisions. This investigation has not run commands, tested gameplay, or approved implementation. (observed 2026-10-18)\n- DESIGN.md:106-108,194-198: The existing game design explicitly values fairness and separates game-rule tests from presentation checks. No inspected source settles Stacker's skill-versus-payout behavior. The linked external rules have not been read with the available file tools. (observed 2026-10-18)\n- README.md:19-29: A new cabinet uses a rules-only engine.py, a PaperRenderer-based ui.py, __main__.py, and menu registration. The proposed blast radius remains the new Stacker package, game-specific tests, arcade_menu/games.json, and documentation; shared rendering and audio can be reused rather than changed. (observed 2026-10-18)\n- scripts/check_arcade.py:37-60: The menu integration check launches every uncredentialed registered game and asserts paper styling, visible sound-on status, mute feedback, and return to the menu. Stacker registration will bring its launch and exit behavior into this existing check; incompatible UI or controls could break it. (observed 2026-10-18)\n- DESIGN.md:126-164,194-200: The sound contract requires successful-action feedback, silent automatic motion, visible mute status, and playable audio failure. Audio verification includes real repeated playback rather than successful API calls alone. Rules tests must remain separate from presentation tests. (observed 2026-10-18)\n- arcade_menu/games.json:139-166: The registry's final entries illustrate cabinet metadata and controls. A checkpoint choice would need corresponding player-facing controls and explanatory copy in the new cabinet and its registration. (observed 2026-10-18)\n- README.md:19-29; DESIGN.md:126-164: These repository conventions settle integration and sound direction, but do not specify Stacker's collect-or-continue rule. The linked external rules remain unread; checkpoint behavior is a proposed product choice, not verified source-game evidence. (observed 2026-10-18)\n- README.md:19-29: The documented new-game surface is a rules-only engine.py, PaperRenderer-based ui.py, __main__.py, and menu registration. Shared rendering and audio are available; proposed additions also need game tests and documentation. (observed 2026-10-18)\n- scripts/check_all.py:8-12,16-23; scripts/check_arcade.py:37-60: The aggregate runner invokes unit discovery and the menu PTY check. The latter launches every eligible registered cabinet and asserts styling, sound status, mute feedback and return to the menu. Registering Stacker expands this integration blast radius; incompatible launch or controls can break it. (observed 2026-10-18)\n- DESIGN.md:133-164,194-200: Sound conventions require successful-action feedback, silent automatic motion, visible mute status and playable audio failure. Real repeated playback and rendered-signal checks are required, not successful API calls alone. Rules tests remain separate from presentation tests; no checks were run in this step. (observed 2026-10-18)\n\n## Accepted decisions and assumed defaults\n## Decisions (from the ledger)\n- goal [user] I have created a software version of stacker (https://en.wikipedia.org/wiki/Stacker_(arcade_game)). Why: i like the game and played it at dave and busters today and it was fun. Done when: matches the tink-arcade style and theme has working sounds just works with the right mechanics as the game has. (source: Goal confirmed in Tinkery with typed confirm and Enter; caller-declared attribution: unrecorded; goal only, not seed or implementation approval.)\n- stacker-fairness [user] skill (source: the operator's own answer, typed in Tinkery Shape)\n- stacker-checkpoint [user] aim for the top (source: the operator's own answer, typed in Tinkery Shape)\n\n## Assumed (not confirmed by you)\n- none\n"
+      }
+    }
+  ],
+  "refusals": {
+    "records": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[{\"statement\": \"Independent check\", \"kind\": \"cmd\", \"source\": \"TEST operator\", \"cmd\": \"false\", \"cwd\": \".\", \"expect\": \"exit zero; output looks right\"}]",
+        "seed-confirmation.json": "{\"schema_version\": 2, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"checks are missing, invalid or differ from the rendered seed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"false\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    "seed": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\nchanged\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\"schema_version\": 2, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"90945f67cdc80eb9729ba80b6b3d91911ecc27bc3a6deb8d28ca36b27eb20893\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"the seed changed after revision r1 was confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    "decisions": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST changed decision context\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\"schema_version\": 2, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"the decisions changed after revision r1 was confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    "v1": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\"schema_version\": 1, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"the seed has no confirmation record from `seed confirm` in this session\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    "missing": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": null,
+        "seed-confirmation.json": "{\"schema_version\": 2, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"checks are missing, invalid or differ from the rendered seed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "Error: \"Tinkery refused: checks are missing: use `seed checks set <session> <input.json>`\"\n"
+      }
+    },
+    "missing-confirmation": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": null
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"the seed has no confirmation record from `seed confirm` in this session\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    "simulated": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"simulated\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"simulated\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: simulated\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\"schema_version\": 2, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"57163a94f2d7bca30802ec75fb6dbbecdc1edc0e83d0955b817ddb7c9f720d96\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: simulated\",\n    \"revision\": \"r1\",\n    \"sha256\": \"ced3d10e8fcb184846dd7a33a5d5d18c5be16a3edddf25da693ee8b49331fb6c\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"a simulated session is a practice run that no person confirmed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    "rendered": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\nCHECK: `true`\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\"schema_version\": 2, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"58529ddd5978bcac81a475376e789989096ca59ebbd8fe36479cbb6fdfb55a2c\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"58529ddd5978bcac81a475376e789989096ca59ebbd8fe36479cbb6fdfb55a2c\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"checks are missing, invalid or differ from the rendered seed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    "emphasized-heading": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## **Acceptance checks**\nTEST additional failing requirement\ncmd: false\nexpect: exit zero\ncwd: .\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\"schema_version\": 2, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"187c20304f73f06aa0476c91e2ed014c44403828ba0bcdad107cb13e0e28bac9\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"187c20304f73f06aa0476c91e2ed014c44403828ba0bcdad107cb13e0e28bac9\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"checks are missing, invalid or differ from the rendered seed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    "comment-only": {
+      "files": {
+        "ledger.json": "{\"schema_version\": 1, \"session_id\": \"TEST-session\", \"version\": 1, \"revision\": 0, \"created_at\": \"2026-10-21T00:00:00+00:00\", \"updated_at\": \"2026-10-21T00:00:00+00:00\", \"status\": \"active\", \"draft\": {\"goal\": \"TEST goal\", \"outcome\": \"TEST outcome\", \"options\": [\"A\", \"B\"]}, \"goal\": \"TEST goal\", \"origin\": \"goal\", \"current_question\": null, \"frontier\": [], \"assumed\": [], \"operator\": \"human\", \"nodes\": [{\"id\": \"goal\", \"kind\": \"decision\", \"status\": \"settled\", \"prerequisites\": [], \"evidence\": [], \"owner\": \"TEST operator\", \"gate\": \"choose\", \"answer\": \"TEST goal\", \"authority\": \"user\", \"authority_source\": \"TEST explicit approval\", \"history\": [], \"revision\": 0}]}",
+        "seed-contract.md": "status: confirmed for intake\n# TEST intake\nrevision: r1\nConfirmed by: \"TEST explicit confirmation; not operator approval\" (revision r1, 2026-10-21). Not approved for implementation.\n\n## You are confirming\nTEST fixture only.\n\n## Problem statement\nTEST fixture only.\n\n## Proposed outcome\nTEST fixture only.\n\n<!--\n## Acceptance criteria\n\nIndependent check\ncheck: `true`\n\n## End example\n-->\n\n## Affected users and systems\nTEST fixture only.\n\n## Constraints and boundaries\nTEST fixture only.\n\n## Decisions (from the ledger)\n- goal [user] TEST goal (source: TEST explicit approval)\n\n## Assumed (not confirmed by you)\n- none\n\n## Knowledge map\nTEST fixture only.\n\n## Evidence and uncertainty\nTEST fixture only.\n\n## Suggested first slice\nTEST fixture only.\n\n## Risks and verification\nTEST fixture only.\n\n## Open questions and deferrals\nTEST fixture only.\n\n## Owners and next steps\nTEST fixture only.\n\n## Downstream handoff\nTEST fixture only.\n\n",
+        "seed-checks.json": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "seed-confirmation.json": "{\"schema_version\": 2, \"checks_sha256\": \"bd205d71a2800d13c26d6e1d67fd029ae3c1ed2f65e130cdbe2aa4d01a5b3b61\", \"session_id\": \"TEST-session\", \"operator\": \"human\", \"revision\": \"r1\", \"source\": \"TEST explicit confirmation; not operator approval\", \"confirmed_at\": \"2026-10-21T00:00:00+00:00\", \"seed_sha256\": \"5425117538fadd94a950257d8ea91d54a6783777dc3fcd543a3b84404ad9d81a\", \"decisions_sha256\": \"cb4a8a17d4c1396a3811919cec6043773bacd542d3267c5dbe227df40e827ff6\"}"
+      },
+      "status": {
+        "returncode": 0,
+        "stdout": "{\n  \"status\": \"active\",\n  \"revision\": 0,\n  \"version\": 1,\n  \"open\": 0,\n  \"settled\": 1,\n  \"current_question\": null,\n  \"seed\": {\n    \"line_1\": \"status: confirmed for intake\",\n    \"revision\": \"r1\",\n    \"sha256\": \"5425117538fadd94a950257d8ea91d54a6783777dc3fcd543a3b84404ad9d81a\"\n  },\n  \"handoff\": {\n    \"verified\": false,\n    \"reason\": \"checks are missing, invalid or differ from the rendered seed\"\n  }\n}\n",
+        "stderr": ""
+      },
+      "checks": {
+        "returncode": 0,
+        "stdout": "[\n  {\n    \"statement\": \"Independent check\",\n    \"kind\": \"cmd\",\n    \"source\": \"TEST operator\",\n    \"cmd\": \"true\",\n    \"cwd\": \".\",\n    \"expect\": \"exit zero; output looks right\"\n  }\n]\n",
+        "stderr": ""
+      }
+    }
+  }
+}

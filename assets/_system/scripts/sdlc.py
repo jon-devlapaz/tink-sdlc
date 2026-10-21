@@ -177,7 +177,7 @@ def records_digest(records):
 
 
 def record_definitions(records):
-    """Seed Me owns validation and rendering; preserve each validated record verbatim."""
+    """Tinkery owns validation and rendering; preserve each validated record verbatim."""
     return {'schema': 1, 'items': [
         {**record, 'id': f'seed-{index}', 'description': record['statement'],
          'origin': 'operator-confirmed-seed', 'locked': True}
@@ -1476,44 +1476,91 @@ def require_tink_use(tink):
     raise ValueError(f'{version} has no `tink use` (it compiles the stage disciplines); upgrade tink, then re-run the same command')
 
 
-def stage_seed_contract(value, helper):
-    """Verify Seed Me's v2 handoff before writes; the supplied helper is trusted code.
-
-    Contract: seed-me c9d766760dbeac0c05c92108165f9e968bec0a66.
-    """
-    resolved = Path(value).resolve()
-    if not resolved.is_file():
+def stage_seed_contract(value, tinkery):
+    """Use Tinkery's verifier before writes; the supplied executable is trusted code."""
+    try:
+        resolved = Path(value).resolve()
+        exists = resolved.is_file()
+    except (OSError, RuntimeError, ValueError):
+        raise ValueError('seed contract path is unavailable; supply an existing regular file.') from None
+    if not exists:
         raise ValueError(f'seed contract must be an existing regular file: {value}')
-    if not helper:
-        raise ValueError('--seed-contract requires --seed-me-helper PATH to Seed Me session.py (v2).')
+    if not tinkery:
+        raise ValueError('--seed-contract requires --tinkery PATH to a trusted Tinkery executable.')
     if resolved.name != 'seed-contract.md':
-        raise ValueError('Seed Me session input must be named seed-contract.md.')
-    helper = Path(helper).resolve()
-    if not helper.is_file():
-        raise ValueError(f'Seed Me helper not found: {helper}')
+        raise ValueError('Tinkery session input must be named seed-contract.md.')
+    try:
+        tinkery = Path(tinkery).resolve()
+        available = tinkery.is_file() and os.access(tinkery, os.X_OK)
+    except (OSError, RuntimeError, ValueError):
+        raise ValueError('Tinkery executable is unavailable; supply --tinkery PATH.') from None
+    if not available:
+        raise ValueError(f'Tinkery executable is unavailable: {tinkery}; supply --tinkery PATH.')
     directory = resolved.parent
 
-    def call(*arguments):
-        result = subprocess.run([sys.executable, str(helper), *arguments, str(directory)],
-                                capture_output=True, text=True, timeout=30)
-        if result.returncode:
-            raise ValueError(f'Seed Me helper refused intake: {result.stderr.strip()}')
-        return json.loads(result.stdout)
+    def invalid_constant(value):
+        raise ValueError(f'Invalid JSON constant: {value}')
 
-    before = call('status')
-    if before.get('handoff', {}).get('verified') is not True:
-        raise ValueError('Seed Me handoff is not verified: ' + before.get('handoff', {}).get('reason', 'missing v2 binding'))
-    confirmation = read_json(directory / 'seed-confirmation.json')
-    data = resolved.read_bytes()
-    records = call('seed', 'checks', 'show')
-    after = call('status')
-    if (before != after or confirmation != read_json(directory / 'seed-confirmation.json')
-            or data != resolved.read_bytes() or type(confirmation.get('schema_version')) is not int
+    def call(*arguments):
+        try:
+            result = subprocess.run([str(tinkery), 'seed', *arguments, str(directory)],
+                                    capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            raise ValueError('Tinkery could not run the seed verifier; check --tinkery PATH and retry.') from None
+        if result.returncode:
+            reason = result.stderr.strip()
+            detail = f': {reason}; ' if reason else '; '
+            raise ValueError(f'Tinkery refused seed intake{detail}check the session in Tinkery and retry.')
+        try:
+            return json.loads(result.stdout, parse_constant=invalid_constant)
+        except (ValueError, RecursionError):
+            raise ValueError('Tinkery returned malformed seed output; check --tinkery PATH.') from None
+
+    def status():
+        value = call('status', '--json')
+        if (not isinstance(value, dict) or not isinstance(value.get('handoff'), dict)
+                or type(value['handoff'].get('verified')) is not bool
+                or (value['handoff']['verified'] and
+                    (not isinstance(value.get('seed'), dict)
+                     or not isinstance(value['seed'].get('sha256'), str)
+                     or not re.fullmatch(r'[0-9a-f]{64}', value['seed']['sha256'])))):
+            raise ValueError('Tinkery returned malformed seed status; check --tinkery PATH.')
+        return value
+
+    def read_confirmation():
+        try:
+            value = read_json(directory / 'seed-confirmation.json')
+        except (OSError, ValueError, RecursionError):
+            raise ValueError('Tinkery confirmation is missing or unreadable; confirm the seed and retry.') from None
+        if not isinstance(value, dict):
+            raise ValueError('Tinkery confirmation is malformed; confirm the seed and retry.')
+        return value
+
+    def read_seed():
+        try:
+            return resolved.read_bytes()
+        except OSError:
+            raise ValueError('Tinkery seed could not be read; confirm the seed and retry.') from None
+
+    before = status()
+    if before['handoff']['verified'] is not True:
+        raise ValueError('Tinkery handoff is not verified; confirm the current seed in Tinkery and retry.')
+    confirmation = read_confirmation()
+    data = read_seed()
+    seed_sha256 = digest(data)
+    records = call('checks')
+    if (not isinstance(records, list) or not records
+            or any(not isinstance(record, dict) or not isinstance(record.get('statement'), str)
+                   for record in records)):
+        raise ValueError('Tinkery returned malformed seed checks; check --tinkery PATH.')
+    after = status()
+    if (before != after or confirmation != read_confirmation()
+            or data != read_seed() or type(confirmation.get('schema_version')) is not int
             or confirmation['schema_version'] != 2
-            or confirmation.get('seed_sha256') != digest(data)
-            or before.get('seed', {}).get('sha256') != digest(data)
+            or confirmation.get('seed_sha256') != seed_sha256
+            or before['seed']['sha256'] != seed_sha256
             or confirmation.get('checks_sha256') != records_digest(records)):
-        raise ValueError('Seed Me v2 confirmation binding changed during intake; confirm and retry.')
+        raise ValueError('Tinkery v2 confirmation binding changed during intake; confirm and retry.')
     return resolved, data, record_definitions(records), confirmation
 
 
@@ -1666,10 +1713,10 @@ def stage(args):
             raise ValueError('stage 5 reviews a commit, and these candidate changes are uncommitted: ' + ', '.join(dirty[:5])
                              + (f' (+{len(dirty) - 5} more)' if len(dirty) > 5 else '')
                              + mode_note + '; commit the candidate changes (verify again only if the code changed since it passed)')
-    if args.seed_me_helper and not args.seed_contract:
-        raise ValueError('--seed-me-helper requires --seed-contract at stage 1.')
+    if args.tinkery and not args.seed_contract:
+        raise ValueError('--tinkery requires --seed-contract at stage 1.')
     seed_source, seed_bytes, seed_checks, confirmation = (
-        stage_seed_contract(args.seed_contract, args.seed_me_helper) if args.seed_contract else (None, None, None, None))
+        stage_seed_contract(args.seed_contract, args.tinkery) if args.seed_contract else (None, None, None, None))
     seed_contract = f'runs/{run}/seed-contract.md' if seed_source else None
     skillset = stage_skillset(n)
     tink = shutil.which('tink') if skillset else None
@@ -1801,6 +1848,8 @@ class ShortErrorParser(argparse.ArgumentParser):
 
 def main():
     parser = ShortErrorParser(description=__doc__)
+    if any(arg == '--seed-me-helper' or arg.startswith('--seed-me-helper=') for arg in sys.argv[1:]):
+        parser.error('--seed-me-helper was removed; use --tinkery PATH.')
     commands = parser.add_subparsers(dest='command', required=True)
     new = commands.add_parser('new')
     new.add_argument('run')
@@ -1847,7 +1896,7 @@ def main():
     where.add_argument('--worktree', metavar='PATH')
     where.add_argument('--here', action='store_true')
     launch.add_argument('--seed-contract', metavar='PATH')
-    launch.add_argument('--seed-me-helper', metavar='PATH', help='trusted Seed Me session.py with v2 handoff verification')
+    launch.add_argument('--tinkery', metavar='PATH', help='trusted Tinkery executable for verified seed intake')
     launch.add_argument('--check', action='store_true', help='validate and print the plan; write nothing')
     lint = commands.add_parser('walk', help='structural walk lint (read-only)')
     lint.add_argument('--json', action='store_true')
