@@ -6,8 +6,10 @@ Read the run's `run.json` to select its profile.
 For Tinkery-originated work, follow [Tinkery intake boundaries](../../_system/SDLC.md#tinkery-ownership-and-handoff)
 before translating the supplied confirmed seed into intent.
 Stage-1 `--seed-contract <session>/seed-contract.md --tinkery <path>/tinkery`
-uses Tinkery to verify the v2 confirmation binding and imports records into `runs/<slug>/seed-checks.json`
-as LOCKED operator-confirmed items, separate from worker checks. Do not edit or drop
+uses Tinkery to verify the human v2 or attributed agent v3 confirmation binding and
+imports records into `runs/<slug>/seed-checks.json` as LOCKED seed-confirmed items,
+separate from worker checks. Preserve the actual confirmer; agent confirmation is
+not human confirmation or implementation permission. Do not edit or drop
 these definitions. Preserve pending provisional checks; when a prerequisite exists,
 add a real command and prerequisite evidence via `activation` and obtain renewed
 operator definition approval. Prose `expect` and `judge` records require actual operator

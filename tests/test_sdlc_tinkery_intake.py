@@ -6,7 +6,7 @@ import sys
 from unittest.mock import patch
 
 from tinkery_fixture import TINKERY, confirmed, corpus
-from test_sdlc_stage import StageBase
+from test_sdlc_stage import StageBase, PASSING
 from test_sdlc_workflow import workflow
 
 
@@ -121,19 +121,107 @@ class TinkeryIntake(StageBase):
         responses['status']['stdout'] = json.dumps(status)
         self.refuse(self.verifier(responses), 'Tinkery handoff is not verified')
 
-    def test_agent_confirmed_v3_receipt_refuses_with_human_confirmation_next_step(self):
+    def agent_receipt(self):
+        # Synthetic consumer-boundary fixture matching Tinkery's GoalConfirmation::Agent.
+        # The stub supplies verification; this is not evidence of Rust verification.
         receipt = self.seed.parent / 'seed-confirmation.json'
-        # Minimal synthetic v3 fixture derived from recorded v2 bindings, not Tinkery v3 output.
         confirmation = json.loads(receipt.read_text())
-        confirmation.update(schema_version=3, operator='agent')
+        confirmation.update(schema_version=3, operator='agent', actor={
+            'by': 'agent', 'agent': 'TEST agent', 'authorizing_operator': 'TEST operator',
+            'source': 'TEST scoped seed permission', 'class': {
+                'door': 'two_way', 'door_reason': 'TEST reversible',
+                'blast_radius': 'small', 'blast_radius_reason': 'TEST isolated'}})
         receipt.write_text(json.dumps(confirmation))
-        result = self.refuse(self.verifier(), 'agent-confirmed receipts are not supported yet')
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stderr,
-                         'Error: Tinkery agent-confirmed receipts are not supported yet; '
-                         'intake requires a schema 2 (human-confirmed) receipt. '
-                         'Have a human confirm the seed in Tinkery, then retry intake.\n')
-        self.assertNotIn('binding changed during intake', result.stderr)
+        return confirmation
+
+    def test_attributed_v3_is_preserved_as_agent_in_run_and_status(self):
+        confirmation = self.agent_receipt()
+        result = self.stage('r', 1, '--seed-contract', str(self.seed), '--tinkery', str(self.verifier()))
+        self.assertIn('agent-confirmed seed contract', result.stdout)
+        self.assertNotIn('operator-confirmed seed contract', result.stdout)
+        metadata = json.loads((self.root / 'runs/r/run.json').read_text())
+        self.assertEqual(metadata['seed_contract']['confirmation'], confirmation)
+        for args, key in [(('status', 'r', '--json'), 'run'), (('status', '--json'), 'runs')]:
+            status = self.sdlc(*args)
+            self.assertEqual(status.returncode, 0, status.stderr)
+            run = json.loads(status.stdout)[key]
+            if key == 'runs':
+                run = next(item for item in run if item['slug'] == 'r')
+            self.assertEqual(run['seed_contract']['confirmation'], confirmation)
+            if key == 'run':
+                self.assertTrue(all(gate['status'] != 'approved' for gate in run['gates']))
+
+    def test_v3_locked_checks_still_require_human_approval_and_attestation(self):
+        self.agent_receipt()
+        self.stage('r', 1, '--seed-contract', str(self.seed), '--tinkery', str(self.verifier()))
+        items = json.loads((self.root / 'runs/r/seed-checks.json').read_text())['items']
+        self.assertTrue(all(item['origin'] == 'agent-confirmed-seed' and item['locked'] for item in items))
+        self.set_checks([PASSING])
+        self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
+        self.decide('r', 3)  # Synthetic test approval, not the operator's.
+        refused = self.sdlc('mark', 'r', 'seed-1', 'passed', '--evidence', 'TEST worker guess')
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
+        attested = self.sdlc('mark', 'r', 'seed-1', 'passed', '--evidence', 'TEST observation',
+                             '--reviewer', 'TEST human', '--source', 'TEST synthetic review')
+        self.assertEqual(attested.returncode, 0, attested.stderr)
+        passed = self.sdlc('verify', 'r')
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        self.assertIn('Seed checks (agent-confirmed)', passed.stdout)
+        receipt = json.loads((self.root / 'runs/r/04-test/output/verification.json').read_text())
+        self.assertEqual(receipt['seed_checks'], {'seed-1': 'attested'})
+        self.assertNotIn('seed-1', receipt['checklist_items'])
+
+    def test_v3_missing_blank_malformed_or_ineligible_attribution_refuses(self):
+        original = self.agent_receipt()
+        mutations = [('actor', None), ('operator', 'human')]
+        for key in ('by', 'agent', 'authorizing_operator', 'source', 'class'):
+            mutations.extend((f'actor.{key}', value) for value in (None, '', ' \t ', 17, [], {}))
+        for key in ('door', 'door_reason', 'blast_radius', 'blast_radius_reason'):
+            mutations.extend((f'actor.class.{key}', value) for value in (None, '', ' \t ', 17, [], {}))
+        mutations.extend([('actor.by', 'operator'), ('actor.class.door', 'one_way'),
+                          ('actor.class.blast_radius', 'large'), ('actor.extra', 'TEST'),
+                          ('actor.class.extra', 'TEST')])
+        receipt = self.seed.parent / 'seed-confirmation.json'
+        for field, value in mutations:
+            with self.subTest(field=field, value=value):
+                confirmation = copy.deepcopy(original)
+                target = confirmation
+                parts = field.split('.')
+                for part in parts[:-1]:
+                    target = target[part]
+                if value is None:
+                    target.pop(parts[-1])
+                else:
+                    target[parts[-1]] = value
+                receipt.write_text(json.dumps(confirmation))
+                self.refuse(self.verifier(), 'agent confirmation needs complete caller-declared attribution')
+
+    def test_v3_unverified_draft_and_changed_attribution_refuse(self):
+        self.agent_receipt()
+        responses = copy.deepcopy(self.responses)
+        status = json.loads(responses['status']['stdout'])
+        status['handoff']['verified'] = False
+        responses['status']['stdout'] = json.dumps(status)
+        self.refuse(self.verifier(responses), 'Tinkery handoff is not verified')
+        body = ('if args[1] == "checks":\n'
+                '    path = pathlib.Path(directory) / "seed-confirmation.json"\n'
+                '    record = json.loads(path.read_text())\n'
+                '    record["actor"]["authorizing_operator"] = "TEST changed operator"\n'
+                '    path.write_text(json.dumps(record))\n')
+        self.refuses('r', 1, '--seed-contract', str(self.seed), '--tinkery', str(self.verifier(body=body)),
+                     message='confirmation binding changed during intake')
+
+    def test_v2_confirmation_and_status_remain_unchanged(self):
+        receipt = json.loads((self.seed.parent / 'seed-confirmation.json').read_text())
+        self.assertEqual(receipt['schema_version'], 2)
+        result = self.stage('r', 1, '--seed-contract', str(self.seed), '--tinkery', str(self.verifier()))
+        self.assertIn('operator-confirmed seed contract', result.stdout)
+        metadata = json.loads((self.root / 'runs/r/run.json').read_text())
+        self.assertEqual(metadata['seed_contract']['confirmation'], receipt)
+        status = self.sdlc('status', 'r', '--json')
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertEqual(set(json.loads(status.stdout)['run']['seed_contract']), {'path', 'sha256', 'source'})
 
     def test_changed_handoff_between_commands_refuses(self):
         body = ('if len(calls) == 2:\n'

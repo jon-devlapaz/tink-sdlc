@@ -56,9 +56,13 @@ Tinkery is the single seed verifier. Intake invokes exactly `PATH seed status --
 and `PATH seed checks DIR`, where PATH is the supplied executable and DIR is the seed's
 session directory. Status is read again to detect changes during intake. Its existing
 JSON shapes supply `handoff.verified`, the seed digest and canonical check records;
-no viewer fields or network probe are needed. Tinkery alone verifies the human v2
-confirmation against seed bytes, decisions, records, the canonical heading sequence
-and rendered acceptance section. SDLC retains the intake snapshot/digest protections,
+no viewer fields or network probe are needed. Tinkery alone verifies human v2 and
+agent v3 confirmations against seed bytes, decisions, records, the canonical heading
+sequence, rendered acceptance section and (for v3) the seed's attribution line.
+Intake accepts v3 only with `operator: agent` and a complete caller-declared `actor`:
+`by: agent`, nonblank `agent`, `authorizing_operator`, scoped `source`, and `class`
+with `door: two_way`, `blast_radius: small` and nonblank reasons for both axes.
+This records agent confirmation, never human confirmation; classification is not authority. SDLC retains the intake snapshot/digest protections,
 not a second session verifier. Missing or unavailable executables, failed commands,
 malformed output, simulated sessions, missing confirmation and changed bindings refuse
 before any intake or checkout writes. Supply trusted executable toolchain code, never
@@ -72,10 +76,11 @@ not change Tinkery's command or consumer pin.
 
 Intake copies the confirmed seed and preserves every record's fields in locked
 `runs/<slug>/seed-checks.json` items with stable `seed-N` IDs; run metadata keeps the
-v2 confirmation and definitions digest. Seed Markdown is never read as checks; a seed binding
+unchanged confirmation receipt and definitions digest. Seed Markdown is never read as checks; a seed binding
 without record intake is refused.
 
-Imported items are **LOCKED, operator-confirmed** definitions, distinct from the
+Imported items are **LOCKED, seed-confirmed** definitions (operator or agent, as
+recorded in each item's origin), distinct from the
 worker's editable `checklist.json`; `seed-` IDs are reserved. They participate in
 status, dry runs and verification. Their file is bound to every definition gate:
 editing or deleting a check (or the file) stales approval, and `decide` refuses
@@ -183,7 +188,7 @@ the exact result serves the unchanged operator goal. A model's praise is neither
 
 For a Tinkery-originated run:
 
-- **Load:** Load only the explicitly supplied, operator-confirmed seed for seed
+- **Load:** Load only the explicitly supplied, verified confirmed seed for seed
   intake; never discover operator sessions to fill a gap. Also read the active
   contract's immediate inputs, approved brief or spec/plan, checklist, relevant
   project policy, and repository source and project files needed by the active stage.
@@ -273,7 +278,7 @@ tink-route --receipt runs/<slug>/skills.jsonl "<what you need>"
 
 `tink-route` searches the whole skill library and never reads `AGENTS.md`, so the command is identical in every stage: in our routing eval 56% of the skills a stage needed were not on its shelf, and the whole library was as precise. `--skillset NAME` restricts a call to one skillset (exit 1 may then add `Hint: <skill> fits but is on another shelf (<skillset>); it was not delivered.`); `--anywhere` is the default spelled out.
 
-Tinkery's operator-confirmed seed contract is the input to 01-plan; bind it at stage 1
+Tinkery's verified confirmed seed contract is the input to 01-plan; bind it at stage 1
 as described in Locked seed acceptance checks. Shaping is not a stage skillset or
 permission to implement.
 
@@ -323,13 +328,17 @@ lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or t
 
 - `slug`, `run_id`, `meta` (`profile`, `kind`), and `gates` (`stage`, `status`, `blocked`).
   Gate states are `approved`, `pending`, `stale`, or `changes-requested`.
-- `seed_contract`: exactly `path`, `sha256`, and `source` from run.json, or null
+- `seed_contract`: `path`, `sha256`, and `source` from run.json, or null
   when unbound (absent or null in run.json). Both status forms expose this binding;
   human run status adds one `Seed contract:` line when bound. A binding must be an
   object with nonempty strings for all three fields and a lowercase 64-character
   SHA-256 hex digest, plus the existing record-intake marker `definitions_sha256`.
   Malformed bindings invalidate the run. Reads never adopt, repair or rewrite a
   binding or require its original source to remain available.
+  For agent v3 intake, both status forms additionally expose `confirmation`: the
+  unchanged receipt, including `operator: agent` and the complete caller-declared
+  `actor` (acting agent, authorizing operator, scoped source and risk class).
+  Human v2 and legacy bindings retain the three-field status shape.
   This is intake evidence, not approval, goal identity or release authority.
 - `verification_status`: `blocked`, `running`, `not-run`, `current`, `stale`,
   `failed`, or `interrupted`. `verification` is null or a normalized record with
