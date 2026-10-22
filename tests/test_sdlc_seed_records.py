@@ -40,7 +40,6 @@ class RecordIntake(StageBase):
             self.assertEqual({k: item[k] for k in record}, record)
             self.assertTrue(item['locked'])
         self.approve_all()
-        self.attest('seed-1-expect')
         self.attest('seed-4')
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
 

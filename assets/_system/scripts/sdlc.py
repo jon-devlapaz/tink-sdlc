@@ -195,6 +195,91 @@ def relative_check_cwd(cwd):
         raise ValueError('Seed check cwd must be checkout-relative, without traversal or backslashes.')
 
 
+def agent_record(record):
+    reviewer = record.get('reviewer', '')
+    actor = record.get('actor')
+    return ((isinstance(reviewer, str) and
+             (reviewer.casefold().startswith('agent') or 'not human' in reviewer.casefold()))
+            or (isinstance(actor, dict) and actor.get('by') == 'agent'))
+
+
+def human_review(args, path):
+    actor = getattr(args, 'actor', None)
+    if actor is not None and (not isinstance(actor, dict) or actor.get('by') not in ('human', 'operator', 'agent')):
+        raise ValueError('--actor must be an object declaring by: human, operator or agent.')
+    if agent_record(vars(args)) or agent_record(require_run(path)):
+        raise ValueError('This is a human-only gate; an agent-recorded reviewer cannot satisfy it. Obtain the actual human decision.')
+
+
+def seed_baseline(path):
+    bound = require_run(path).get('seed_contract')
+    if not bound:
+        return None
+    source = Path(bound['path'])
+    source = source if source.is_absolute() else ROOT / source
+    if not source.is_file() or digest(source.read_bytes()) != bound['sha256']:
+        raise ValueError('The bound seed changed or is missing; rebind the confirmed seed at stage 1.')
+    value = read_json(path / 'seed-checks.json')
+    baseline = bound.get('definitions')
+    if baseline is None:
+        baseline = [{k: v for k, v in item.items() if k != 'activation'} for item in value['items']]
+    if digest(encoded(baseline)) != bound['definitions_sha256']:
+        raise ValueError('Locked seed checks changed; rebind the confirmed seed at stage 1.')
+    return baseline
+
+
+def seed_departures(path):
+    baseline = seed_baseline(path)
+    if baseline is None:
+        return None
+    current = read_json(path / 'seed-checks.json')['items']
+    before = {item['id']: item for item in baseline}
+    after = {item['id']: item for item in current}
+    lines = []
+    for name in sorted(before.keys() | after.keys()):
+        if name not in after:
+            lines.append(f"{name} removed: {before[name]['statement']}")
+        elif name not in before:
+            lines.append(f"{name} added: {after[name]['statement']}")
+        else:
+            item = after[name]
+            definition = {k: v for k, v in item.items() if k != 'activation'}
+            for key in sorted(before[name].keys() | definition.keys()):
+                if before[name].get(key) != definition.get(key):
+                    lines.append(f"{name} {key} changed: `{definition.get(key, '<removed>')}` "
+                                 f"instead of `{before[name].get(key, '<absent>')}`")
+            if 'activation' in item:
+                activation = item['activation']
+                lines.append(f"{name} activated: runs `{activation['cmd']}` instead of "
+                             f"`{before[name].get('cmd', '<no command>')}` "
+                             f"(cwd: {activation['cwd']})")
+    target = path / 'checklist.json'
+    if not target.is_file():
+        raise ValueError(MISSING_CHECKLIST)
+    for item in validate_checklist(read_json(target)):
+        command = item.get('check', {}).get('argv')
+        detail = ' '.join(command) if command else item['description']
+        lines.append(f"{item['id']} added worker check: {detail}")
+    return lines
+
+
+def seed_match_evidence(path):
+    departures = seed_departures(path)
+    if departures is not None and not departures:
+        return f"matches confirmed seed (sha256: {require_run(path)['seed_contract']['sha256']})"
+    return None
+
+
+def record_seed_match(path):
+    evidence = seed_match_evidence(path)
+    if evidence and seed_check_items(path) and gate(path, 3) == 'approved':
+        write_json(path / 'decisions' / f'3-{time.time_ns()}-{uuid.uuid4().hex}.json', {
+            'inputs': inputs(path, 3), 'decision': 'approved', 'basis': 'confirmed-seed',
+            'reviewer': 'confirmed-seed binding (automatic)',
+            'source': require_run(path)['seed_contract']['path'],
+            'seed_binding': require_run(path)['seed_contract'], 'reason': evidence})
+
+
 def seed_check_items(path):
     """Validate the immutable intake snapshot; seed Markdown is never parsed."""
     bound = require_run(path).get('seed_contract')
@@ -207,11 +292,33 @@ def seed_check_items(path):
     if (not isinstance(value, dict) or set(value) != {'schema', 'items'}
             or type(value['schema']) is not int or value['schema'] != 1 or not isinstance(value['items'], list)):
         raise ValueError('Invalid locked seed checks.')
-    definitions = [{k: v for k, v in item.items() if k != 'activation'} for item in value['items'] if isinstance(item, dict)]
-    if digest(encoded(definitions)) != bound['definitions_sha256']:
-        raise ValueError('Locked seed checks changed; rebind the confirmed seed at stage 1.')
+    seed_baseline(path)
     result = []
+    seen = set()
     for item in value['items']:
+        if (not isinstance(item, dict) or not isinstance(item.get('id'), str)
+                or not re.fullmatch(r'seed-[1-9][0-9]*', item['id']) or item['id'] in seen
+                or item.get('kind') not in ('cmd', 'provisional', 'judge')
+                or not all(isinstance(item.get(key), str) and item[key].strip()
+                           for key in ('statement', 'description', 'source', 'origin'))
+                or not is_seed_check(item) or item.get('locked') is not True):
+            raise ValueError('Invalid locked seed check definition.')
+        seen.add(item['id'])
+        fields = {'statement', 'kind', 'source', 'id', 'description', 'origin', 'locked'}
+        required = set()
+        optional = set()
+        if item['kind'] == 'cmd':
+            required = {'cmd', 'cwd', 'expect'}
+        elif item['kind'] == 'provisional':
+            required = {'missing', 'cwd', 'expect'}
+            optional = {'cmd', 'activation'}
+        else:
+            optional = {'how_to_judge'}
+        if (not fields | required <= set(item) <= fields | required | optional
+                or any(not isinstance(item.get(key), str) or not item[key].strip() for key in required)
+                or any(not isinstance(item[key], str) or not item[key].strip()
+                       for key in optional - {'activation'} if key in item)):
+            raise ValueError('Invalid seed record fields; preserve the cmd, provisional or judge schema.')
         activation = item.get('activation')
         if 'activation' in item:
             if (item['kind'] != 'provisional' or not isinstance(activation, dict)
@@ -233,8 +340,6 @@ def seed_check_items(path):
         relative_check_cwd(command['cwd'])
         result.append({**base, 'check': {'argv': ['bash', '-c', command['cmd']],
                                         'timeout_seconds': 120, 'cwd': command['cwd']}})
-        result.append({**base, 'id': item['id'] + '-expect', 'operator_attestation': True,
-                       'description': 'Operator confirms expected output: ' + item['description']})
     return result
 
 
@@ -288,7 +393,7 @@ def checklist_digest(path):
         return digest(target.read_bytes())
 
 
-def marks(path, items):
+def marks(path, items, include_agents=False):
     """Latest valid receipt per current item id; receipts for removed items are ignored."""
     ids = {item['id'] for item in items}
     latest_marks = {}
@@ -303,9 +408,10 @@ def marks(path, items):
             continue
     definitions = {item['id']: item for item in items}
     return {name: record for name, (_, record) in latest_marks.items()
-            if not definitions[name].get('operator_attestation')
-            or (record.get('reviewer') and record.get('source')
-                and record.get('seed_definition') == definitions[name]['seed_definition'])}
+            if (not definitions[name].get('operator_attestation')
+                or (record.get('reviewer') and record.get('source')
+                    and record.get('seed_definition') == definitions[name]['seed_definition']))
+            and (include_agents or not (definitions[name].get('operator_attestation') and agent_record(record)))}
 
 
 def inputs(path, stage):
@@ -334,7 +440,16 @@ def latest(path, stage):
 
 def gate(path, stage):
     record = latest(path, stage)
-    if record is None:
+    if stage == 3:
+        try:
+            seed_check_items(path)
+            if seed_match_evidence(path):
+                if record and record['inputs'] == inputs(path, stage) and record['decision'] == 'changes-requested' and not agent_record(record):
+                    return 'changes-requested'
+                return 'approved'
+        except (ValueError, OSError, KeyError, TypeError):
+            return 'stale' if record else 'pending'
+    if record is None or agent_record(record):
         return 'pending'
     if record['inputs'] != inputs(path, stage):
         return 'stale'
@@ -527,6 +642,7 @@ def create(args):
 def decide(args):
     path = run_path(args.run)
     require_run(path)
+    human_review(args, path)
     with locked(path / '.writer-lock'):
         if args.stage not in stages(path):
             raise ValueError('Light runs use stage 3 for their combined definition gate.')
@@ -551,7 +667,10 @@ def decide(args):
                     raise ValueError(f'Approve stage {stage} first.')
         write_json(path / 'decisions' / f'{args.stage}-{time.time_ns()}-{uuid.uuid4().hex}.json', {
             'inputs': inputs(path, args.stage), 'decision': args.decision,
-            'reviewer': args.reviewer, 'source': args.source, 'reason': args.reason})
+            'reviewer': args.reviewer, 'source': args.source, 'reason': args.reason,
+            **({'actor': args.actor} if getattr(args, 'actor', None) is not None else {}),
+            **({'seed_evidence': seed_match_evidence(path), 'departures': seed_departures(path)}
+               if args.stage == 3 and require_run(path).get('seed_contract') else {})})
     print('Recorded local review receipt. Release approval must be independently authenticated by the forge.')
 
 
@@ -624,6 +743,7 @@ def verify(args):
         seed_results = {}
         try:
             ready(path)
+            record_seed_match(path)
             missing = missing_cited_evidence(path)
             if missing:
                 raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
@@ -776,6 +896,8 @@ def mark(args):
         item = next(item for item in items if item['id'] == args.item)
         if item.get('pending'):
             raise ValueError('Provisional seed check is pending; activate it with prerequisite evidence and renew definition approval.')
+        if item.get('operator_attestation'):
+            human_review(args, path)
         if item.get('operator_attestation') and not (args.reviewer and args.reviewer.strip() and args.source and args.source.strip()):
             raise ValueError('Seed checks require an operator attestation: --reviewer and --source of the actual operator observation.')
         if any(item['id'] == args.item and 'check' in item for item in items):
@@ -796,6 +918,7 @@ def mark(args):
             'item': args.item, 'result': args.result, 'evidence': evidence,
             **({'reviewer': args.reviewer, 'source': args.source, 'seed_definition': item['seed_definition']}
                if item.get('operator_attestation') else {}),
+            **({'actor': args.actor} if getattr(args, 'actor', None) is not None else {}),
             **({'covers_all': True} if args.covers_all else {}),
             'candidate': snapshot()['tree'], 'time_ns': now})
     if item.get('operator_attestation'):
@@ -814,15 +937,17 @@ def checklist_view(path, verified=False):
         tree = snapshot()['tree'] if items else None
     except (ValueError, OSError, subprocess.SubprocessError):
         tree = None
-    marked = marks(path, items)
+    marked = marks(path, items, include_agents=True)
     result = []
     for item in items:
         record = marked.get(item['id'])
         automatic = 'check' in item
-        state = ('passed' if verified else 'pending') if automatic else (record['result'] if record else 'pending')
+        agent = bool(record and item.get('operator_attestation') and agent_record(record))
+        state = ('passed' if verified else 'pending') if automatic else (record['result'] if record and not agent else 'pending')
         result.append({**item, 'status': state, 'automatic': automatic,
+                       **({'attribution': 'agent-recorded'} if agent else {}),
                        'proof': 'automated' if automatic else 'attested',
-                       'mark': {key: record.get(key) for key in ('item', 'result', 'evidence', 'candidate', 'time_ns', 'covers_all')} if record else None,
+                       'mark': {key: record.get(key) for key in ('item', 'result', 'evidence', 'candidate', 'time_ns', 'covers_all', 'reviewer', 'actor')} if record else None,
                        'needs_recheck': bool(not automatic and record and state == 'passed'
                                              and tree is not None and record.get('candidate') != tree)})
     return {'state': 'defined' if items else 'empty', 'items': result}
@@ -904,7 +1029,15 @@ def status_state(path):
         state = gate(path, stage)
         if state not in ('approved', 'pending', 'stale', 'changes-requested'):
             raise ValueError(f'Unknown gate state: {state}')
-        gates.append({'stage': stage, 'status': state, 'blocked': blocked})
+        entry = {'stage': stage, 'status': state, 'blocked': blocked}
+        recorded = latest(path, stage)
+        if recorded and agent_record(recorded):
+            entry['attribution'] = 'agent-recorded'
+        if stage == 3:
+            with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
+                if evidence := seed_match_evidence(path):
+                    entry['evidence'] = evidence
+        gates.append(entry)
         blocked = blocked or state != 'approved'
     record_path, _ = verification_files(path)
     record = read_json(record_path) if record_path.exists() else None
@@ -963,6 +1096,14 @@ def status_state(path):
         elif any(item['automatic'] for item in checklist['items']):
             gate_reason = (f'Run python3 _system/scripts/sdlc.py dry-run {path.name} before definition review; '
                            'inspect each check output, then record the actual human decision.')
+    definition = None
+    if meta.get('seed_contract') and checklist['state'] != 'invalid':
+        with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
+            departures = seed_departures(path)
+            definition = {'departures': departures, 'evidence': seed_match_evidence(path),
+                          'question': 'Accept these departures from the confirmed seed?' if departures else None}
+            if first_gate and first_gate['stage'] == 3 and departures:
+                gate_reason = definition['question'] + ' Record only the actual human decision.'
     unavailable = 'A writer already owns this run.' if active else gate_reason
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
@@ -982,6 +1123,7 @@ def status_state(path):
     return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract,
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active,
+            **({'definition': definition} if definition is not None else {}),
             'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
             'checklist': checklist['items'], 'checklist_state': checklist['state'],
             'checklist_text': checklist_text(checklist), 'next_action': next_action, 'errors': errors,
@@ -997,7 +1139,12 @@ def status_text(view):
     lines = [f"Seed contract: {bound['path']} (sha256: {bound['sha256']}; source: {bound['source']})"] if bound else []
     for gate_info in view['gates']:
         stage, state, blocked = gate_info['stage'], gate_info['status'], gate_info['blocked']
-        lines.append(f'Stage {stage}: {state}' + (' (blocked by upstream gate)' if blocked else ''))
+        lines.append(f'Stage {stage}: {state}' + (' (blocked by upstream gate)' if blocked else '')
+                     + (' (agent-recorded; not human approval)' if gate_info.get('attribution') else ''))
+        if stage == 3 and view.get('definition'):
+            lines.extend(view['definition']['departures'])
+            if view['definition']['evidence']:
+                lines.append(view['definition']['evidence'])
         if state != 'approved' and not blocked:
             lines.append(f"Next: {view['next_action']}")
             if not view['next_action'].startswith('Define brief.md'):
@@ -1054,8 +1201,19 @@ def run_view(slug):
             if not isinstance(record.get(key), str):
                 raise ValueError(f'Decision {key} must be a string: {file.name}')
         decisions.append({'id': file.stem, 'stage': int(identity[1]), 'timestamp_ns': int(identity[2]),
-                          **{key: record.get(key) for key in ('decision', 'reviewer', 'source', 'reason')}})
+                          **{key: record.get(key) for key in ('decision', 'reviewer', 'source', 'reason')},
+                          **({'attribution': 'agent-recorded'} if agent_record(record) else {}),
+                          **({key: record[key] for key in ('actor', 'basis', 'seed_evidence', 'departures') if key in record})})
     view['decisions'] = decisions
+    agent_marks = []
+    for file in sorted((path / 'marks').glob('*.json')):
+        with contextlib.suppress(ValueError, KeyError, TypeError, OSError):
+            record = read_json(file)
+            if isinstance(record, dict) and agent_record(record):
+                agent_marks.append({'item': record['item'], 'attribution': 'agent-recorded',
+                                    'satisfies_human_gate': False, 'path': str(file.relative_to(ROOT))})
+    if agent_marks:
+        view['agent_marks'] = agent_marks
     text, truncated = '', False
     if log.exists():
         with log.open('rb') as stream:
@@ -1782,7 +1940,9 @@ def stage(args):
             write_json(path / 'run.json', {**read_json(path / 'run.json'),
                                             'seed_contract': {'path': seed_contract, 'sha256': digest(seed_bytes), 'source': source,
                                                               'definitions_sha256': digest(encoded(seed_checks['items'])),
-                                                              'confirmation': confirmation}})
+                                                              'confirmation': confirmation,
+                                                              'definitions': seed_checks['items']}})
+            record_seed_match(path)
     pending = make_worktree and bool(run_git(ROOT, 'status', '--porcelain', '--', f'runs/{run}').stdout.strip())
     if pending and not stage_identity_ok():
         raise ValueError('no committer identity configured; set user.name and user.email (or GIT_COMMITTER_*) so the launcher can commit '
@@ -1891,6 +2051,7 @@ def main():
     decision.add_argument('decision', choices=['approved', 'changes-requested'])
     for flag in ['reviewer', 'source', 'reason']:
         decision.add_argument('--' + flag, required=True)
+    decision.add_argument('--actor', type=json.loads, help='caller-declared reviewer actor JSON; not authentication')
     preflight = commands.add_parser('dry-run', help='exercise checklist checks before definition review; records no approval or proof')
     preflight.add_argument('run')
     verification = commands.add_parser('verify')
@@ -1904,6 +2065,7 @@ def main():
     marking.add_argument('--source', help='reference to the operator observation')
     marking.add_argument('--covers-all', action='store_true',
                          help='the operator meant this evidence to attest every expectation it is already recorded for')
+    marking.add_argument('--actor', type=json.loads, help='caller-declared reviewer actor JSON; not authentication')
     baseline = commands.add_parser('lock-tests')
     baseline.add_argument('run')
     baseline.add_argument('paths', nargs='+')

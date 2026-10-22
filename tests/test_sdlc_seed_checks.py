@@ -31,7 +31,6 @@ class SeedChecks(StageBase):
     def test_failing_seed_command_overrules_passing_worker_checks(self):
         self.bind([command('test -f accepted')])
         self.approve_all()
-        self.attest('seed-1-expect')
         failed = self.sdlc('verify', 'r')
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn('Seed check failed: seed-1', failed.stderr)
@@ -41,7 +40,7 @@ class SeedChecks(StageBase):
         passed = self.sdlc('verify', 'r')
         self.assertEqual(passed.returncode, 0, passed.stderr)
         record = json.loads(receipt.read_text())
-        self.assertEqual(record['seed_checks'], {'seed-1': 'proven', 'seed-1-expect': 'attested'})
+        self.assertEqual(record['seed_checks'], {'seed-1': 'proven'})
         self.assertEqual(record['checklist_items'], {'a': 'proven'})
         log = (self.path / '04-test/output/test-log.md').read_text()
         self.assertIn('# seed check seed-1', log)
@@ -65,12 +64,15 @@ class SeedChecks(StageBase):
                 self.assertIn('Stage 1: stale', status)
                 self.assertIn('Stage 3: stale', status)
                 self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
-                # Re-approval must not bless a missing or weakened imported check.
-                self.assertNotEqual(self.sdlc('decide', 'r', '1', 'approved', '--reviewer', 'h',
+                # Changed/removed checks are explicit departures, not seed equality.
+                if mutation != 'remove':
+                    view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+                    self.assertTrue(view['definition']['departures'])
+                self.assertNotEqual(self.sdlc('decide', 'r', '3', 'approved', '--reviewer', 'h',
                                               '--source', 's', '--reason', 'r').returncode, 0)
                 self.save(original)
 
-    def test_you_judge_and_expect_require_operator_attestation(self):
+    def test_judge_requires_operator_attestation_but_command_does_not(self):
         self.bind([command(), DEFAULT[0]])
         self.approve_all()
         self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
@@ -79,17 +81,24 @@ class SeedChecks(StageBase):
         mark = self.sdlc('mark', 'r', 'seed-2', 'passed', '--evidence', 'worker guess')
         self.assertNotEqual(mark.returncode, 0)
         self.assertIn('operator', mark.stderr)
-        self.attest('seed-1-expect')
         self.attest('seed-2')
         result = self.sdlc('verify', 'r')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads((self.path / '04-test/output/verification.json').read_text())
                          ['seed_checks']['seed-2'], 'attested')
 
-    def test_one_quote_cannot_attest_several_expectations(self):
+    def test_one_quote_cannot_attest_several_judge_checks(self):
         # #77: the Stacker run recorded one operator quote for four marks (tink-arcade runs/stacker/marks/).
         sound = dict(command(), expect='sound plays on the intended output device')
         self.bind([command(), DEFAULT[0], sound, command()])
+        # #99 removes command-expect marks. Preserve #77's protection for human judge checks.
+        value = self.definitions()
+        for item in value['items']:
+            if item['kind'] == 'cmd':
+                item.update(kind='judge', how_to_judge=item.pop('expect'))
+                item.pop('cmd')
+                item.pop('cwd')
+        self.save(value)
         self.approve_all()
         quote = 'i played it. it was pretty perfect haha'
 
@@ -97,23 +106,23 @@ class SeedChecks(StageBase):
             return self.sdlc('mark', 'r', item, result, '--evidence', evidence, '--reviewer', 'synthetic-operator',
                              '--source', 'isolated-test', *extra)
 
-        first = mark('seed-1-expect')
+        first = mark('seed-1')
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertIn('exit zero; output looks right', first.stdout)  # The mark shows its own expectation.
-        for item in ('seed-2', 'seed-3-expect', 'seed-4-expect'):
+        for item in ('seed-2', 'seed-3', 'seed-4'):
             refused = mark(item)
             self.assertNotEqual(refused.returncode, 0)
-            self.assertIn('seed-1-expect', refused.stderr)
+            self.assertIn('seed-1', refused.stderr)
             self.assertIn('--covers-all', refused.stderr)
         self.assertEqual(len(list((self.path / 'marks').glob('*.json'))), 1)
         # Distinct evidence passes, an explicit shared record passes and says so, and unknown blocks verify.
         self.assertEqual(mark('seed-2', evidence='the style matches the arcade').returncode, 0)
-        self.assertEqual(mark('seed-4-expect', '--covers-all').returncode, 0)
-        self.assertEqual(mark('seed-3-expect', evidence='did not listen for the device', result='unknown').returncode, 0)
+        self.assertEqual(mark('seed-4', '--covers-all').returncode, 0)
+        self.assertEqual(mark('seed-3', evidence='did not listen for the device', result='unknown').returncode, 0)
         status = self.sdlc('status', 'r').stdout
         self.assertIn('evidence covers several expectations', status)
         self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
-        self.assertEqual(mark('seed-3-expect', evidence='heard it on the speakers I meant').returncode, 0)
+        self.assertEqual(mark('seed-3', evidence='heard it on the speakers I meant').returncode, 0)
         result = self.sdlc('verify', 'r')
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -134,16 +143,14 @@ class SeedChecks(StageBase):
         self.save(value)
         self.assertIn('Stage 3: stale', self.sdlc('status', 'r').stdout)
         self.approve_all()
-        self.attest('seed-1-expect')
         result = self.sdlc('verify', 'r')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Seed check failed: seed-1', result.stderr)
-        # A different activated command needs a fresh operator observation too.
+        # A changed activation needs definition approval, then command output is sufficient.
         value['items'][0]['activation']['cmd'] = 'true'
         self.save(value)
-        self.approve_all()
         self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
-        self.attest('seed-1-expect')
+        self.approve_all()
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
 
     def test_activation_evidence_paths_must_exist_in_the_checkout(self):
@@ -156,7 +163,6 @@ class SeedChecks(StageBase):
                         'the command now ships (see 03-build/output/rules-command.log, tests/test_rules.py).'}
         self.save(value)
         self.approve_all()
-        self.attest('seed-1-expect')
         result = self.sdlc('verify', 'r')
         self.assertNotEqual(result.returncode, 0)
         for missing in ('03-build/output/stability-1.log', '03-build/output/stability-2.log',
@@ -191,7 +197,6 @@ class SeedChecks(StageBase):
         self.bind([command(cmd)])
         self.assertEqual(self.definitions()['items'][0]['cmd'], cmd)
         self.approve_all()
-        self.attest('seed-1-expect')
         result = self.sdlc('verify', 'r')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Seed checks (operator-confirmed)', result.stdout)
@@ -202,7 +207,6 @@ class SeedChecks(StageBase):
         (self.root / 'sub/proof').write_text('exact output\n')
         self.bind([command('cat proof | grep "exact output"', 'sub')])
         self.approve_all()
-        self.attest('seed-1-expect')
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
 
     def test_markdown_only_seed_refuses_intake_without_mutation(self):

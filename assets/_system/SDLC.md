@@ -13,7 +13,7 @@ python3 _system/scripts/sdlc.py status fix-example
 
 The default `light` profile creates one `brief.md` (problem, acceptance criteria, approach, risks, verification) plus `checklist.json`. A human picks `--profile full` for consequential architecture or policy changes; it creates intent, spec and plan. Only runs created by `new` are supported; anything else is refused, and text approval tags are not evidence.
 
-Before asking for definition-gate approval, review the checklist commands and offer a dry run:
+For a run without a confirmed seed, review the checklist commands and offer a dry run before definition approval. Seed-bound runs use the [seed definition comparison](#seed-definition-comparison) instead:
 
 ```sh
 python3 _system/scripts/sdlc.py dry-run fix-example
@@ -30,7 +30,9 @@ python3 _system/scripts/sdlc.py decide fix-example 3 approved \
   --reason 'Accepted scope, approach, and acceptance criteria'
 ```
 
-Light runs have ONE definition gate, recorded as stage 3 (`sdlc.py decide <run> 3 ...`): the approved `brief.md` + `checklist.json` are the intent, design and plan. Full runs record stages 1, 2 and 3 in order. `changes-requested` records rejection with the same command. Editing an artifact or contract makes dependent decisions stale; older receipts remain. Never invent a reviewer or approval. Local receipts track workflow; they do not authenticate identity or authorize a release.
+Light runs have ONE definition gate, recorded as stage 3: `brief.md` + `checklist.json` are the intent, design and plan. Full runs record stages 1, 2 and 3 in order. `changes-requested` records rejection with the same command. Reviewed departures and non-seed decisions bind their artifacts and contract inputs; edits stale those receipts. Never invent a reviewer or approval. Local receipts track workflow; they do not authenticate identity or authorize a release.
+
+Human-only `decide` and seed-judge `mark` refuse a reviewer starting with `Agent`, containing `not human` (case-insensitive), or declaring `actor.by: agent`. Optional `--actor '{"by":"human"}'` is caller-declared context, not authentication. An agent actor on run metadata also refuses these writes; the seed confirmer is separate from the reviewer. Historical agent records remain readable and are labelled `agent-recorded` in status, never counted as human acceptance. Independent human release/merge review is unchanged.
 
 ## Checklist
 
@@ -80,29 +82,54 @@ unchanged confirmation receipt and definitions digest. Seed Markdown is never re
 without record intake is refused.
 
 Imported items are **LOCKED, seed-confirmed** definitions (operator or agent, as
-recorded in each item's origin), distinct from the
-worker's editable `checklist.json`; `seed-` IDs are reserved. They participate in
-status, dry runs and verification. Their file is bound to every definition gate:
-editing or deleting a check (or the file) stales approval, and `decide` refuses
-imports that disagree with the locked digest. Revised records require a newly
-displayed draft, renewed Tinkery confirmation, explicit stage-1 rebind and definition
-review. Rebinding replaces activations too; retain prior evidence in Git.
-Changes to the original session after intake do not change the run-local snapshot.
+recorded in each item's origin), distinct from worker `checklist.json`; `seed-` IDs
+are reserved. The original intake definitions remain hash-bound in run metadata;
+`seed-checks.json` holds the proposed effective definitions. Never silently weaken
+or remove acceptance: such edits are departures, not changes to the confirmed seed.
+Deleting the entire file or changing the run-local seed refuses verification.
+Rebinding replaces activations too; retain prior evidence in Git. Changes to the
+original session after intake do not change the run-local snapshot.
+
+#### Seed definition comparison
+
+Stage 3 compares effective checks with the verified intake baseline. With no
+added, removed or changed checks and no provisional activation, it passes without
+another human question and records `matches confirmed seed (sha256: …)` as evidence,
+not a human decision. Intake saves the automatic binding receipt; read-only status
+also exposes the current comparison evidence. This is structural comparison of
+checks, not a semantic claim about the brief or implementation permission.
+
+Any departure blocks automatic passage. Status shows one plain line per changed
+field, removed/added seed check, added worker checklist item or provisional activation,
+and asks only `Accept these departures from the confirmed seed?`. `decide … 3`
+records the actual human decision bound to those exact inputs; later edits stale it.
+It does not ask the operator to reconfirm unchanged checks in a new representation.
+Full-profile stages 1 and 2 retain their existing review requirements.
+
+Legacy bindings without a stored baseline can compare their unchanged imported
+definitions using the existing intake digest, including separate activations. If
+those original definitions have changed, rebind through verified intake; do not
+invent a replacement baseline from edited files.
 
 A `cmd` record runs verbatim through `bash -c`, using the process-group-safe
 runner and a 120-second timeout. `cwd` is relative to the selected checkout, never
 the session directory. Absolute paths, traversal, backslashes, drive-letter paths,
 NUL and CR/LF are refused. Commands are not sandboxed; review them before approval.
 Nonzero exits, missing working directories and timeouts fail `verify` even when
-all worker-written checks pass. Prose `expect` is not an output matcher: a command
-must pass **and** have an operator attestation for `seed-N-expect`.
-A `judge` record requires only a manual operator attestation (`seed-N`), using
-`how_to_judge` when supplied and otherwise its statement, never an automated pass.
+all worker-written checks pass. **Passing recorded command output proves a `cmd`
+or activated provisional command entirely; no `seed-N-expect` mark is generated
+or owed.** `expect` remains descriptive context, not an output matcher or a human
+obligation. This replaces the 2026-10-18 command-success-plus-operator-confirmation
+rule, per the operator's 2026-10-22 04:04Z decision (`reply 2`, #99).
+Standalone prose/taste checks must be `judge` records: they require a manual human
+attestation (`seed-N`), using `how_to_judge` when supplied and otherwise the statement,
+never an automated pass. Historical command-expect marks remain on disk but are no
+longer active checks.
 
 Record only the actual operator's observation, not the worker's judgment:
 
 ```sh
-python3 _system/scripts/sdlc.py mark <slug> seed-1-expect passed \
+python3 _system/scripts/sdlc.py mark <slug> seed-1 passed \
   --reviewer 'Actual operator' --source 'Actual observation reference' \
   --evidence 'Observed output and why it satisfies the seed expectation'
 ```
@@ -113,9 +140,8 @@ operator meant it for each of them; status says so. Mark an expectation `unknown
 the operator's observation does not address it; `unknown` blocks verification.
 
 These marks require current definition approval and bind the exact seed item,
-including its activation; old marks cannot satisfy a revised command. Reviewer and
-source are local references, not authentication. This adds no auto-approval or new
-meaning to approval; independent forge policy remains the authority boundary.
+so old marks cannot satisfy a revised judge definition. Reviewer and source are
+local references, not authentication; independent forge policy remains the authority boundary.
 
 A `provisional` record names its prerequisite in `missing`; `cmd` is optional and proposed only.
 The imported item stays pending and nonblocking while its prerequisite is absent;
@@ -127,10 +153,8 @@ evidence by adding only this `activation` object to that item in `seed-checks.js
 {"activation": {"cmd": "./real-command", "cwd": ".", "evidence": "Prerequisite exists at <path>; observed <evidence>"}}
 ```
 
-Do not change the locked proposal or its expectation. Activation stales all definition
-gates; obtain renewed operator approval of the updated definition before verification.
-The activated command and its `seed-N-expect` attestation are then required. Verify
-refuses evidence that cites a relative file or `dir/` present in neither the run nor the
+Keep the original proposal intact; activation is surfaced by the comparison above.
+Verify refuses evidence that cites a relative file or `dir/` present in neither the run nor the
 checkout, so save each cited log before verifying. A prose
 prerequisite is not machine-detected: the worker must surface it when it becomes true,
 and the operator reviews the evidence rather than accepting a hidden automatic trigger.
@@ -327,7 +351,10 @@ lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or t
 `status <run> --json` returns `run`:
 
 - `slug`, `run_id`, `meta` (`profile`, `kind`), and `gates` (`stage`, `status`, `blocked`).
-  Gate states are `approved`, `pending`, `stale`, or `changes-requested`.
+  Gate states are `approved`, `pending`, `stale`, or `changes-requested`. Optional
+  `attribution: agent-recorded` discloses an invalid human receipt; optional `evidence`
+  names an independent confirmed-seed match. Seed-bound views add `definition` with
+  `departures`, `question` (null for equality), and `evidence`.
 - `seed_contract`: `path`, `sha256`, and `source` from run.json, or null
   when unbound (absent or null in run.json). Both status forms expose this binding;
   human run status adds one `Seed contract:` line when bound. A binding must be an
@@ -353,7 +380,8 @@ lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or t
   or null when blocked. These are UI hints, not authorization: `verify <run>` and
   `mark <run> <item> passed|failed --evidence <text>` recheck their own rules.
 - `artifacts` (named text), `decisions` (normalized stage, nanosecond timestamp,
-  decision, reviewer, source, reason, and opaque id). Decision values are `approved`
+  decision, reviewer, source, reason, and opaque id), with optional actor, attribution,
+  automatic basis, seed evidence and departure snapshot. Decision values are `approved`
   or `changes-requested`; reviewer, source, and reason are strings. Known malformed or
   missing fields invalidate that run rather
   than being coerced into display text. Also included: `verification_config`
