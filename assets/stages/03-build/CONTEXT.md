@@ -5,8 +5,9 @@ Output: `runs/<slug>/03-build/output/plan.md` for full runs, the approved checkl
 in `runs/<slug>/checklist.json` for both profiles, and code in an isolated worktree/clone.
 Items should carry a `check` whenever an automated proof exists; `verify` runs it and no mark is needed.
 
-Inspect code, and obtain the actual stage 3 human acceptance before
-implementation. For full runs, write the plan first. Light runs have ONE definition gate, recorded as stage 3 (`sdlc.py decide <run> 3 ...`): the approved `brief.md` + `checklist.json` are the intent, design and plan. An explicit user instruction to execute a reviewed proposal is
+Gate: inspect code and follow the stage 3 gate before implementation; for seed-bound
+runs use the guide's [seed definition comparison](../../_system/SDLC.md#seed-definition-comparison).
+For full runs, write the plan first. Light runs have ONE definition gate, recorded as stage 3 (`sdlc.py decide <run> 3 ...`): the approved `brief.md` + `checklist.json` are the intent, design and plan. An explicit user instruction to execute a reviewed proposal is
 implementation authority; never fabricate separate role approvals.
 Each concurrent writer needs its own checkout. Use the serialized skill wrapper
 in `_system/SDLC.md`; no shared writable skill symlinks or automatic lockfile rewrites.

@@ -9,11 +9,9 @@ Stage-1 `--seed-contract <session>/seed-contract.md --tinkery <path>/tinkery`
 uses Tinkery to verify the human v2 or attributed agent v3 confirmation binding and
 imports records into `runs/<slug>/seed-checks.json` as LOCKED seed-confirmed items,
 separate from worker checks. Preserve the actual confirmer; agent confirmation is
-not human confirmation or implementation permission. Do not edit or drop
-these definitions. Preserve pending provisional checks; when a prerequisite exists,
-add a real command and prerequisite evidence via `activation` and obtain renewed
-operator definition approval. Prose `expect` and `judge` records require actual operator
-attestations, never the worker's judgment. See the guide's locked seed checks section.
+not human confirmation or implementation permission. Follow the guide's
+[seed definition comparison](../../_system/SDLC.md#seed-definition-comparison)
+for departures and activation, and its locked seed checks section for proof and attestation.
 
 For light runs, write `runs/<slug>/brief.md` with problem and outcome, acceptance criteria,
 constraints and exclusions, approach, risks, and verification. Define the implementation checklist as
@@ -24,7 +22,8 @@ Return consequential unresolved discovery decisions to Tinkery Shape.
 Output: `runs/<slug>/brief.md` and `runs/<slug>/checklist.json` (light runs), or
 `runs/<slug>/01-plan/output/intent.md` (full runs).
 
-Gate: actual human acceptance recorded with `sdlc.py decide` (light runs: `decide <slug> 3`;
+Gate: follow the seed comparison above when bound; otherwise actual human acceptance
+recorded with `sdlc.py decide` (light runs: `decide <slug> 3`;
 full runs: `decide <slug> 1`); text status tags
 are not approval evidence. Follow `python3 _system/scripts/sdlc.py status <slug>`.
 See `_system/SDLC.md` for rejection, stale inputs, and authority boundaries.

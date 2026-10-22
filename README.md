@@ -38,8 +38,9 @@ python3 _system/scripts/sdlc.py status feature-name
 python3 _system/scripts/sdlc.py mark feature-name item-id passed --evidence 'what was observed'
 ```
 
-Edit the generated brief and obtain actual human acceptance before recording the
-review decision. Follow the installed guide for the complete decision command,
+Edit the generated brief and follow the installed guide's definition gate: human
+review for non-seed definitions or departures from a confirmed seed, binding evidence
+for an unchanged seed. Follow the guide for the complete decision command,
 reproduction baseline for bug fixes, rejection/rework, and verification. Do not
 paste fictional reviewer names or evidence into real runs. The full profile separates
 intent, spec, and implementation plan; the light profile uses one reviewed brief.
