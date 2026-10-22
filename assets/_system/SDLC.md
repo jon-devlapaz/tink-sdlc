@@ -98,6 +98,9 @@ another human question and records `matches confirmed seed (sha256: …)` as evi
 not a human decision. Intake saves the automatic binding receipt; read-only status
 also exposes the current comparison evidence. This is structural comparison of
 checks, not a semantic claim about the brief or implementation permission.
+An explicit human `changes-requested` stays blocking across input edits until a
+later actual human decision supersedes it; automatic binding or agent receipts
+cannot clear that rejection.
 
 Any departure blocks automatic passage. Status shows one plain line per changed
 field, removed/added seed check, added worker checklist item or provisional activation,

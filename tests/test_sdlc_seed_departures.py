@@ -1,5 +1,6 @@
 """Seed equality is evidence, departures need humans, command output is proof (#99)."""
 import json
+import time
 
 from test_sdlc_stage import StageBase, PASSING
 from tinkery_fixture import TINKERY, confirmed, command, provisional, DEFAULT
@@ -39,6 +40,28 @@ class SeedDepartures(StageBase):
         self.assertNotIn('After human review', view['cli_status'])
         (self.path / 'brief.md').write_text('TEST rendering of the unchanged seed checks')
         self.assertEqual(self.view()['gates'][0]['status'], 'approved')
+
+    def test_human_rejection_survives_input_edits_and_automatic_or_agent_records(self):
+        self.bind()
+        rejected = self.sdlc('decide', 'r', '3', 'changes-requested', '--reviewer', 'TEST human',
+                             '--source', 'TEST rejection', '--reason', 'TEST do not proceed')
+        self.assertEqual(rejected.returncode, 0, rejected.stderr)
+        self.assertEqual(self.view()['gates'][0]['status'], 'changes-requested')
+        brief = self.path / 'brief.md'
+        brief.write_text(brief.read_text() + '\nTEST edit after rejection\n')
+        self.assertEqual(self.view()['gates'][0]['status'], 'changes-requested')
+        self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
+        rejection = json.loads(sorted((self.path / 'decisions').glob('3-*.json'))[-1].read_text())
+        # Historical automatic or agent receipts cannot supersede a human rejection.
+        for fields in [{'basis': 'confirmed-seed', 'reviewer': 'confirmed-seed binding (automatic)'},
+                       {'reviewer': 'Agent TEST', 'actor': {'by': 'agent'}}]:
+            record = {**rejection, 'decision': 'approved', **fields}
+            (self.path / 'decisions' / f'3-{time.time_ns()}-TEST.json').write_text(json.dumps(record))
+            self.assertEqual(self.view()['gates'][0]['status'], 'changes-requested')
+            self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
+        self.decide('r', 3)  # Only a new synthetic human decision lifts the rejection.
+        self.assertEqual(self.view()['gates'][0]['status'], 'approved')
+        self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
 
     def test_seed_bytes_and_definitions_must_match_before_auto_pass(self):
         self.bind()

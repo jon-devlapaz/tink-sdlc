@@ -433,9 +433,12 @@ def inputs(path, stage):
     return digest(encoded(values))
 
 
-def latest(path, stage):
-    records = sorted((path / 'decisions').glob(f'{stage}-*.json'))
-    return read_json(records[-1]) if records else None
+def latest(path, stage, human_only=False):
+    for file in sorted((path / 'decisions').glob(f'{stage}-*.json'), reverse=True):
+        record = read_json(file)
+        if not human_only or (not agent_record(record) and record.get('basis') != 'confirmed-seed'):
+            return record
+    return None
 
 
 def gate(path, stage):
@@ -443,9 +446,11 @@ def gate(path, stage):
     if stage == 3:
         try:
             seed_check_items(path)
-            if seed_match_evidence(path):
-                if record and record['inputs'] == inputs(path, stage) and record['decision'] == 'changes-requested' and not agent_record(record):
+            if require_run(path).get('seed_contract'):
+                human = latest(path, stage, human_only=True)
+                if human and human['decision'] == 'changes-requested':
                     return 'changes-requested'
+            if seed_match_evidence(path):
                 return 'approved'
         except (ValueError, OSError, KeyError, TypeError):
             return 'stale' if record else 'pending'
