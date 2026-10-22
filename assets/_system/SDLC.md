@@ -354,7 +354,7 @@ lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or t
   Gate states are `approved`, `pending`, `stale`, or `changes-requested`. Optional
   `attribution: agent-recorded` discloses an invalid human receipt; optional `evidence`
   names an independent confirmed-seed match. Seed-bound views add `definition` with
-  `departures`, `question` (null for equality), and `evidence`.
+  `departures`, `question` (null for equality or current accepted departures), and `evidence`.
 - `seed_contract`: `path`, `sha256`, and `source` from run.json, or null
   when unbound (absent or null in run.json). Both status forms expose this binding;
   human run status adds one `Seed contract:` line when bound. A binding must be an

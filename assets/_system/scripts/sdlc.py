@@ -1100,8 +1100,9 @@ def status_state(path):
     if meta.get('seed_contract') and checklist['state'] != 'invalid':
         with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
             departures = seed_departures(path)
+            needs_review = departures and next(g for g in gates if g['stage'] == 3)['status'] != 'approved'
             definition = {'departures': departures, 'evidence': seed_match_evidence(path),
-                          'question': 'Accept these departures from the confirmed seed?' if departures else None}
+                          'question': 'Accept these departures from the confirmed seed?' if needs_review else None}
             if first_gate and first_gate['stage'] == 3 and departures:
                 gate_reason = definition['question'] + ' Record only the actual human decision.'
     unavailable = 'A writer already owns this run.' if active else gate_reason

@@ -66,6 +66,7 @@ class SeedDepartures(StageBase):
             self.assertEqual(view['cli_status'].count(line), 1)
         self.decide('r', 3)
         self.assertEqual(self.view()['gates'][0]['status'], 'approved')
+        self.assertIsNone(self.view()['definition']['question'])
         self.change(lambda items: items[0].update(cmd='true'))
         self.assertEqual(self.view()['gates'][0]['status'], 'stale')
 
