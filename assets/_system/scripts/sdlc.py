@@ -176,11 +176,15 @@ def records_digest(records):
                              separators=(',', ':'), allow_nan=False).encode('utf-8'))
 
 
-def record_definitions(records):
+def is_seed_check(item):
+    return item.get('origin') in ('operator-confirmed-seed', 'agent-confirmed-seed')
+
+
+def record_definitions(records, confirmer='operator'):
     """Tinkery owns validation and rendering; preserve each validated record verbatim."""
     return {'schema': 1, 'items': [
         {**record, 'id': f'seed-{index}', 'description': record['statement'],
-         'origin': 'operator-confirmed-seed', 'locked': True}
+         'origin': f'{confirmer}-confirmed-seed', 'locked': True}
         for index, record in enumerate(records, 1)]}
 
 
@@ -632,7 +636,7 @@ def verify(args):
             before = evidence_inputs(path)
             items = load_checklist(path)
             seed_results = {item['id']: 'pending' if 'check' not in item else 'not-run'
-                            for item in items or [] if item.get('origin') == 'operator-confirmed-seed'}
+                            for item in items or [] if is_seed_check(item)}
             checks = list(config['checks'])
             if config['require_tink']:
                 checks.insert(0, {'argv': ['tink', 'skill', 'check'], 'timeout_seconds': 120})
@@ -652,7 +656,7 @@ def verify(args):
                     if 'check' not in item:
                         continue
                     check = item['check']
-                    seed = item.get('origin') == 'operator-confirmed-seed'
+                    seed = is_seed_check(item)
                     label = 'seed check' if seed else 'checklist item'
                     failure = 'Seed check failed' if seed else 'Checklist check failed'
                     if seed:
@@ -679,7 +683,7 @@ def verify(args):
                 marked = marks(path, items)
                 attested = [item['id'] for item in items if 'check' not in item and not item.get('pending')]
                 for item in items:
-                    if item.get('origin') == 'operator-confirmed-seed' and 'check' not in item:
+                    if is_seed_check(item) and 'check' not in item:
                         record = marked.get(item['id'], {})
                         accepted = record.get('result') == 'passed' and record.get('reviewer') and record.get('source')
                         seed_results[item['id']] = 'attested' if accepted and not item.get('pending') else 'pending'
@@ -689,7 +693,7 @@ def verify(args):
                     raise ValueError(f"Checklist incomplete: {', '.join(missing)} "
                                      f'(mark them with: sdlc.py mark {args.run} <id> passed --evidence "...")')
                 proof = {'checklist_items': {item['id']: 'proven' if 'check' in item else 'attested'
-                                             for item in items if item.get('origin') != 'operator-confirmed-seed'}}
+                                             for item in items if not is_seed_check(item)}}
                 if seed_results:
                     proof['seed_checks'] = seed_results
             write_json(receipt, {'result': 'passed', **before, **proof, 'log': digest(log_path.read_bytes())})
@@ -701,7 +705,8 @@ def verify(args):
                                  **({'seed_checks': seed_results} if seed_results else {})})
             raise
     if seed_results:
-        print('Seed checks (operator-confirmed): ' + ', '.join(f'{name}: {state}' for name, state in seed_results.items()))
+        confirmer = 'agent' if any(item.get('origin') == 'agent-confirmed-seed' for item in items) else 'operator'
+        print(f'Seed checks ({confirmer}-confirmed): ' + ', '.join(f'{name}: {state}' for name, state in seed_results.items()))
         print('Worker-written checks: passed (supporting evidence only).')
     print('Configured checks passed for the recorded candidate. Human release review remains required.')
 
@@ -972,6 +977,8 @@ def status_state(path):
     }.get(state, 'implement the approved brief, then run verification.')
     bound = meta.get('seed_contract')
     seed_contract = {key: bound[key] for key in ('path', 'sha256', 'source')} if bound is not None else None
+    if bound is not None and bound.get('confirmation', {}).get('schema_version') == 3:
+        seed_contract['confirmation'] = bound['confirmation']
     return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract,
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active,
@@ -1547,9 +1554,21 @@ def stage_seed_contract(value, tinkery):
         raise ValueError('Tinkery handoff is not verified; confirm the current seed in Tinkery and retry.')
     confirmation = read_confirmation()
     if type(confirmation.get('schema_version')) is int and confirmation['schema_version'] == 3:
-        raise ValueError('Tinkery agent-confirmed receipts are not supported yet; '
-                         'intake requires a schema 2 (human-confirmed) receipt. '
-                         'Have a human confirm the seed in Tinkery, then retry intake.')
+        actor = confirmation.get('actor')
+        fields = {'by', 'agent', 'authorizing_operator', 'source', 'class'}
+        classification = actor.get('class') if isinstance(actor, dict) else None
+        class_fields = {'door', 'door_reason', 'blast_radius', 'blast_radius_reason'}
+        if (confirmation.get('operator') != 'agent'
+                or not isinstance(actor, dict) or set(actor) != fields or actor.get('by') != 'agent'
+                or any(not isinstance(actor.get(key), str) or not actor[key].strip()
+                       for key in ('agent', 'authorizing_operator', 'source'))
+                or not isinstance(classification, dict) or set(classification) != class_fields
+                or classification.get('door') != 'two_way' or classification.get('blast_radius') != 'small'
+                or any(not isinstance(classification.get(key), str) or not classification[key].strip()
+                       for key in ('door_reason', 'blast_radius_reason'))):
+            raise ValueError('Tinkery agent confirmation needs complete caller-declared attribution: '
+                             'agent, authorizing operator, scoped source and two-way/small class with reasons; '
+                             'confirm the seed in Tinkery and retry.')
     data = read_seed()
     seed_sha256 = digest(data)
     records = call('checks')
@@ -1560,12 +1579,13 @@ def stage_seed_contract(value, tinkery):
     after = status()
     if (before != after or confirmation != read_confirmation()
             or data != read_seed() or type(confirmation.get('schema_version')) is not int
-            or confirmation['schema_version'] != 2
+            or confirmation['schema_version'] not in (2, 3)
             or confirmation.get('seed_sha256') != seed_sha256
             or before['seed']['sha256'] != seed_sha256
             or confirmation.get('checks_sha256') != records_digest(records)):
-        raise ValueError('Tinkery v2 confirmation binding changed during intake; confirm and retry.')
-    return resolved, data, record_definitions(records), confirmation
+        raise ValueError('Tinkery confirmation binding changed during intake; confirm and retry.')
+    confirmer = 'agent' if confirmation['schema_version'] == 3 else 'operator'
+    return resolved, data, record_definitions(records, confirmer), confirmation
 
 
 def stage_dirty(run):
@@ -1773,7 +1793,8 @@ def stage(args):
     snapshot_arg = f'runs/{run}/{stage_dir}'
     prompt = f'Begin stage {n} ({STAGE_WORDS[n]}) of SDLC run `{run}`.'
     if seed_contract:
-        prompt += f' The operator-confirmed seed contract is at {seed_contract}; it is input, not authorization.'
+        confirmer = 'agent' if confirmation['schema_version'] == 3 else 'operator'
+        prompt += f' The {confirmer}-confirmed seed contract is at {seed_contract}; it is input, not authorization.'
     warn = stage_dirty(run) if make_worktree else []
     warning = ('warning: not carried into the new checkout: ' + ', '.join(warn[:5]) + (f' (+{len(warn) - 5} more)' if len(warn) > 5 else '')
                if warn else None)
@@ -1781,7 +1802,7 @@ def stage(args):
     if args.check:
         if seed_contract and seed_source != (ROOT / seed_contract).resolve():
             print(f'Would copy {seed_source} to {seed_contract}')
-            print('Would import locked operator-confirmed acceptance checks')
+            print(f'Would import locked {confirmer}-confirmed acceptance checks')
         print(f'Would commit: {"yes" if pending else "no"}')
         how = f'branch {run}' if not detached else 'detached'
         print(f'Would create worktree: {target} ({how})' if make_worktree else 'Would create worktree: none')

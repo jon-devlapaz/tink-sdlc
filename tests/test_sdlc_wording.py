@@ -84,7 +84,7 @@ class WordingTests(unittest.TestCase):
             'Tinkery owns the seed and its discovery decisions',
             'Tinkery owns the intended goal-to-result presentation',
             'The operator judges usefulness and authorizes merging',
-            'Load only the explicitly supplied, operator-confirmed seed',
+            'Load only the explicitly supplied, verified confirmed seed',
             'repository source and project files needed by the active stage',
             'Problem statement',
             'Proposed outcome (desired user-visible results and success criteria)',
