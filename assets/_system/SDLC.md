@@ -61,9 +61,9 @@ JSON shapes supply `handoff.verified`, the seed digest and canonical check recor
 no viewer fields or network probe are needed. Tinkery alone verifies human v2 and
 agent v3 confirmations against seed bytes, decisions, records, the canonical heading
 sequence, rendered acceptance section and (for v3) the seed's attribution line.
-Intake accepts v3 only with `operator: agent` and a complete caller-declared `actor`:
-`by: agent`, nonblank `agent`, `authorizing_operator`, scoped `source`, and `class`
-with `door: two_way`, `blast_radius: small` and nonblank reasons for both axes.
+Intake accepts v3 only with `operator: agent` and an agent `actor`: Tinkery's exact terminal
+`declared: agent` record, or an older complete named actor (`by: agent`, nonblank `agent`,
+`authorizing_operator`, scoped `source`, and a `two_way`/`small` `class` with reasons).
 This records agent confirmation, never human confirmation; classification is not authority. SDLC retains the intake snapshot/digest protections,
 not a second session verifier. Missing or unavailable executables, failed commands,
 malformed output, simulated sessions, missing confirmation and changed bindings refuse
@@ -366,8 +366,7 @@ lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or t
   Malformed bindings invalidate the run. Reads never adopt, repair or rewrite a
   binding or require its original source to remain available.
   For agent v3 intake, both status forms additionally expose `confirmation`: the
-  unchanged receipt, including `operator: agent` and the complete caller-declared
-  `actor` (acting agent, authorizing operator, scoped source and risk class).
+  unchanged receipt, including `operator: agent` and its caller-declared `actor`.
   Human v2 and legacy bindings retain the three-field status shape.
   This is intake evidence, not approval, goal identity or release authority.
 - `verification_status`: `blocked`, `running`, `not-run`, `current`, `stale`,

@@ -195,7 +195,36 @@ class TinkeryIntake(StageBase):
                 else:
                     target[parts[-1]] = value
                 receipt.write_text(json.dumps(confirmation))
-                self.refuse(self.verifier(), 'agent confirmation needs complete caller-declared attribution')
+                self.refuse(self.verifier(), 'agent confirmation needs agent attribution')
+
+    def declared_receipt(self):
+        # Synthetic fixture matching Tinkery's terminal `--operator agent` declaration.
+        confirmation = self.agent_receipt()
+        confirmation['actor'] = {'by': 'terminal', 'declaration': 'declared: agent',
+                                 'action': 'typed confirm at this terminal',
+                                 'identity': 'declaration is not verified identity'}
+        (self.seed.parent / 'seed-confirmation.json').write_text(json.dumps(confirmation))
+        return confirmation
+
+    def test_v3_terminal_agent_declaration_is_preserved_as_agent(self):
+        confirmation = self.declared_receipt()
+        result = self.stage('r', 1, '--seed-contract', str(self.seed), '--tinkery', str(self.verifier()))
+        self.assertIn('agent-confirmed seed contract', result.stdout)
+        metadata = json.loads((self.root / 'runs/r/run.json').read_text())
+        self.assertEqual(metadata['seed_contract']['confirmation'], confirmation)
+        items = json.loads((self.root / 'runs/r/seed-checks.json').read_text())['items']
+        self.assertTrue(all(item['origin'] == 'agent-confirmed-seed' for item in items))
+
+    def test_v3_terminal_declaration_other_than_agent_refuses(self):
+        original = self.declared_receipt()
+        receipt = self.seed.parent / 'seed-confirmation.json'
+        for key, value in [('declaration', 'declared: human'), ('declaration', 'not declared'),
+                           ('identity', 'verified'), ('action', ''), ('extra', 'TEST')]:
+            with self.subTest(key=key, value=value):
+                confirmation = copy.deepcopy(original)
+                confirmation['actor'][key] = value
+                receipt.write_text(json.dumps(confirmation))
+                self.refuse(self.verifier(), 'agent confirmation needs agent attribution')
 
     def test_v3_unverified_draft_and_changed_attribution_refuse(self):
         self.agent_receipt()
