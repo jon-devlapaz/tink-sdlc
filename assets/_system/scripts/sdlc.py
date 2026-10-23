@@ -1719,20 +1719,25 @@ def stage_seed_contract(value, tinkery):
     confirmation = read_confirmation()
     if type(confirmation.get('schema_version')) is int and confirmation['schema_version'] == 3:
         actor = confirmation.get('actor')
+        # Tinkery launched with `--operator agent` declares the agent at the terminal;
+        # older receipts name the agent, its operator, a source and a two-way/small class.
+        declared = {'by': 'terminal', 'declaration': 'declared: agent',
+                    'action': 'typed confirm at this terminal',
+                    'identity': 'declaration is not verified identity'}
         fields = {'by', 'agent', 'authorizing_operator', 'source', 'class'}
         classification = actor.get('class') if isinstance(actor, dict) else None
         class_fields = {'door', 'door_reason', 'blast_radius', 'blast_radius_reason'}
-        if (confirmation.get('operator') != 'agent'
-                or not isinstance(actor, dict) or set(actor) != fields or actor.get('by') != 'agent'
-                or any(not isinstance(actor.get(key), str) or not actor[key].strip()
-                       for key in ('agent', 'authorizing_operator', 'source'))
-                or not isinstance(classification, dict) or set(classification) != class_fields
-                or classification.get('door') != 'two_way' or classification.get('blast_radius') != 'small'
-                or any(not isinstance(classification.get(key), str) or not classification[key].strip()
-                       for key in ('door_reason', 'blast_radius_reason'))):
-            raise ValueError('Tinkery agent confirmation needs complete caller-declared attribution: '
-                             'agent, authorizing operator, scoped source and two-way/small class with reasons; '
-                             'confirm the seed in Tinkery and retry.')
+        named = (isinstance(actor, dict) and set(actor) == fields and actor.get('by') == 'agent'
+                 and all(isinstance(actor.get(key), str) and actor[key].strip()
+                         for key in ('agent', 'authorizing_operator', 'source'))
+                 and isinstance(classification, dict) and set(classification) == class_fields
+                 and classification.get('door') == 'two_way' and classification.get('blast_radius') == 'small'
+                 and all(isinstance(classification.get(key), str) and classification[key].strip()
+                         for key in ('door_reason', 'blast_radius_reason')))
+        if confirmation.get('operator') != 'agent' or not (actor == declared or named):
+            raise ValueError('Tinkery agent confirmation needs agent attribution: a terminal '
+                             '`declared: agent` or a complete named agent with its operator, source '
+                             'and two-way/small class; confirm the seed in Tinkery and retry.')
     data = read_seed()
     seed_sha256 = digest(data)
     records = call('checks')
