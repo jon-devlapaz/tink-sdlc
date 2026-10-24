@@ -58,6 +58,8 @@ active runs to preserve stage contracts.
    Prior explicit authorization remains valid within its scope; role boundaries
    must reflect actual stakeholder input rather than fabricated sign-offs. For
    capability gaps, consult [toolchain routing](references/toolchain-routing.md).
+   Launcher-managed build steps use `_system/SDLC.md#pinned-build-steps`; preserve the
+   exact model and absolute report destination through launch, resume and completion.
 5. **Verify and report.** When the active stage or changed candidate requires
    verification, inspect `_system/verification.json` before claiming what it proves:
    new installations require project-specific checks. Run
