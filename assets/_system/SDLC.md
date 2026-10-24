@@ -317,8 +317,8 @@ remain independent. API 1 status and capabilities are unchanged.
 
 ### Trusted launcher adapter contract
 
-No provider adapter is bundled, and arbitrary Pi/Herdr commands are not compatible.
-Supply reviewed executable code implementing `tink-sdlc-launcher` protocol 1:
+Arbitrary Pi/Herdr commands are not compatible. A launcher is reviewed executable code
+implementing `tink-sdlc-launcher` protocol 1 (one is bundled for Pi, below):
 
 - Offline probe: `ADAPTER resolve --for-operation launch|resume --model PIN
   --report ABS --contract ABS` (plus `--session ID` for resume). It must make **zero
@@ -342,6 +342,35 @@ The adapter is trusted code, not a sandbox or an authenticated provider guarante
 SDLC checks its content hash and protocol; it cannot prevent a dishonest adapter's
 probe from charging or its admission from ignoring arguments. Offline resolution
 and adapter conformance must be tested before granting it a live-call budget.
+
+### Bundled Pi adapter
+
+`_system/scripts/pi-launcher` runs headless Pi (`pi` on PATH; `TINK_SDLC_PI` names
+another executable). Prepare with `--launcher <checkout>/_system/scripts/pi-launcher`
+and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`.
+
+- Every launch and resume passes `--model provider/model-id --thinking level`
+  explicitly. Pi lets an explicit `--model` override a session's recorded model and,
+  without one, silently falls back to its defaults outside the TUI, so the adapter
+  never relies on session restore.
+- `resolve` reads only local files and starts nothing. The model must be in Pi's
+  catalog cache (`models-store.json`) and its provider must have a stored credential in
+  `auth.json` (presence only; environment keys are refused). A non-reasoning model
+  with a thinking level other than `off` is refused. Run `pi update --models` yourself
+  if the cache lacks a model; the adapter never refreshes it.
+- Launch starts `pi --mode json` detached, with a new `tsdlc-<uuid>` session ID in Pi's
+  per-checkout session directory (`PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` respected), and returns once
+  the session file records the pin. Output goes to `runs/<run>/steps/<name>.<op>-<time>.pi.log`.
+- Resume refuses a session that is missing, archived by session rotation, or whose last
+  recorded model (`model_change` or assistant answer on the active branch) differs from
+  the pin. It passes the session file path, then waits for the first answer: another
+  model stops the run; no answer within 50 seconds leaves the step `uncertain` with Pi
+  possibly still running.
+- The check is per answer the adapter observes. Later model switches inside the session
+  are not watched.
+
+pi-herdr 0.6.0's `herdr_resume_agent` re-derives the model without the spawn-level pin
+(it falls back to the parent's model), so do not resume pinned steps through it.
 
 ### What Herdr resume would need
 
