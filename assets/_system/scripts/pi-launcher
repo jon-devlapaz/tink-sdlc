@@ -77,7 +77,10 @@ def check_auth(provider):
 
 
 def session_dir(checkout):
-    # Pi's default per-cwd directory, passed explicitly so lookup never depends on settings.
+    # Pi's directory for this checkout, passed explicitly so lookup never depends on settings.
+    configured = os.environ.get('PI_CODING_AGENT_SESSION_DIR')
+    if configured:
+        return Path(configured).expanduser()
     safe = str(checkout).lstrip('/\\').replace('/', '-').replace('\\', '-').replace(':', '-')
     return agent_dir() / 'sessions' / f'--{safe}--'
 

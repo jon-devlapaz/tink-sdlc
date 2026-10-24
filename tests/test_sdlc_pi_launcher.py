@@ -133,6 +133,16 @@ class PiLauncherTests(StageBase):
         self.step('build', 'complete')
         self.assertEqual(self.contract()['state'], 'completed')
 
+    def test_pi_session_dir_override_is_honored_on_launch_and_resume(self):
+        self.sessions = self.base / 'TEST-sessions'
+        self.env['PI_CODING_AGENT_SESSION_DIR'] = str(self.sessions)
+        self.prepare()
+        self.launch()
+        self.step('build', 'resume')
+        for argv in self.calls():
+            self.assertEqual(argv[argv.index('--session-dir') + 1], str(self.sessions))
+        self.assertFalse((self.agent / 'sessions').exists())
+
     def test_resume_refuses_a_session_that_drifted_off_the_pin_without_starting_pi(self):
         self.prepare()
         self.launch()

@@ -359,7 +359,7 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   with a thinking level other than `off` is refused. Run `pi update --models` yourself
   if the cache lacks a model; the adapter never refreshes it.
 - Launch starts `pi --mode json` detached, with a new `tsdlc-<uuid>` session ID in Pi's
-  per-checkout session directory (`PI_CODING_AGENT_DIR` respected), and returns once
+  per-checkout session directory (`PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` respected), and returns once
   the session file records the pin. Output goes to `runs/<run>/steps/<name>.<op>-<time>.pi.log`.
 - Resume refuses a session that is missing, archived by session rotation, or whose last
   recorded model (`model_change` or assistant answer on the active branch) differs from
