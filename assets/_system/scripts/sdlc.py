@@ -2036,10 +2036,131 @@ def stage(args):
     print(prompt)
 
 
+# --- explicit build-step execution ------------------------------------------
+# Adapters are trusted executable code. Their resolve operation must be offline;
+# launch/resume must honor the resolved pin before making any provider request.
+def step_absolute(value, label):
+    if not isinstance(value, str) or not value or not Path(value).is_absolute():
+        raise ValueError(f'{label} must be an explicit absolute path.')
+    return Path(value).resolve()
+
+
+def step_model(value):
+    if not isinstance(value, str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]*/[a-zA-Z0-9][a-zA-Z0-9._:/-]*', value):
+        raise ValueError('Step model must be an exact provider/model ID, not an alias, wildcard or default.')
+    return value
+
+
+def step_paths(record):
+    report = Path(record['report'])
+    launcher = Path(record['launcher'])
+    for path in (report, launcher):
+        if not path.is_absolute() or path.resolve() != path:
+            raise ValueError(f'Step paths must remain canonical and without symlink substitutions: {path}')
+    if not report.parent.is_dir():
+        raise ValueError('Step report parent directory is missing.')
+    if not launcher.is_file() or not os.access(launcher, os.X_OK) or digest(launcher.read_bytes()) != record['launcher_sha256']:
+        raise ValueError('Step launcher changed or is unavailable; inspect it and prepare a new step, never fall back.')
+    return report, launcher
+
+
+def step_adapter(record, operation, contract, resolve=False):
+    argv = [record['launcher'], 'resolve' if resolve else operation,
+            '--model', record['model'], '--report', record['report'], '--contract', str(contract)]
+    if resolve:
+        argv += ['--for-operation', operation]
+    if operation == 'resume':
+        argv += ['--session', record['session']]
+    result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, timeout=15 if resolve else 60)
+    if result.returncode:
+        raise ValueError(f'Step adapter {argv[1]} failed (exit {result.returncode}); inspect the adapter/session before retrying.')
+    reply = json.loads(result.stdout)
+    if (not isinstance(reply, dict) or reply.get('protocol') != 'tink-sdlc-launcher'
+            or type(reply.get('api_version')) is not int or reply['api_version'] != 1
+            or reply.get('operation') != operation or reply.get('model') != record['model']):
+        raise ValueError('Step adapter cannot resolve the exact model pin or is incompatible; no default is accepted.')
+    if operation == 'resume' and reply.get('session') != record['session']:
+        raise ValueError('Step adapter cannot resume the pinned session.')
+    if not resolve and (not isinstance(reply.get('session'), str) or not reply['session'].strip()):
+        raise ValueError('Step adapter returned no session identity.')
+    return reply
+
+
+def step(args):
+    path = run_path(args.run)
+    meta = require_run(path)
+    if not ITEM_ID.fullmatch(args.name):
+        raise ValueError('Step name must be 1–40 lowercase letters, digits or hyphens.')
+    contract = path / 'steps' / f'{args.name}.json'
+    if contract.resolve() != contract.absolute():
+        raise ValueError('Step contract paths must not contain symlinks.')
+    supplied = (args.report, args.model, args.launcher)
+    if args.action != 'prepare' and any(value is not None for value in supplied):
+        raise ValueError('Step report, model and launcher are fixed at prepare; overrides are refused.')
+    if args.action == 'show':
+        print(json.dumps(read_json(contract), indent=2))
+        return
+    with locked(path / '.writer-lock'):
+        if args.action == 'prepare':
+            if contract.exists():
+                raise ValueError('Step already exists; inspect it instead of replacing its contract.')
+            report = step_absolute(args.report, 'Step report')
+            launcher = step_absolute(args.launcher, 'Step launcher')
+            model = step_model(args.model)
+            if report.exists():
+                raise ValueError('Step report already exists; choose a fresh destination, never reuse old evidence.')
+            record = {'schema': 1, 'run_id': meta['run_id'], 'checkout': str(ROOT),
+                      'report': str(report), 'model': model, 'launcher': str(launcher),
+                      'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None}
+            step_paths(record)
+            write_json(contract, record)
+        else:
+            record = read_json(contract)
+            if (not isinstance(record, dict) or type(record.get('schema')) is not int or record['schema'] != 1
+                    or record.get('run_id') != meta['run_id'] or record.get('checkout') != str(ROOT)):
+                raise ValueError('Step contract is invalid or belongs to another run/checkout; prepare a new step here.')
+            step_model(record['model'])
+            if record.get('state') not in ('prepared', 'active', 'uncertain', 'completed'):
+                raise ValueError('Step contract has an invalid state.')
+            session = record.get('session')
+            if ((session is not None and (not isinstance(session, str) or not session.strip()))
+                    or (record['state'] in ('active', 'completed') and session is None)
+                    or (record['state'] == 'prepared' and session is not None)):
+                raise ValueError('Step contract has no valid session for its state.')
+            report, _ = step_paths(record)
+            if args.action == 'complete':
+                if record['state'] != 'active':
+                    raise ValueError('Only an active step with a known session can be completed.')
+                if not report.is_file():
+                    raise ValueError(f'Step report is missing at {report}; completion refused, with no project-root fallback.')
+                contents = report.read_bytes()
+                if not contents.strip():
+                    raise ValueError('Step report is empty; completion refused.')
+                record.update(state='completed', report_sha256=digest(contents))
+                write_json(contract, record)
+            else:
+                expected = 'prepared' if args.action == 'launch' else 'active'
+                if record['state'] != expected or (args.action == 'resume' and not record.get('session')):
+                    raise ValueError(f'Cannot {args.action} step in state {record["state"]}; inspect the recorded session first.')
+                for n in stages(path):
+                    if gate(path, n) != 'approved':
+                        raise ValueError(f'Step execution requires current stage {n} definition approval.')
+                # Resolve afresh on every launch/resume, before admitting a provider-capable operation.
+                step_adapter(record, args.action, contract, resolve=True)
+                step_paths(record)
+                # A crash or adapter failure must not invite a duplicate session or automatic retry.
+                record['state'] = 'uncertain'
+                write_json(contract, record)
+                reply = step_adapter(record, args.action, contract)
+                record.update(state='active', session=reply['session'])
+                write_json(contract, record)
+        print(json.dumps(record, indent=2))
+
+
 class ShortErrorParser(argparse.ArgumentParser):
     def error(self, message):
         self.exit(2, f'sdlc.py: error: {message}\n'
-                     'Commands: new, status, decide, dry-run, verify, mark, lock-tests, skills, stage, walk. See _system/SDLC.md.\n')
+                     'Commands: new, status, decide, dry-run, verify, mark, lock-tests, skills, stage, step, walk. See _system/SDLC.md.\n')
 
 
 def main():
@@ -2096,11 +2217,18 @@ def main():
     launch.add_argument('--seed-contract', metavar='PATH')
     launch.add_argument('--tinkery', metavar='PATH', help='trusted Tinkery executable for verified seed intake')
     launch.add_argument('--check', action='store_true', help='validate and print the plan; write nothing')
+    execution = commands.add_parser('step', help='explicit pinned build-step launch, resume and report completion')
+    execution.add_argument('run')
+    execution.add_argument('name')
+    execution.add_argument('action', choices=['prepare', 'show', 'launch', 'resume', 'complete'])
+    execution.add_argument('--report', metavar='ABSOLUTE_PATH')
+    execution.add_argument('--model', metavar='PROVIDER/MODEL')
+    execution.add_argument('--launcher', metavar='ABSOLUTE_PATH')
     lint = commands.add_parser('walk', help='structural walk lint (read-only)')
     lint.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
-        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'walk': walk}[args.command](args)
+        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'step': step, 'walk': walk}[args.command](args)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
         if args.command in ('status', 'capabilities') and args.json:
             machine_output({'error': {'code': 'not-found' if isinstance(error, FileNotFoundError) else 'invalid-state',

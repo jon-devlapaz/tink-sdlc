@@ -277,6 +277,82 @@ that integration; proposals grant no implementation or execution authority.
   `runs/<slug>/05-deploy/output/REVIEW-findings.md`, and does not modify code or evidence. The candidate's
   owner brings the findings to the PR branch; a repeat review replaces the file and Git keeps the previous one.
 
+## Pinned build steps
+
+`stage` still prepares a checkout and prints a prompt; it never starts an agent.
+For an explicitly authorized build agent, first open stage 3 and use that isolated
+checkout's runtime. Prepare one immutable step contract with an exact provider/model
+ID, a trusted launcher adapter and a fresh absolute report destination whose parent
+already exists:
+
+```sh
+python3 _system/scripts/sdlc.py step <run> build prepare \
+  --report /absolute/run-notes/build-report.md \
+  --model provider/exact-model-id --launcher /absolute/trusted-adapter
+python3 _system/scripts/sdlc.py step <run> build show
+python3 _system/scripts/sdlc.py step <run> build launch
+python3 _system/scripts/sdlc.py step <run> build resume
+python3 _system/scripts/sdlc.py step <run> build complete
+```
+
+These are separate deliberate actions, not a script to run without inspection.
+`prepare` writes `runs/<run>/steps/<name>.json` (schema 1): canonical checkout,
+run ID, canonical absolute report path, exact model, canonical launcher path and
+its SHA-256, plus state and session identity. It starts nothing. Names are unique
+within a run; prepare refuses an existing contract or report. Relative report paths,
+model aliases/wildcards, changed launchers, copied contracts in another checkout,
+path substitutions and launch/resume overrides are refused. Prepare a new step
+in a new checkout; contracts are not portable session records.
+
+`launch` and `resume` recheck every definition gate and perform offline exact-model
+resolution before admitting a provider-capable adapter operation. Both receive the
+stored pin and absolute report path regardless of caller cwd or changed defaults.
+Resume also carries the same session identity; it must not silently start another
+session. The adapter owns delivering the contract/report instructions to the agent.
+`complete` requires an active step and a nonempty regular report at the exact
+recorded path, then stores its digest. Missing reports refuse completion: no root
+fallback, copying or invented report. A report is not proof of passing checks,
+authenticated authorship, approval, or release; existing `verify` and forge gates
+remain independent. API 1 status and capabilities are unchanged.
+
+### Trusted launcher adapter contract
+
+No provider adapter is bundled, and arbitrary Pi/Herdr commands are not compatible.
+Supply reviewed executable code implementing `tink-sdlc-launcher` protocol 1:
+
+- Offline probe: `ADAPTER resolve --for-operation launch|resume --model PIN
+  --report ABS --contract ABS` (plus `--session ID` for resume). It must make **zero
+  provider requests**, check the exact model is available/compatible and validate
+  the retained session's model before resume. Never resolve an alias or fall back.
+- Admission: `ADAPTER launch|resume --model PIN --report ABS --contract ABS`
+  (plus `--session ID` for resume). It must pass the pin explicitly to the harness
+  and recheck it before any provider request, not rely on mutable defaults. It
+  returns after session admission, not after the whole build; no shell is used.
+- Each operation returns exit zero and one JSON object on stdout containing
+  `protocol: "tink-sdlc-launcher"`, integer `api_version: 1`, `operation` (launch or
+  resume) and the exact `model`. Resume responses include the same `session`;
+  admissions require a nonblank session identity. Diagnostics belong on stderr.
+  Failed, malformed, unsupported or mismatching offline replies refuse admission.
+- Probe timeout is 15 seconds; admission timeout is 60 seconds. A crash or failed
+  admission leaves `uncertain`, never automatic retry or completion. Inspect the
+  actual harness/session and reconcile it before explicitly preparing another
+  uniquely named step; never hand-edit the generated contract to clear uncertainty.
+
+The adapter is trusted code, not a sandbox or an authenticated provider guarantee.
+SDLC checks its content hash and protocol; it cannot prevent a dishonest adapter's
+probe from charging or its admission from ignoring arguments. Offline resolution
+and adapter conformance must be tested before granting it a live-call budget.
+
+### What Herdr resume would need
+
+A Herdr adapter must read the retained session's effective provider/model offline,
+accept an explicit exact model override on both launch and resume, and refuse an
+unavailable or incompatible pin **before** submitting a turn. Re-deriving the model
+from current defaults is not preservation. It must retain the same session handle
+and deliver the absolute report contract again on resume. If these capabilities
+are unavailable, its offline probe must refuse resume, not route around it with a
+new session or a charged test call. Herdr itself is unchanged by this package.
+
 ## Skills and concurrency
 
 Commit baseline `.tink/skills.toml` and `.tink/skills.lock` when Tink has created them through an authorized operation. Restore into each worktree through Tink; do not copy writable directories by symlink. Lockfile updates are reviewed dependency changes.

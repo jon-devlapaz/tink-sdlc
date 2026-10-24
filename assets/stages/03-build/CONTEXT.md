@@ -16,6 +16,9 @@ For bug fixes, reproduce the expected failure first, obtain independent acceptan
 and record protected test inputs with `sdlc.py lock-tests`. Implement and verify in
 a loop with stage 04. Update the plan when scope changes and renew stale decisions.
 Mark items only with `sdlc.py mark <slug> <item-id> passed|failed --evidence <text>`; never hand-edit receipts.
+For launcher-managed build agents, use the guide's [pinned build steps](../../_system/SDLC.md#pinned-build-steps).
+Read the supplied step contract, write the handoff at its exact absolute report path,
+and retain that contract and model pin on resume. A missing report refuses step completion.
 
 ## Skills
 

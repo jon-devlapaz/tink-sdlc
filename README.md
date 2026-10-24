@@ -46,6 +46,11 @@ paste fictional reviewer names or evidence into real runs. The full profile sepa
 intent, spec, and implementation plan; the light profile uses one reviewed brief.
 
 
+For launcher-managed build agents, use [pinned build steps](assets/_system/SDLC.md#pinned-build-steps):
+explicit report destinations and exact provider/model pins survive launch/resume through
+a trusted offline-resolving adapter. No provider adapter is bundled; raw Herdr resume
+is not claimed compatible. Missing reports refuse step completion.
+
 Local status accepts unchanged candidate content after an evidence-only commit.
 A release still needs CI for the actual merge revision and independent forge approval.
 
