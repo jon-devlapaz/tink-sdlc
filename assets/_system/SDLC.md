@@ -369,9 +369,10 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   the session file records the pin. Output goes to `runs/<run>/steps/<name>.<op>-<time>.pi.log`.
 - Resume refuses a session that is missing, archived by session rotation, or whose last
   recorded model (`model_change` or assistant answer on the active branch) differs from
-  the pin. It passes the session file path, then waits for the first answer: another
-  model stops the run; no answer within 50 seconds leaves the step `uncertain` with Pi
-  possibly still running.
+  the pin. It passes the session file path, then waits up to 50 seconds for the first
+  answer: another model stops the run. A turn still thinking at 50 seconds is admitted
+  when Pi is running and has recorded the new prompt on the pin; otherwise the step is
+  left `uncertain` with Pi possibly still running.
 - `finished` reads only the session file: the newest entry on the active branch must be
   an assistant answer on the pin with stop reason `stop`. A run killed after a tool call,
   aborted, failed or answered off the pin is not finished.
