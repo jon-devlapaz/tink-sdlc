@@ -192,11 +192,22 @@ def resolve(args, operation):
 
 
 def prompt(args, operation, checkout):
-    verb = 'Resume' if operation == 'resume' else 'Start'
-    return (f'{verb} the tink-sdlc pinned build step whose contract is {args.contract}. '
-            f'Work only in {checkout}; read that contract and the checkout instructions first. '
-            f'Write your handoff report to exactly {args.report} (absolute path); step completion '
-            f'is refused when it is missing there. Do not change the model or thinking level.')
+    run_dir = Path(args.contract).resolve().parent.parent
+    metadata = read_json(run_dir / 'run.json', 'Run metadata')
+    if metadata.get('profile') == 'light':
+        inputs = [run_dir / 'brief.md']
+    elif metadata.get('profile') == 'full':
+        inputs = [run_dir / '01-plan/output/intent.md', run_dir / '02-design/output/spec.md',
+                  run_dir / '03-build/output/plan.md']
+    else:
+        raise Refusal('Run profile must be light or full.')
+    context = checkout / 'stages' / '03-build' / 'CONTEXT.md'
+    named_inputs = ', '.join(str(path) for path in inputs)
+    return (f'You are the build agent for this run. Implement the approved run work using '
+            f'{named_inputs}; read those approved inputs, stage-3 CONTEXT.md at {context}, the '
+            f'step contract at {args.contract}, and checkout instructions first. Work only in '
+            f'{checkout}. Write your handoff report to exactly {args.report} (absolute path). '
+            f'Never run sdlc.py step, stage or decide. Do not change the model or thinking level.')
 
 
 def pi_command():
@@ -238,8 +249,10 @@ def admit(args, operation):
     argv = [pi_command(), '--mode', 'json', '--session-dir', str(directory), *target,
             '--model', pin, '--thinking', thinking, '--', prompt(args, operation, checkout)]
     log = Path(args.contract).with_name(f'{Path(args.contract).stem}.{operation}-{int(time.time())}.pi.log')
+    child_env = os.environ.copy()
+    child_env['TINK_SDLC_STEP_SESSION'] = '1'
     with log.open('ab') as output:
-        process = subprocess.Popen(argv, cwd=checkout, stdin=subprocess.DEVNULL, stdout=output,
+        process = subprocess.Popen(argv, cwd=checkout, env=child_env, stdin=subprocess.DEVNULL, stdout=output,
                                    stderr=output, start_new_session=True)
     window = admission_seconds()
     deadline = time.monotonic() + window

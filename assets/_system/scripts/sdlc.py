@@ -2110,6 +2110,8 @@ def step_adapter(record, operation, contract, resolve=False):
 
 
 def step(args):
+    if os.environ.get('TINK_SDLC_STEP_SESSION') == '1' and args.action in ('prepare', 'launch', 'resume', 'complete'):
+        raise ValueError('Cannot operate a pinned build step from inside its agent session.')
     path = run_path(args.run)
     meta = require_run(path)
     if not ITEM_ID.fullmatch(args.name):

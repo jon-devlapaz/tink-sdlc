@@ -307,7 +307,15 @@ in a new checkout; contracts are not portable session records.
 
 `launch` and `resume` recheck every definition gate and perform offline exact-model
 resolution before admitting a provider-capable adapter operation. Both receive the
-stored pin and absolute report path regardless of caller cwd or changed defaults.
+stored pin and absolute report path regardless of caller cwd or changed defaults. The
+agent prompt must identify the run's approved input files: `runs/<run>/brief.md` for
+light runs, or `runs/<run>/01-plan/output/intent.md`, `02-design/output/spec.md` and
+`03-build/output/plan.md` for full runs, plus `stages/03-build/CONTEXT.md`. It names the
+exact report destination and prohibits running `sdlc.py step`, `stage` or `decide`. The
+adapter marks the child environment with
+`TINK_SDLC_STEP_SESSION=1`; while set, `sdlc.py step` refuses `prepare`, `launch`,
+`resume` and `complete` (read-only `show` remains available), preventing recursive
+step admission independently of prompt compliance.
 Resume also carries the same session identity; it must not silently start another
 session. The adapter owns delivering the contract/report instructions to the agent.
 `complete` requires an active step, a nonempty regular report at the exact
