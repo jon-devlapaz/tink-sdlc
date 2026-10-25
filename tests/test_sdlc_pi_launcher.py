@@ -39,11 +39,15 @@ else:
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     rows.append(entry('session_info', rows[-1]['id'], name='TEST'))
 rows.append(message(rows[-1]['id'], 'user'))
-answered = message(rows[-1]['id'], 'assistant', provider=answer.split('/')[0], model=answer.split('/', 1)[1])
+answered = [message(rows[-1]['id'], 'assistant', provider=answer.split('/')[0], model=answer.split('/', 1)[1],
+                    stopReason='toolUse' if os.environ.get('FAKE_PI_PAUSED') else 'stop')]
+if os.environ.get('FAKE_PI_PAUSED'):
+    # Stopped after a tool ran, before the closing answer: the shape of a paused run.
+    answered.append(message(answered[-1]['id'], 'toolResult', toolName='write'))
 path.write_text(''.join(json.dumps(r) + '\\n' for r in rows))
 time.sleep(0.3)
 with path.open('a') as stream:
-    stream.write(json.dumps(answered) + '\\n')
+    stream.write(''.join(json.dumps(r) + '\\n' for r in answered))
 time.sleep(float(os.environ.get('FAKE_PI_LINGER', '0')))
 '''
 
@@ -132,6 +136,36 @@ class PiLauncherTests(StageBase):
         self.report.with_name('build.md').write_text('TEST handoff')
         self.step('build', 'complete')
         self.assertEqual(self.contract()['state'], 'completed')
+
+    def test_completion_waits_for_a_finished_pinned_turn_and_resume_can_finish_it(self):
+        self.prepare()
+        self.step('build', 'launch', env={'FAKE_PI_PAUSED': '1'})
+        for _ in range(50):
+            if '"toolResult"' in self.session_file().read_text():
+                break
+            time.sleep(0.1)
+        report = self.report.with_name('build.md')
+        report.write_text('TEST handoff left by a paused run')
+        result = self.step('build', 'complete', ok=False)
+        self.assertIn('not finished', result.stderr)
+        self.assertEqual(self.contract()['state'], 'active')
+        self.step('build', 'resume')
+        self.step('build', 'complete')
+        self.assertEqual(self.contract()['state'], 'completed')
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_a_final_answer_off_the_pin_cannot_complete(self):
+        self.prepare()
+        self.launch()
+        rows = self.session_file().read_text().splitlines()
+        drift = {'type': 'message', 'id': 'drift002', 'parentId': json.loads(rows[-1])['id'], 'timestamp': 't',
+                 'message': {'role': 'assistant', 'provider': 'test-provider', 'model': 'default-v1',
+                             'stopReason': 'stop'}}
+        self.session_file().write_text('\n'.join(rows + [json.dumps(drift)]) + '\n')
+        self.report.with_name('build.md').write_text('TEST handoff')
+        self.step('build', 'complete', ok=False)
+        self.assertEqual(self.contract()['state'], 'active')
+        self.assertEqual(len(self.calls()), 1)
 
     def test_pi_session_dir_override_is_honored_on_launch_and_resume(self):
         self.sessions = self.base / 'TEST-sessions'

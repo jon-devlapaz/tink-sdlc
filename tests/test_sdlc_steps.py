@@ -27,7 +27,11 @@ if a.operation == 'resolve' and os.environ.get('TEST_RESOLVED_SESSION'):
 if a.operation == 'resolve' and os.environ.get('TEST_BAD_JSON'):
     print('not JSON')
     raise SystemExit(0)
-if a.operation != 'resolve':
+if a.operation == 'finished':
+    if os.environ.get('TEST_NO_FINISHED'):
+        raise SystemExit(2)
+    reply['finished'] = not os.environ.get('TEST_UNFINISHED')
+elif a.operation != 'resolve':
     with (root / 'requests.log').open('a') as log:
         log.write(a.operation + ' ' + a.model + '\\n')
     reply['session'] = a.session or 'TEST-session'
@@ -147,6 +151,20 @@ class StepTests(StageBase):
         self.step('resume', '--model', 'test-provider/other', ok=False)
         self.assertEqual(before, self.contract.read_bytes())
         self.assertEqual(self.requests(), [])
+
+    def test_report_from_an_unfinished_or_unprobed_run_cannot_complete(self):
+        self.prepare()
+        self.step('launch', env={'TEST_WRITE_REPORT': '1'})
+        for env in ({'TEST_UNFINISHED': '1'}, {'TEST_NO_FINISHED': '1'}, {'TEST_INCOMPATIBLE': '1'}):
+            with self.subTest(env=env):
+                result = self.step('complete', ok=False, env=env)
+                self.assertIn('Step adapter' if 'TEST_UNFINISHED' not in env else 'not finished', result.stderr)
+                self.assertEqual(json.loads(self.contract.read_text())['state'], 'active')
+        self.step('complete')
+        calls = [json.loads(line) for line in (self.bin / 'adapter.log').read_text().splitlines()]
+        self.assertEqual(calls[-1]['operation'], 'finished')
+        self.assertEqual(calls[-1]['session'], 'TEST-session')
+        self.assertEqual(self.requests(), ['launch ' + self.model])
 
     def test_symlink_or_empty_report_cannot_complete(self):
         self.prepare()

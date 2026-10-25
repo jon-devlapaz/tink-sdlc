@@ -309,8 +309,10 @@ resolution before admitting a provider-capable adapter operation. Both receive t
 stored pin and absolute report path regardless of caller cwd or changed defaults.
 Resume also carries the same session identity; it must not silently start another
 session. The adapter owns delivering the contract/report instructions to the agent.
-`complete` requires an active step and a nonempty regular report at the exact
-recorded path, then stores its digest. Missing reports refuse completion: no root
+`complete` requires an active step, a nonempty regular report at the exact
+recorded path and the adapter's offline confirmation that the agent finished its
+latest turn on the pin, then stores the report digest. A paused, stopped, failed or
+still-running agent leaves the step `active`: resume it, then complete. Missing reports refuse completion: no root
 fallback, copying or invented report. A report is not proof of passing checks,
 authenticated authorship, approval, or release; existing `verify` and forge gates
 remain independent. API 1 status and capabilities are unchanged.
@@ -328,12 +330,16 @@ implementing `tink-sdlc-launcher` protocol 1 (one is bundled for Pi, below):
   (plus `--session ID` for resume). It must pass the pin explicitly to the harness
   and recheck it before any provider request, not rely on mutable defaults. It
   returns after session admission, not after the whole build; no shell is used.
+- Finished probe: `ADAPTER finished --model PIN --report ABS --contract ABS --session ID`.
+  It must make **zero provider requests** and reply `finished: true` only when the
+  retained session's newest turn ended normally on the pin. `complete` refuses on
+  `false`, a failure or a missing probe.
 - Each operation returns exit zero and one JSON object on stdout containing
-  `protocol: "tink-sdlc-launcher"`, integer `api_version: 1`, `operation` (launch or
-  resume) and the exact `model`. Resume responses include the same `session`;
+  `protocol: "tink-sdlc-launcher"`, integer `api_version: 1`, `operation` (launch, resume
+  or finished) and the exact `model`. Resume and finished responses include the same `session`;
   admissions require a nonblank session identity. Diagnostics belong on stderr.
   Failed, malformed, unsupported or mismatching offline replies refuse admission.
-- Probe timeout is 15 seconds; admission timeout is 60 seconds. A crash or failed
+- Probe timeouts are 15 seconds; admission timeout is 60 seconds. A crash or failed
   admission leaves `uncertain`, never automatic retry or completion. Inspect the
   actual harness/session and reconcile it before explicitly preparing another
   uniquely named step; never hand-edit the generated contract to clear uncertainty.
@@ -366,6 +372,9 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   the pin. It passes the session file path, then waits for the first answer: another
   model stops the run; no answer within 50 seconds leaves the step `uncertain` with Pi
   possibly still running.
+- `finished` reads only the session file: the newest entry on the active branch must be
+  an assistant answer on the pin with stop reason `stop`. A run killed after a tool call,
+  aborted, failed or answered off the pin is not finished.
 - The check is per answer the adapter observes. Later model switches inside the session
   are not watched.
 
