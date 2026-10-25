@@ -45,7 +45,7 @@ if os.environ.get('FAKE_PI_PAUSED'):
     # Stopped after a tool ran, before the closing answer: the shape of a paused run.
     answered.append(message(answered[-1]['id'], 'toolResult', toolName='write'))
 path.write_text(''.join(json.dumps(r) + '\\n' for r in rows))
-time.sleep(0.3)
+time.sleep(float(os.environ.get('FAKE_PI_THINK', '0.3')))
 with path.open('a') as stream:
     stream.write(''.join(json.dumps(r) + '\\n' for r in answered))
 time.sleep(float(os.environ.get('FAKE_PI_LINGER', '0')))
@@ -256,6 +256,29 @@ class PiLauncherTests(StageBase):
             self.fail('the drifting Pi run was not stopped')
         self.step('build', 'resume', ok=False)
         self.assertEqual(len(self.calls()), 2)
+
+    def test_a_resumed_turn_still_thinking_is_admitted_on_its_recorded_prompt(self):
+        # A long first turn on resume used to strand the step `uncertain` with Pi still working.
+        self.prepare()
+        self.launch()
+        self.step('build', 'resume', env={'FAKE_PI_THINK': '5', 'TINK_SDLC_PI_ADMISSION': '1'})
+        self.assertEqual(self.contract()['state'], 'active')
+        for _ in range(100):
+            if self.session_file().read_text().count('"assistant"') == 2:
+                break
+            time.sleep(0.1)
+        self.report.with_name('build.md').write_text('TEST handoff')
+        self.step('build', 'complete')
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_a_resume_that_never_records_its_prompt_stays_uncertain(self):
+        self.prepare()
+        self.launch()
+        quiet = self.bin / 'TEST-quiet-pi'
+        quiet.write_text(f'#!{PYTHON}\nimport time\ntime.sleep(5)\n')
+        quiet.chmod(0o755)
+        self.step('build', 'resume', ok=False, env={'TINK_SDLC_PI': str(quiet), 'TINK_SDLC_PI_ADMISSION': '1'})
+        self.assertEqual(self.contract()['state'], 'uncertain')
 
     def test_pi_failing_before_admission_leaves_the_step_uncertain(self):
         self.prepare()

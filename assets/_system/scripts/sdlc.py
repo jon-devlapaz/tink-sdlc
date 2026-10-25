@@ -37,7 +37,12 @@ def encoded(value):
 
 
 def read_json(path):
-    return json.loads(path.read_text())
+    """Invalid JSON is refused with the file it came from."""
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        shown = path.relative_to(ROOT) if path.is_absolute() and path.is_relative_to(ROOT) else path
+        raise ValueError(f'{shown} is not valid JSON: {error}') from None
 
 
 def write_json(path, value):
@@ -271,8 +276,13 @@ def seed_match_evidence(path):
 
 
 def record_seed_match(path):
+    """One automatic receipt per matching definition; repeating verify or stage adds none."""
     evidence = seed_match_evidence(path)
     if evidence and seed_check_items(path) and gate(path, 3) == 'approved':
+        previous = latest(path, 3)
+        if (previous and previous.get('basis') == 'confirmed-seed' and previous.get('reason') == evidence
+                and previous.get('inputs') == inputs(path, 3)):
+            return
         write_json(path / 'decisions' / f'3-{time.time_ns()}-{uuid.uuid4().hex}.json', {
             'inputs': inputs(path, 3), 'decision': 'approved', 'basis': 'confirmed-seed',
             'reviewer': 'confirmed-seed binding (automatic)',
@@ -373,13 +383,10 @@ def load_checklist(path):
     seed_items = seed_check_items(path)
     if not target.exists():
         return seed_items or None
-    try:
-        items = validate_checklist(read_json(target))
-        if any(item['id'].startswith('seed-') for item in items) and seed_items:
-            raise ValueError('seed- item IDs are reserved for locked operator-confirmed checks.')
-        return items + seed_items
-    except json.JSONDecodeError as error:
-        raise ValueError(f'checklist.json is not valid JSON: {error}') from error
+    items = validate_checklist(read_json(target))
+    if any(item['id'].startswith('seed-') for item in items) and seed_items:
+        raise ValueError('seed- item IDs are reserved for locked operator-confirmed checks.')
+    return items + seed_items
 
 
 def checklist_digest(path):
@@ -509,9 +516,19 @@ def disposable(relative):
     return relative == '.tink/.gitignore' or relative.startswith(('.tink/.active/', '.tink/cache/'))
 
 
+def submodule_head(path):
+    """A submodule or nested repository counts by its checked-out commit; changes inside it are its own."""
+    if not (path / '.git').exists():
+        return b'<uninitialized submodule>'
+    head = run_git(path, 'rev-parse', 'HEAD')
+    return b'submodule ' + (head.stdout.strip().encode() if head.returncode == 0 else b'<no commit>')
+
+
 def snapshot_files():
     """Per-file fingerprint map of the candidate: {relative: [digest, mode]}."""
     tracked = set(git('ls-files', '-z', '--cached').split(b'\0'))
+    submodules = {entry.split(b'\t', 1)[1] for entry in git('ls-files', '-z', '--stage').split(b'\0')
+                  if entry.startswith(b'160000 ')}
     names = tracked | set(git('ls-files', '-z', '--others', '--exclude-standard').split(b'\0'))
     files = {}
     for name in names:
@@ -525,6 +542,8 @@ def snapshot_files():
         path = ROOT / relative
         if path.is_symlink():
             value = os.readlink(path).encode()
+        elif path.is_dir() and (name in submodules or relative.endswith('/')):  # untracked nested repos end in /
+            value = submodule_head(path)
         elif path.is_file():
             value = path.read_bytes()
             if relative == 'AGENTS.md':
@@ -874,7 +893,7 @@ def run_reproduction(raw, log_path):
         log.write(f'$ {json.dumps(argv)}\n')
         log.flush()
         try:
-            result = subprocess.run(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=REPRODUCE_TIMEOUT)
+            result = run_check({'argv': argv, 'timeout_seconds': REPRODUCE_TIMEOUT}, log)
         except (subprocess.TimeoutExpired, OSError) as error:
             log.write(f'{type(error).__name__}: {error}\n')
             raise ValueError(f'Reproduction could not run to completion ({type(error).__name__}); see {log_path.relative_to(ROOT)}') from error

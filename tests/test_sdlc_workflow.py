@@ -85,6 +85,35 @@ class WorkflowTests(unittest.TestCase):
         self.git('reset', '-q', '--hard', good)
         self.cli('verify', 'example')
 
+    def test_verify_counts_a_submodule_by_its_checked_out_commit(self):
+        # A tracked submodule is a directory, not a file; verify used to refuse every such repository.
+        outside = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-library-')
+        self.addCleanup(outside.cleanup)
+        library = Path(outside.name)
+        subprocess.run(['git', 'init', '-q', str(library)], check=True)
+        for message in ('one', 'two'):
+            subprocess.run(['git', '-C', str(library), '-c', 'user.name=Test', '-c', 'user.email=test@local',
+                            'commit', '-q', '--allow-empty', '-m', message], check=True)
+        self.git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(library), 'vendor/library')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'TEST submodule')
+        self.create_ready()
+        self.cli('verify', 'example')
+        self.assertIn('Verification: current', self.cli('status', 'example'))
+        subprocess.run(['git', '-C', str(self.root / 'vendor/library'), 'checkout', '-q', 'HEAD~1'], check=True)
+        self.assertIn('failed, stale, or blocked', self.cli('status', 'example'))
+        # An unignored clone inside the checkout is listed as a directory too.
+        subprocess.run(['git', 'clone', '-q', str(library), str(self.root / 'TEST-clone')], check=True)
+        self.cli('verify', 'example')
+
+    def test_invalid_receipt_json_names_the_file(self):
+        # A hand-edited or merged receipt used to fail status with a bare parser message and no path.
+        self.create_ready()
+        broken = self.root / 'runs/example/decisions/3-9999999999999999999-TEST.json'
+        broken.write_text('{')
+        self.assertIn('runs/example/decisions/3-9999999999999999999-TEST.json is not valid JSON', self.cli('status', 'example', ok=False))
+        listed = json.loads(self.cli('status', '--json'))['runs'][0]
+        self.assertIn('runs/example/decisions/3-9999999999999999999-TEST.json', listed['error'])
+
     def dry_run_items(self, commands):
         self.cli('new', 'example')
         path = self.root / 'runs/example'
@@ -630,6 +659,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual((recorded['argv'], recorded['exit_code']), (['python3', 'regression.py'], 1))
         self.assertIn('Reproduction: failed with exit 1 when locked (python3 regression.py)', self.cli('status', 'example'))
         self.assertEqual(json.loads(self.cli('status', 'example', '--json'))['run']['reproduction']['executed'], True)
+
+    def test_lock_reproduce_stops_descendants_left_by_the_failing_command(self):
+        # Like checks, the reproduction's process group ends with it; a leftover child kept writing to the checkout.
+        self.create_ready('--kind', 'bug')
+        (self.root / 'regression.py').write_text('assert False')
+        command = self.descendant_command(wait=False)
+        command[-1] += '; raise SystemExit(1)'
+        out = self.cli('lock-tests', 'example', 'regression.py', '--source', 's', '--failure-evidence', 'e',
+                       '--reproduce', json.dumps(command))
+        self.assertIn('Reproduction failed with exit 1', out)
+        time.sleep(1.8)
+        self.assertFalse(self.child_is_running())
+        self.assertFalse((self.root / 'late-child-write').exists())
 
     def test_lock_without_reproduce_says_it_was_not_run_and_status_repeats_it(self):
         self.create_ready('--kind', 'bug')

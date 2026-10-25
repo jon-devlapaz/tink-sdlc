@@ -41,6 +41,16 @@ class SeedDepartures(StageBase):
         (self.path / 'brief.md').write_text('TEST rendering of the unchanged seed checks')
         self.assertEqual(self.view()['gates'][0]['status'], 'approved')
 
+    def test_repeated_verify_records_one_automatic_receipt_per_definition(self):
+        self.bind()
+        automatic = lambda: [d for d in self.view()['decisions'] if d.get('basis') == 'confirmed-seed']
+        for _ in range(3):
+            self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
+        self.assertEqual(len(automatic()), 1)
+        (self.path / 'brief.md').write_text('TEST rendering of the unchanged seed checks')
+        self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
+        self.assertEqual(len(automatic()), 2)
+
     def test_human_rejection_survives_input_edits_and_automatic_or_agent_records(self):
         self.bind()
         rejected = self.sdlc('decide', 'r', '3', 'changes-requested', '--reviewer', 'TEST human',

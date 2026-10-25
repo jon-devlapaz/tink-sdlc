@@ -4,7 +4,9 @@
 Promises: every launch and resume passes the step pin to Pi explicitly as
 --model provider/model-id --thinking level; resolve reads only local files and
 never starts Pi or opens a connection; resume refuses a session whose recorded
-model differs from the pin, and stops a resumed run that answers on another model;
+model differs from the pin, stops a resumed run that answers on another model within
+the admission window, and admits one still thinking once its new prompt is recorded
+on the pin;
 finished reads only local files and reports true only when the newest turn ended
 normally on the pin.
 Refuses: pins without an explicit thinking level, models absent from Pi's local
@@ -26,6 +28,8 @@ PROTOCOL = 'tink-sdlc-launcher'
 # The Pi executable; TINK_SDLC_PI replaces it (tests point it at a fake Pi).
 PI_COMMAND = 'pi'
 THINKING = ('off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max')
+# Admission must finish inside sdlc.py's 60-second adapter timeout; TINK_SDLC_PI_ADMISSION
+# may only shorten it (tests use a short window).
 ADMISSION_SECONDS = 50
 
 
@@ -209,6 +213,14 @@ def stop(process):
         pass
 
 
+def admission_seconds():
+    try:
+        configured = float(os.environ.get('TINK_SDLC_PI_ADMISSION', ADMISSION_SECONDS))
+    except ValueError:
+        return ADMISSION_SECONDS
+    return configured if 0 < configured <= ADMISSION_SECONDS else ADMISSION_SECONDS
+
+
 def admit(args, operation):
     provider, model_id, thinking, retained = resolve(args, operation)  # recheck right before any request
     pin = f'{provider}/{model_id}'
@@ -229,7 +241,9 @@ def admit(args, operation):
     with log.open('ab') as output:
         process = subprocess.Popen(argv, cwd=checkout, stdin=subprocess.DEVNULL, stdout=output,
                                    stderr=output, start_new_session=True)
-    deadline = time.monotonic() + ADMISSION_SECONDS
+    window = admission_seconds()
+    deadline = time.monotonic() + window
+    prompted = False
     while time.monotonic() < deadline:
         path = retained or find_session(directory, session_id)
         new = entries(path)[before:] if path else []
@@ -238,16 +252,20 @@ def admit(args, operation):
             if model and model != pin:
                 stop(process)
                 raise Refusal(f'Pi answered on {model}, not the pin {pin}; the run was stopped. Log: {log}')
-            if model or (operation == 'launch' and entry.get('type') == 'message'
-                         and entry['message'].get('role') == 'user'
-                         and recorded_model(path) == pin
+            asked = (entry.get('type') == 'message' and entry['message'].get('role') == 'user'
+                     and recorded_model(path) == pin)
+            prompted = prompted or asked
+            if model or (operation == 'launch' and asked
                          and any(e.get('type') == 'thinking_level_change' and e.get('thinkingLevel') == thinking
                                  for e in new)):
                 return session_id
         if process.poll() not in (None, 0):
             raise Refusal(f'Pi exited {process.returncode} before admission was confirmed. Log: {log}')
         time.sleep(0.2)
-    raise Refusal(f'Pi admission was not confirmed in {ADMISSION_SECONDS}s; process {process.pid} '
+    # A resumed turn can think past the window: its recorded prompt on the pin admits it.
+    if operation == 'resume' and prompted and process.poll() is None:
+        return session_id
+    raise Refusal(f'Pi admission was not confirmed in {window:g}s; process {process.pid} '
                   f'may still run. Inspect {log} and the session before reconciling.')
 
 
