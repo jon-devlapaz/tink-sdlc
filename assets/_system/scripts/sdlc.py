@@ -886,7 +886,7 @@ def run_reproduction(raw, log_path):
         log.write(f'$ {json.dumps(argv)}\n')
         log.flush()
         try:
-            result = subprocess.run(argv, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=REPRODUCE_TIMEOUT)
+            result = run_check({'argv': argv, 'timeout_seconds': REPRODUCE_TIMEOUT}, log)
         except (subprocess.TimeoutExpired, OSError) as error:
             log.write(f'{type(error).__name__}: {error}\n')
             raise ValueError(f'Reproduction could not run to completion ({type(error).__name__}); see {log_path.relative_to(ROOT)}') from error

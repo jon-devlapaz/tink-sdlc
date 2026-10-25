@@ -651,6 +651,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('Reproduction: failed with exit 1 when locked (python3 regression.py)', self.cli('status', 'example'))
         self.assertEqual(json.loads(self.cli('status', 'example', '--json'))['run']['reproduction']['executed'], True)
 
+    def test_lock_reproduce_stops_descendants_left_by_the_failing_command(self):
+        # Like checks, the reproduction's process group ends with it; a leftover child kept writing to the checkout.
+        self.create_ready('--kind', 'bug')
+        (self.root / 'regression.py').write_text('assert False')
+        command = self.descendant_command(wait=False)
+        command[-1] += '; raise SystemExit(1)'
+        out = self.cli('lock-tests', 'example', 'regression.py', '--source', 's', '--failure-evidence', 'e',
+                       '--reproduce', json.dumps(command))
+        self.assertIn('Reproduction failed with exit 1', out)
+        time.sleep(1.8)
+        self.assertFalse(self.child_is_running())
+        self.assertFalse((self.root / 'late-child-write').exists())
+
     def test_lock_without_reproduce_says_it_was_not_run_and_status_repeats_it(self):
         self.create_ready('--kind', 'bug')
         (self.root / 'regression.py').write_text('assert True')
