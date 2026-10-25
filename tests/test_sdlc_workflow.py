@@ -85,6 +85,26 @@ class WorkflowTests(unittest.TestCase):
         self.git('reset', '-q', '--hard', good)
         self.cli('verify', 'example')
 
+    def test_verify_counts_a_submodule_by_its_checked_out_commit(self):
+        # A tracked submodule is a directory, not a file; verify used to refuse every such repository.
+        outside = tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-library-')
+        self.addCleanup(outside.cleanup)
+        library = Path(outside.name)
+        subprocess.run(['git', 'init', '-q', str(library)], check=True)
+        for message in ('one', 'two'):
+            subprocess.run(['git', '-C', str(library), '-c', 'user.name=Test', '-c', 'user.email=test@local',
+                            'commit', '-q', '--allow-empty', '-m', message], check=True)
+        self.git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(library), 'vendor/library')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'TEST submodule')
+        self.create_ready()
+        self.cli('verify', 'example')
+        self.assertIn('Verification: current', self.cli('status', 'example'))
+        subprocess.run(['git', '-C', str(self.root / 'vendor/library'), 'checkout', '-q', 'HEAD~1'], check=True)
+        self.assertIn('failed, stale, or blocked', self.cli('status', 'example'))
+        # An unignored clone inside the checkout is listed as a directory too.
+        subprocess.run(['git', 'clone', '-q', str(library), str(self.root / 'TEST-clone')], check=True)
+        self.cli('verify', 'example')
+
     def dry_run_items(self, commands):
         self.cli('new', 'example')
         path = self.root / 'runs/example'

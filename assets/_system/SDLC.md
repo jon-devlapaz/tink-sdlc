@@ -182,6 +182,7 @@ python3 _system/scripts/sdlc.py verify fix-example
 
 Verification writes the check output and a receipt under `04-test/output/`. The receipt binds the commit, the contents and modes of tracked and nonignored untracked files (not untracked Python caches), artifact inputs, policy, test lock and log digest.
 - `runs/` is outside the fingerprint, so keep application source and test infrastructure out of it. Committing only run evidence does not stale unchanged code.
+- A submodule, or an untracked nested repository, counts by its checked-out commit; uncommitted changes inside it do not.
 - Ignored files and external services are outside it too: pin dependencies and environments in trusted CI, which must still verify the revision being merged.
 - Generated `tink:rules` blocks in the root `AGENTS.md` are excluded from the candidate fingerprint (`walk` and `tink use --check` verify them); all other `AGENTS.md` text counts.
 - Commit before final verification and leave the checkout alone while checks run. If it changes anyway, the error lists up to five paths and hints at tracked bytecode or new untracked output (add that to `.gitignore`).

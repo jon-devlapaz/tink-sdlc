@@ -509,9 +509,19 @@ def disposable(relative):
     return relative == '.tink/.gitignore' or relative.startswith(('.tink/.active/', '.tink/cache/'))
 
 
+def submodule_head(path):
+    """A submodule or nested repository counts by its checked-out commit; changes inside it are its own."""
+    if not (path / '.git').exists():
+        return b'<uninitialized submodule>'
+    head = run_git(path, 'rev-parse', 'HEAD')
+    return b'submodule ' + (head.stdout.strip().encode() if head.returncode == 0 else b'<no commit>')
+
+
 def snapshot_files():
     """Per-file fingerprint map of the candidate: {relative: [digest, mode]}."""
     tracked = set(git('ls-files', '-z', '--cached').split(b'\0'))
+    submodules = {entry.split(b'\t', 1)[1] for entry in git('ls-files', '-z', '--stage').split(b'\0')
+                  if entry.startswith(b'160000 ')}
     names = tracked | set(git('ls-files', '-z', '--others', '--exclude-standard').split(b'\0'))
     files = {}
     for name in names:
@@ -525,6 +535,8 @@ def snapshot_files():
         path = ROOT / relative
         if path.is_symlink():
             value = os.readlink(path).encode()
+        elif path.is_dir() and (name in submodules or relative.endswith('/')):  # untracked nested repos end in /
+            value = submodule_head(path)
         elif path.is_file():
             value = path.read_bytes()
             if relative == 'AGENTS.md':
