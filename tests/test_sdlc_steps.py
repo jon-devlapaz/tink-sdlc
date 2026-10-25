@@ -225,6 +225,25 @@ class StepTests(StageBase):
         self.step('complete', ok=False)
         self.assertEqual(self.requests(), [])
 
+    def test_step_session_marker_refuses_mutations_but_allows_show(self):
+        result = self.step('prepare', '--report', str(self.report), '--model', self.model,
+                           '--launcher', str(self.launcher), ok=False,
+                           env={'TINK_SDLC_STEP_SESSION': '1'})
+        self.assertIn('inside its agent session', result.stderr)
+        self.assertFalse(self.contract.exists())
+        self.prepare()
+        result = self.step('launch', ok=False, env={'TINK_SDLC_STEP_SESSION': '1'})
+        self.assertIn('inside its agent session', result.stderr)
+        self.step('launch')
+        result = self.step('resume', ok=False, env={'TINK_SDLC_STEP_SESSION': '1'})
+        self.assertIn('inside its agent session', result.stderr)
+        result = self.step('complete', ok=False, env={'TINK_SDLC_STEP_SESSION': '1'})
+        self.assertIn('inside its agent session', result.stderr)
+        before = self.contract.read_bytes()
+        shown = json.loads(self.step('show', env={'TINK_SDLC_STEP_SESSION': '1'}).stdout)
+        self.assertEqual(shown['model'], self.model)
+        self.assertEqual(before, self.contract.read_bytes())
+
     def test_show_is_read_only_and_completed_step_cannot_run_again(self):
         self.prepare()
         before = self.contract.read_bytes()

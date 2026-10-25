@@ -15,7 +15,7 @@ import json, os, sys, time, uuid
 from pathlib import Path
 argv = sys.argv[1:]
 with open(os.environ['FAKE_PI_LOG'], 'a') as log:
-    log.write(json.dumps(argv) + '\\n')
+    log.write(json.dumps({{'argv': argv, 'step_session': os.environ.get('TINK_SDLC_STEP_SESSION')}}) + '\\n')
 Path(os.environ['FAKE_PI_LOG'] + '.pid').write_text(str(os.getpid()))
 def flag(name):
     return argv[argv.index(name) + 1] if name in argv else None
@@ -94,7 +94,7 @@ class PiLauncherTests(StageBase):
         return json.loads((self.root / f'runs/r/steps/{name}.json').read_text())
 
     def calls(self):
-        return [json.loads(line) for line in self.pi_log.read_text().splitlines()] if self.pi_log.exists() else []
+        return [json.loads(line)['argv'] for line in self.pi_log.read_text().splitlines()] if self.pi_log.exists() else []
 
     def session_file(self, name='build'):
         [path] = [p for p in self.sessions.glob('*.jsonl') if self.contract(name)['session'] in p.name]
@@ -130,12 +130,53 @@ class PiLauncherTests(StageBase):
             self.assertIn(str(self.report.with_name('build.md')), argv[-1])
         self.assertEqual(launch[launch.index('--session-id') + 1], session)
         self.assertEqual(resume[resume.index('--session') + 1], str(self.session_file()))
+        for call in self.pi_log.read_text().splitlines():
+            recorded = json.loads(call)
+            self.assertEqual(recorded['step_session'], '1')
+            prompt = recorded['argv'][-1]
+            self.assertIn(str(self.root / 'runs/r/brief.md'), prompt)
+            self.assertTrue((self.root / 'runs/r/brief.md').is_file())
+            self.assertIn(str(self.root / 'stages/03-build/CONTEXT.md'), prompt)
+            self.assertTrue((self.root / 'stages/03-build/CONTEXT.md').is_file())
+            self.assertIn(str(self.report.with_name('build.md')), prompt)
+            self.assertIn('Never run sdlc.py step, stage or decide', prompt)
         answers = [json.loads(line)['message']['model'] for line in self.session_file().read_text().splitlines()
                    if '"assistant"' in line]
         self.assertEqual(answers, ['pinned-v1', 'pinned-v1'])
         self.report.with_name('build.md').write_text('TEST handoff')
         self.step('build', 'complete')
         self.assertEqual(self.contract()['state'], 'completed')
+
+    def test_full_profile_launch_and_resume_name_existing_approved_inputs(self):
+        self.new_run('full-run', profile='full')
+        run_dir = self.root / 'runs/full-run'
+        self.report_full = self.base / 'TEST-notes' / 'full-build.md'
+        contract = run_dir / 'steps' / 'build.json'
+        prepared = self.sdlc('step', 'full-run', 'build', 'prepare', '--report', str(self.report_full),
+                             '--model', PIN, '--launcher', str(self.adapter))
+        self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+        launched = self.sdlc('step', 'full-run', 'build', 'launch')
+        self.assertEqual(launched.returncode, 0, launched.stdout + launched.stderr)
+        session = json.loads(launched.stdout)['session']
+        for _ in range(50):
+            session_files = [path for path in self.sessions.glob('*.jsonl') if session in path.name]
+            if session_files and '"assistant"' in session_files[0].read_text():
+                break
+            time.sleep(0.1)
+        else:
+            self.fail('the fake Pi never answered the full-profile launch')
+        resumed = self.sdlc('step', 'full-run', 'build', 'resume')
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        prompts = [json.loads(line)['argv'][-1] for line in self.pi_log.read_text().splitlines()]
+        self.assertEqual(len(prompts), 2)
+        expected = [run_dir / '01-plan/output/intent.md', run_dir / '02-design/output/spec.md',
+                    run_dir / '03-build/output/plan.md', self.root / 'stages/03-build/CONTEXT.md']
+        for prompt in prompts:
+            for path in expected:
+                self.assertTrue(path.is_file(), path)
+                self.assertIn(str(path), prompt)
+            self.assertIn(str(self.report_full), prompt)
+            self.assertIn('Never run sdlc.py step, stage or decide', prompt)
 
     def test_completion_waits_for_a_finished_pinned_turn_and_resume_can_finish_it(self):
         self.prepare()
