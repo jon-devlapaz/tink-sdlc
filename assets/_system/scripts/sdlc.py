@@ -2069,9 +2069,10 @@ def step_adapter(record, operation, contract, resolve=False):
             '--model', record['model'], '--report', record['report'], '--contract', str(contract)]
     if resolve:
         argv += ['--for-operation', operation]
-    if operation == 'resume':
+    if operation in ('resume', 'finished'):
         argv += ['--session', record['session']]
-    result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, timeout=15 if resolve else 60)
+    offline = resolve or operation == 'finished'
+    result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, timeout=15 if offline else 60)
     if result.returncode:
         raise ValueError(f'Step adapter {argv[1]} failed (exit {result.returncode}); inspect the adapter/session before retrying.')
     reply = json.loads(result.stdout)
@@ -2081,6 +2082,9 @@ def step_adapter(record, operation, contract, resolve=False):
         raise ValueError('Step adapter cannot resolve the exact model pin or is incompatible; no default is accepted.')
     if operation == 'resume' and reply.get('session') != record['session']:
         raise ValueError('Step adapter cannot resume the pinned session.')
+    if operation == 'finished' and (reply.get('session') != record['session'] or reply.get('finished') is not True):
+        raise ValueError('The agent has not finished its latest turn on the pin (paused, stopped, failed or still '
+                         'running); resume the step and complete it after the agent ends its turn.')
     if not resolve and (not isinstance(reply.get('session'), str) or not reply['session'].strip()):
         raise ValueError('Step adapter returned no session identity.')
     return reply
@@ -2136,6 +2140,8 @@ def step(args):
                 contents = report.read_bytes()
                 if not contents.strip():
                     raise ValueError('Step report is empty; completion refused.')
+                # A report alone can be left by an interrupted run; the adapter must confirm the agent finished.
+                step_adapter(record, 'finished', contract)
                 record.update(state='completed', report_sha256=digest(contents))
                 write_json(contract, record)
             else:

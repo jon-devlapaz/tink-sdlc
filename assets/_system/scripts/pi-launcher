@@ -4,7 +4,9 @@
 Promises: every launch and resume passes the step pin to Pi explicitly as
 --model provider/model-id --thinking level; resolve reads only local files and
 never starts Pi or opens a connection; resume refuses a session whose recorded
-model differs from the pin, and stops a resumed run that answers on another model.
+model differs from the pin, and stops a resumed run that answers on another model;
+finished reads only local files and reports true only when the newest turn ended
+normally on the pin.
 Refuses: pins without an explicit thinking level, models absent from Pi's local
 catalog cache, providers without stored credentials, missing or archived sessions.
 It is not a Herdr adapter and does not use pi-herdr routing or Pi session restore.
@@ -142,6 +144,13 @@ def recorded_model(path):
     return None
 
 
+def finished(path, pin):
+    """The newest entry on the active branch is a pinned answer that stopped normally."""
+    chain = branch(path)
+    last = chain[-1] if chain else {}
+    return answered_by(last) == pin and last['message'].get('stopReason') == 'stop'
+
+
 def checkout_of(contract):
     record = read_json(Path(contract), 'Step contract')
     checkout = Path(record.get('checkout') or '')
@@ -244,7 +253,7 @@ def admit(args, operation):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['resolve', 'launch', 'resume'])
+    parser.add_argument('operation', choices=['resolve', 'launch', 'resume', 'finished'])
     for flag in ('model', 'report', 'contract', 'session'):
         parser.add_argument('--' + flag)
     parser.add_argument('--for-operation', choices=['launch', 'resume'])
@@ -256,12 +265,18 @@ def main():
         if args.operation == 'resolve':
             resolve(args, operation)
             session = args.session
+        elif args.operation == 'finished':
+            provider, model_id, _ = parse_pin(args.model)
+            done = finished(retained_session(args, provider, model_id), f'{provider}/{model_id}')
+            session = args.session
         else:
             session = admit(args, operation)
     except Refusal as refusal:
         print(f'pi-launcher: {refusal}', file=sys.stderr)
         return 1
     reply = {'protocol': PROTOCOL, 'api_version': 1, 'operation': operation, 'model': args.model}
+    if args.operation == 'finished':
+        reply['finished'] = done
     if session:
         reply['session'] = session
     print(json.dumps(reply))
