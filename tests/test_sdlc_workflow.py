@@ -105,6 +105,15 @@ class WorkflowTests(unittest.TestCase):
         subprocess.run(['git', 'clone', '-q', str(library), str(self.root / 'TEST-clone')], check=True)
         self.cli('verify', 'example')
 
+    def test_invalid_receipt_json_names_the_file(self):
+        # A hand-edited or merged receipt used to fail status with a bare parser message and no path.
+        self.create_ready()
+        broken = self.root / 'runs/example/decisions/3-9999999999999999999-TEST.json'
+        broken.write_text('{')
+        self.assertIn('runs/example/decisions/3-9999999999999999999-TEST.json is not valid JSON', self.cli('status', 'example', ok=False))
+        listed = json.loads(self.cli('status', '--json'))['runs'][0]
+        self.assertIn('runs/example/decisions/3-9999999999999999999-TEST.json', listed['error'])
+
     def dry_run_items(self, commands):
         self.cli('new', 'example')
         path = self.root / 'runs/example'

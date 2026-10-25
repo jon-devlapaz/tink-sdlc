@@ -37,7 +37,12 @@ def encoded(value):
 
 
 def read_json(path):
-    return json.loads(path.read_text())
+    """Invalid JSON is refused with the file it came from."""
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        shown = path.relative_to(ROOT) if path.is_absolute() and path.is_relative_to(ROOT) else path
+        raise ValueError(f'{shown} is not valid JSON: {error}') from None
 
 
 def write_json(path, value):
@@ -378,13 +383,10 @@ def load_checklist(path):
     seed_items = seed_check_items(path)
     if not target.exists():
         return seed_items or None
-    try:
-        items = validate_checklist(read_json(target))
-        if any(item['id'].startswith('seed-') for item in items) and seed_items:
-            raise ValueError('seed- item IDs are reserved for locked operator-confirmed checks.')
-        return items + seed_items
-    except json.JSONDecodeError as error:
-        raise ValueError(f'checklist.json is not valid JSON: {error}') from error
+    items = validate_checklist(read_json(target))
+    if any(item['id'].startswith('seed-') for item in items) and seed_items:
+        raise ValueError('seed- item IDs are reserved for locked operator-confirmed checks.')
+    return items + seed_items
 
 
 def checklist_digest(path):
