@@ -271,8 +271,13 @@ def seed_match_evidence(path):
 
 
 def record_seed_match(path):
+    """One automatic receipt per matching definition; repeating verify or stage adds none."""
     evidence = seed_match_evidence(path)
     if evidence and seed_check_items(path) and gate(path, 3) == 'approved':
+        previous = latest(path, 3)
+        if (previous and previous.get('basis') == 'confirmed-seed' and previous.get('reason') == evidence
+                and previous.get('inputs') == inputs(path, 3)):
+            return
         write_json(path / 'decisions' / f'3-{time.time_ns()}-{uuid.uuid4().hex}.json', {
             'inputs': inputs(path, 3), 'decision': 'approved', 'basis': 'confirmed-seed',
             'reviewer': 'confirmed-seed binding (automatic)',
