@@ -20,6 +20,7 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
+HOME = ROOT
 API_VERSION = 1
 API_CAPABILITIES = ['status-json', 'verify', 'mark', 'log-file']
 ITEM_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
@@ -1064,6 +1065,19 @@ def build_checkout(run):
     return None
 
 
+@contextlib.contextmanager
+def reading_build_checkout(run):
+    """Reads `run` from its build checkout, where its evidence lives, with this checkout's own code; never runs code from there."""
+    global ROOT
+    checkout = build_checkout(run)
+    if checkout and (Path(checkout) / 'runs' / run / 'run.json').is_file():
+        ROOT = Path(checkout)
+    try:
+        yield
+    finally:
+        ROOT = HOME
+
+
 def status_state(path):
     """One calculation for the human CLI and machine clients; never an approval."""
     meta = require_run(path)
@@ -1167,11 +1181,14 @@ def status_state(path):
     }.get(state, (f'Building in {building}; read status there.' if (building := build_checkout(path.name)) else
                   f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
                   if meta.get('seed_contract') else 'implement the approved brief, then run verification.'))
+    if ROOT != HOME:
+        next_action = f'In {ROOT}: {next_action}'
     bound = meta.get('seed_contract')
     seed_contract = {key: bound[key] for key in ('path', 'sha256', 'source')} if bound is not None else None
     if bound is not None and bound.get('confirmation', {}).get('schema_version') == 3:
         seed_contract['confirmation'] = bound['confirmation']
     return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract,
+            **({'checkout': str(ROOT)} if ROOT != HOME else {}),
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active,
             **({'definition': definition} if definition is not None else {}),
@@ -1227,6 +1244,11 @@ def regular_evidence(path):
 
 
 def run_view(slug):
+    with reading_build_checkout(run_path(slug).name):
+        return checkout_run_view(slug)
+
+
+def checkout_run_view(slug):
     path = run_path(slug)
     if not (path / 'run.json').is_file():
         raise FileNotFoundError(f"Run '{slug}' not found.")
@@ -1294,7 +1316,8 @@ def status(args):
         if getattr(args, 'json', False):
             machine_output({'run': run_view(args.run)})
         else:
-            print(status_text(status_state(run_path(args.run))))
+            with reading_build_checkout(run_path(args.run).name):
+                print(status_text(status_state(run_path(args.run))))
         return
     directory = ROOT / 'runs'
     names = [p.name for p in sorted(directory.iterdir()) if p.is_dir() and not p.name.startswith('.')] if directory.exists() else []

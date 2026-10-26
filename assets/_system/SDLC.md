@@ -517,6 +517,11 @@ lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or t
 (`total`, `passed`). An unreadable run instead has `verification_status: "invalid"`,
 `error`, and an empty summary; it does not hide valid runs.
 
+When Git records another checkout on branch `<run>` that holds `runs/<run>`, both status
+forms read that run there, with this checkout's own code, so a stage-3 build's verification
+shows from the main checkout. The run then adds `checkout` (that path), `next_action` starts
+`In <path>:`, and `actions` and `log.path` refer to that checkout.
+
 `status <run> --json` returns `run`:
 
 - `slug`, `run_id`, `meta` (`profile`, `kind`), and `gates` (`stage`, `status`, `blocked`).

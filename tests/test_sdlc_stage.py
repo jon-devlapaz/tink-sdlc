@@ -462,15 +462,31 @@ class WorktreeMode(StageBase):
                                                             'Begin stage 3 (build) of SDLC run `r`.'])
         self.assertEqual(self.git('status', '--porcelain', '--', 'runs/r').stdout, '')
 
-    def test_main_checkout_status_points_to_the_build_worktree(self):
-        # tinkery#433: Watch reads the main checkout, which held no hint of the build checkout.
+    def test_main_checkout_points_to_a_build_worktree_without_the_run(self):
         self.new_run('r')
-        self.stage('r', 3, env=IDENT)
         self.set_checks([PASSING])
+        self.git('worktree', 'add', '-b', 'r', str(self.wt / 'r'), 'HEAD')  # manual checkout; runs/r never committed
         view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
         self.assertEqual(view['next_action'], f"Building in {self.wt / 'r'}; read status there.")
-        inside = json.loads(self.sdlc('status', 'r', '--json', root=self.wt / 'r', cwd=self.wt / 'r').stdout)['run']
-        self.assertNotIn('Building in', inside['next_action'])
+        self.assertNotIn('checkout', view)
+
+    def test_main_checkout_status_reports_the_build_worktree_verification(self):
+        # tinkery#433: Watch reads the main checkout, which said "not verified yet" after verify passed in the build worktree.
+        self.new_run('r')
+        self.stage('r', 3, env=IDENT)
+        worktree = self.wt / 'r'
+        (worktree / '_system/verification.json').write_text(json.dumps({'require_tink': False, 'checks': [PASSING]}))
+        verified = self.sdlc('verify', 'r', root=worktree, cwd=worktree)
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual((view['verification_status'], view['checkout']), ('current', str(worktree)))
+        self.assertTrue(view['next_action'].startswith(f'In {worktree}: '), view['next_action'])
+        listed = json.loads(self.sdlc('status', '--json').stdout)['runs']
+        self.assertEqual([(run['slug'], run['verification_status']) for run in listed], [('r', 'current')])
+        self.assertIn('Verification: current', self.sdlc('status', 'r').stdout)
+        inside = json.loads(self.sdlc('status', 'r', '--json', root=worktree, cwd=worktree).stdout)['run']
+        self.assertNotIn('checkout', inside)
+        self.assertFalse(inside['next_action'].startswith('In '))
 
     def test_walk_lint_still_passes_after_a_launch(self):
         self.new_run('r')
