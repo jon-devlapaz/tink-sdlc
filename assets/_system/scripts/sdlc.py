@@ -185,6 +185,15 @@ def is_seed_check(item):
     return item.get('origin') in ('operator-confirmed-seed', 'agent-confirmed-seed')
 
 
+def unproven_goal(items):
+    """Says so when every seed check is still provisional: verify may pass, yet nothing proves the goal."""
+    seeds = [item for item in items or [] if is_seed_check(item)]
+    if seeds and all(item.get('pending') for item in seeds):
+        return ('Nothing proves the confirmed goal yet: '
+                + '; '.join(f"{item['id']} is provisional (awaiting {item['prerequisite']})" for item in seeds) + '.')
+    return None
+
+
 def record_definitions(records, confirmer='operator'):
     """Tinkery owns validation and rendering; preserve each validated record verbatim."""
     return {'schema': 1, 'items': [
@@ -852,6 +861,8 @@ def verify(args):
         confirmer = 'agent' if any(item.get('origin') == 'agent-confirmed-seed' for item in items) else 'operator'
         print(f'Seed checks ({confirmer}-confirmed): ' + ', '.join(f'{name}: {state}' for name, state in seed_results.items()))
         print('Worker-written checks: passed (supporting evidence only).')
+        if unproven := unproven_goal(items):
+            print(unproven)
     print('Configured checks passed for the recorded candidate. Human release review remains required.')
 
 
@@ -985,7 +996,9 @@ def checklist_text(view):
     items = view['items']
     passed = sum(item['status'] == 'passed' for item in items)
     proven = sum(item['automatic'] for item in items)
-    lines = [f'Checklist: {passed}/{len(items)} passed ({proven} with a check, {len(items) - proven} attested)']
+    provisional = sum(bool(item.get('pending')) for item in items)
+    lines = [f'Checklist: {passed}/{len(items)} passed ({proven} with a check, {len(items) - proven - provisional} attested'
+             + (f', {provisional} provisional)' if provisional else ')')]
     for item in items:
         if item['status'] != 'passed':
             suffix = (' (provisional; awaiting prerequisite and reviewed activation)' if item.get('pending') else
@@ -1136,7 +1149,8 @@ def status_state(path):
     checks = (config['checks'] if config else []) + [i['check'] for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
     next_action = unavailable or (errors[0] if errors else '') or {
-        'current': 'independent PR review and release checks.',
+        'current': (f'{unproven} Then independent PR review and release checks.'
+                    if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
         'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',
