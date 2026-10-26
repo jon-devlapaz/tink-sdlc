@@ -5,7 +5,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from test_sdlc_stage import StageBase, PYTHON
+from test_sdlc_stage import StageBase, PYTHON, IDENT
 
 
 # A stand-in for Claude Code: records argv and environment, answers `auth status`, prints the
@@ -18,6 +18,9 @@ argv = sys.argv[1:]
 with open(os.environ['FAKE_CLAUDE_LOG'], 'a') as log:
     log.write(json.dumps({{'argv': argv, 'env': {{k: v for k, v in os.environ.items()
                            if k.startswith(('CLAUDE', 'TINK'))}}}}) + '\\n')
+if argv == ['--help']:
+    print('Usage: claude' + ('' if os.environ.get('FAKE_CLAUDE_OLD') else ' --restricted'))
+    raise SystemExit(0)
 if argv[:2] == ['auth', 'status']:
     print(json.dumps({{'loggedIn': not os.environ.get('FAKE_CLAUDE_SIGNED_OUT'), 'authMethod': 'claude.ai'}}))
     raise SystemExit(0)
@@ -145,8 +148,15 @@ class ClaudeLauncherTests(StageBase):
             self.assertEqual(argv[argv.index('--permission-mode') + 1], 'acceptEdits')
             self.assertEqual(argv[argv.index('--permission-prompts') + 1], 'none')
             self.assertEqual(argv[argv.index('--tools') + 1], 'Read,Glob,Grep,Edit,Write,Bash')
-            allowed = argv[argv.index('--allowedTools') + 1:argv.index('--output-format')]
+            allowed = argv[argv.index('--allowedTools') + 1:argv.index('--disallowedTools')]
             self.assertEqual(allowed, ['Read', 'Glob', 'Grep', 'Edit', 'Write', "Bash(python3 -c pass)"])
+            self.assertIn('--restricted', argv)
+            self.assertIn('--strict-mcp-config', argv)
+            self.assertEqual(argv[argv.index('--add-dir') + 1], str(self.report.parent))
+            denied = argv[argv.index('--disallowedTools') + 1:argv.index('--output-format')]
+            self.assertEqual(denied, ['Edit(./runs/*/steps/**)', 'Write(./runs/*/steps/**)',
+                                      'Edit(./_system/**)', 'Write(./_system/**)'])
+            self.assertEqual(record['env'].get('CLAUDE_CODE_DISABLE_AUTO_MEMORY'), '1')
             self.assertNotIn('--fallback-model', argv)
             self.assertNotIn('--fork-session', argv)
             self.assertEqual(record['env'].get('TINK_SDLC_STEP_SESSION'), '1')
@@ -164,23 +174,36 @@ class ClaudeLauncherTests(StageBase):
         self.step('build', 'complete')
         self.assertEqual(self.contract()['state'], 'completed')
 
+    def commit_policy(self, checks):
+        (self.root / '_system/verification.json').write_text(json.dumps({'require_tink': False, 'checks': checks}))
+        self.git('commit', '-qam', 'TEST policy', env=IDENT)
+
     def test_only_the_runs_own_checks_are_allowlisted_and_unsafe_ones_refuse(self):
-        policy = self.root / '_system/verification.json'
-        policy.write_text(json.dumps({'require_tink': False, 'checks': [
-            {'argv': ['python3', '-m', 'unittest', 'discover'], 'timeout_seconds': 60}]}))
+        self.commit_policy([{'argv': ['python3', '-m', 'unittest', 'discover'], 'timeout_seconds': 60}])
         self.prepare()
         self.launch()
         argv = self.runs()[0]['argv']
-        self.assertEqual(argv[argv.index('--allowedTools') + 1:argv.index('--output-format')],
+        self.assertEqual(argv[argv.index('--allowedTools') + 1:argv.index('--disallowedTools')],
                          ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash(python3 -m unittest discover)',
                           'Bash(python3 -c pass)'])
-        policy.write_text(json.dumps({'require_tink': False, 'checks': [
-            {'argv': ['sh', '-c', 'echo (x)'], 'timeout_seconds': 60}]}))
+        self.commit_policy([{'argv': ['sh', '-c', 'echo (x)'], 'timeout_seconds': 60}])
         self.prepare('build2')
         self.step('build2', 'launch', ok=False)
         self.assertEqual(self.contract('build2')['state'], 'prepared')
         self.assertIn('cannot be allowlisted', self.resolve().stderr)
         self.assertEqual(len(self.runs()), 1)
+
+    def test_a_builder_editing_the_policy_cannot_widen_its_commands_on_resume(self):
+        self.prepare()
+        self.launch()
+        # The builder may edit files: a new check in the working copy must not reach the allowlist.
+        (self.root / '_system/verification.json').write_text(json.dumps({'require_tink': False, 'checks': [
+            {'argv': ['curl', 'TEST-elsewhere'], 'timeout_seconds': 5}]}))
+        result = self.step('build', 'resume', ok=False)
+        self.assertIn('Adapter said: claude-launcher:', result.stderr)
+        self.assertIn('differs from the committed policy', result.stderr)
+        self.assertEqual(len(self.runs()), 1)
+        self.assertEqual(self.contract()['state'], 'active')
 
     def test_completion_waits_for_a_finished_pinned_turn_and_resume_can_finish_it(self):
         self.prepare()
@@ -249,9 +272,11 @@ class ClaudeLauncherTests(StageBase):
                 self.assertEqual(self.contract(f'build{index}')['state'], 'prepared', result.stderr)
                 self.assertIn(reason, self.resolve(pin).stderr)
         self.assertIn('not signed in', self.resolve(env={'FAKE_CLAUDE_SIGNED_OUT': '1'}).stderr)
+        self.assertIn('no --restricted mode', self.resolve(env={'FAKE_CLAUDE_OLD': '1'}).stderr)
         self.assertIn('fallback', self.resolve(env={'ANTHROPIC_FALLBACK_MODEL': 'x'}).stderr)
+        # User and checkout settings are never loaded, so a fallback there cannot apply.
         (self.config / 'settings.json').write_text(json.dumps({'fallbackModel': 'claude-haiku-5-5'}))
-        self.assertIn('fallback', self.resolve().stderr)
+        self.assertEqual(self.resolve().returncode, 0)
         self.assertEqual(self.runs(), [])
 
     def test_resolve_opens_no_connection_and_runs_only_auth_status(self):
@@ -268,7 +293,15 @@ class ClaudeLauncherTests(StageBase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {'protocol': 'tink-sdlc-launcher', 'api_version': 1,
                                                       'operation': 'launch', 'model': PIN})
-        self.assertEqual([r['argv'] for r in self.records()], [['auth', 'status']])
+        self.assertEqual([r['argv'] for r in self.records()], [['--help'], ['auth', 'status']])
+
+    def test_an_uncommitted_policy_refuses_before_claude_starts(self):
+        self.prepare()
+        (self.root / '_system/verification.json').write_text('{"require_tink": false, "checks": []}\n ')
+        self.step('build', 'launch', ok=False)
+        self.assertEqual(self.contract()['state'], 'prepared')
+        self.assertIn('differs from the committed policy', self.resolve().stderr)
+        self.assertEqual(self.runs(), [])
 
     def test_missing_or_foreign_sessions_are_refused_not_replaced(self):
         self.prepare()
