@@ -126,6 +126,27 @@ class SeedChecks(StageBase):
         result = self.sdlc('verify', 'r')
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_a_passing_verify_with_only_provisional_seed_checks_says_nothing_proves_the_goal(self):
+        warning = 'Nothing proves the confirmed goal yet: seed-1 is provisional (awaiting executable exists).'
+        self.bind([provisional('./future')])
+        self.approve_all()
+        result = self.sdlc('verify', 'r')
+        self.assertEqual(result.returncode, 0, result.stderr)  # Provisional checks stay nonblocking (SDLC.md).
+        self.assertIn(warning, result.stdout)
+        view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertTrue(view['next_action'].startswith(warning), view['next_action'])
+        self.assertIn('0 attested, 1 provisional)', self.sdlc('status', 'r').stdout)
+
+    def test_one_proven_seed_check_is_proof_of_the_goal(self):
+        self.bind([command('test -f accepted')])
+        (self.root / 'accepted').touch()
+        self.approve_all()
+        result = self.sdlc('verify', 'r')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('Nothing proves', result.stdout)
+        view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(view['next_action'], 'independent PR review and release checks.')
+
     def test_provisional_activation_requires_evidence_and_renewed_review(self):
         self.bind([provisional('./future')])
         self.approve_all()
