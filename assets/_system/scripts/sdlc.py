@@ -1140,7 +1140,8 @@ def status_state(path):
         'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',
-    }.get(state, 'implement the approved brief, then run verification.')
+    }.get(state, (f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
+                  if meta.get('seed_contract') else 'implement the approved brief, then run verification.'))
     bound = meta.get('seed_contract')
     seed_contract = {key: bound[key] for key in ('path', 'sha256', 'source')} if bound is not None else None
     if bound is not None and bound.get('confirmation', {}).get('schema_version') == 3:

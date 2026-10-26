@@ -63,6 +63,19 @@ class TinkeryIntake(StageBase):
         self.assertEqual([{key: item[key] for key in record} for record, item in zip(records, items)], records)
         self.assertTrue(all(item['locked'] is True for item in items))
 
+    def test_seed_bound_next_action_names_the_confirmed_seed_not_a_blank_brief(self):
+        # #116: Approve's exact intake approves stage 3 while brief.md is still the template.
+        self.set_checks([PASSING])
+        self.assertEqual(self.sdlc('new', 'fresh').returncode, 0)
+        self.stage('fresh', 1, '--seed-contract', str(self.seed), '--tinkery', str(self.verifier()))
+        view = json.loads(self.sdlc('status', 'fresh', '--json').stdout)['run']
+        self.assertEqual(view['gates'][-1]['status'], 'approved')
+        self.assertEqual(view['next_action'],
+                         'implement the confirmed seed (runs/fresh/seed-contract.md), then run verification.')
+        text = self.sdlc('status', 'fresh').stdout
+        self.assertIn(f"Next: {view['next_action']}", text)
+        self.assertNotIn('approved brief', text)
+
     def test_missing_nonexecutable_directory_and_bad_executable_refuse(self):
         unavailable = self.base / 'TEST-missing'
         self.refuse(unavailable, 'Tinkery executable is unavailable')

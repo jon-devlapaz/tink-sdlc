@@ -1,6 +1,7 @@
 # Stage 03: Implement
 
-Inputs: current approved spec for full runs, or combined brief for light runs.
+Inputs: current approved spec for full runs, or combined brief for light runs. A seed-bound run's
+confirmed `seed-contract.md` and locked checks define it; its `brief.md` may stay the template.
 Output: `runs/<slug>/03-build/output/plan.md` for full runs, the approved checklist definitions
 in `runs/<slug>/checklist.json` for both profiles, and code in an isolated worktree/clone.
 Items should carry a `check` whenever an automated proof exists; `verify` runs it and no mark is needed.
