@@ -400,16 +400,21 @@ pi-herdr 0.6.0's `herdr_resume_agent` re-derives the model without the spawn-lev
 
 - The model must be on the adapter's reviewed list of exact IDs; aliases such as `sonnet`
   are refused. Effort is one of `low`, `medium`, `high`, `xhigh`, `max`, passed as `--effort`.
-- `resolve` makes no model request: it reads local settings and runs only
+- `resolve` makes no model request: it reads local files and runs only `git show` and
   `claude auth status`. Claude Code keeps no local model catalog, so it cannot confirm
   that the account can use the pin; a pin Claude Code rejects fails at launch.
-  A fallback model named in user, checkout or managed settings, or in an `ANTHROPIC_*` or
-  `CLAUDE_*` environment variable, is refused.
+  A fallback model named in managed settings, or in an `ANTHROPIC_*` or `CLAUDE_*`
+  environment variable, is refused.
 - The builder may edit files and read the checkout. Bash runs only the run's own check
-  commands (`_system/verification.json`, `checklist.json` and `seed-checks.json`), each
-  allowed exactly as written; anything else is refused without a prompt
-  (`--permission-mode acceptEdits --permission-prompts none`). A check with parentheses or a
-  newline cannot be allowlisted exactly and refuses the step.
+  commands, each allowed exactly as written; anything else is refused without a prompt
+  (`--permission-mode acceptEdits --permission-prompts none`). The commands come from the
+  committed `_system/verification.json` (an uncommitted edit refuses launch and resume) and
+  the run's `checklist.json` and `seed-checks.json`, which the definition gate holds. A check
+  with parentheses or a newline cannot be allowlisted exactly and refuses the step.
+- User and checkout settings and MCP servers are never loaded (`--setting-sources ""
+  --strict-mcp-config`), so settings, hooks or servers a builder writes cannot widen what it
+  may run on resume. Edits and allowed checks together still run any code the builder
+  wrote: review the diff, not just the report.
 - The child runs with stdin closed, without the caller's `CLAUDE*` session variables
   (`CLAUDE_CONFIG_DIR` is kept), with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` so no
   side request runs on another model, and with `TINK_SDLC_STEP_SESSION=1`.

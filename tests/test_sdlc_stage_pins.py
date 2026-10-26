@@ -86,7 +86,7 @@ class StagePinTests(unittest.TestCase):
         files = json.loads((ASSETS / 'manifest.json').read_text())['files']
         for name in STAGES.values():
             self.assertIn(f'.tink/skillsets/{name}.json', files)
-        self.assertEqual(json.loads((ASSETS / 'manifest.json').read_text())['version'], '1.44.0')
+        self.assertEqual(json.loads((ASSETS / 'manifest.json').read_text())['version'], '1.44.1')
 
     def test_no_gitignore_hides_pins(self):
         self.assertFalse(list(ASSETS.rglob('.gitignore')))
@@ -158,7 +158,8 @@ class StagePinTests(unittest.TestCase):
             text = path.read_text(errors='ignore')
             for needle in banned:
                 with self.subTest(path=str(path.relative_to(ROOT)), needle=needle):
-                    self.assertNotIn(needle, text)
+                    # Whole flags only: Claude Code's --strict-mcp-config is not the removed --strict.
+                    self.assertIsNone(re.search(re.escape(needle) + r'(?![\w-])', text))
 
     def test_maintain_marked_optional(self):
         text = (ASSETS / 'stages/06-maintain/CONTEXT.md').read_text()

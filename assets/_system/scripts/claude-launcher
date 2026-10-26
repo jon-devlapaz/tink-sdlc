@@ -3,15 +3,19 @@
 
 Promises: every launch and resume passes the step pin to Claude Code explicitly as
 --model model-id --effort level, with edits plus a tool allowlist (the run's own check
-commands) and no permission prompts; the child gets a clean environment without the
-caller's Claude Code session variables, with non-essential traffic off and
-TINK_SDLC_STEP_SESSION set; resolve makes no model request (it reads local files and
-runs only `claude auth status`); resume refuses a session whose last answer was on
-another model, and a run that starts on another model is stopped; finished reads only
-local files and reports true only when the newest turn ended normally on the pin.
+commands, from the committed policy and the approved run definition) and no permission
+prompts; it loads no user or checkout settings and no MCP servers, so a builder's edits
+never add commands it may run (an allowed check still runs whatever code the builder
+edited). The child gets a clean environment without the caller's Claude Code session
+variables, with non-essential traffic off and TINK_SDLC_STEP_SESSION set. resolve makes
+no model request (it reads local files and runs only `git show` and `claude auth
+status`); resume refuses a session whose last answer was on another model, and a run
+that starts on another model is stopped; finished reads only local files and reports true
+only when the newest turn ended normally on the pin.
 Refuses: pins without an explicit effort, models outside the reviewed allowlist (so
-aliases never resolve), a signed-out Claude Code, settings or environment that name a
-fallback model, missing sessions, and sessions recorded in another checkout.
+aliases never resolve), a signed-out Claude Code, managed settings or environment that
+name a fallback model, an uncommitted verification policy, missing sessions, and
+sessions recorded in another checkout.
 Claude Code cannot confirm offline that the account can use a model; a pin it rejects
 fails at launch.
 """
@@ -93,14 +97,13 @@ def check_auth():
         raise Refusal('Claude Code is not signed in; run `claude auth login` yourself.')
 
 
-def check_no_fallback(checkout):
-    """A fallback model would answer off the pin without the caller asking."""
+def check_no_fallback():
+    """A fallback model would answer off the pin without the caller asking. User and checkout
+    settings are never loaded (--setting-sources ""); managed settings and the environment are."""
     named = [key for key in os.environ if 'FALLBACK' in key.upper() and key.upper().startswith(('ANTHROPIC', 'CLAUDE'))]
-    places = [config_dir() / 'settings.json', checkout / '.claude/settings.json',
-              checkout / '.claude/settings.local.json', *MANAGED_SETTINGS]
-    for path in places:
+    for path in MANAGED_SETTINGS:
         if path.is_file():
-            settings = read_json(path, 'Claude Code settings')
+            settings = read_json(path, 'Claude Code managed settings')
             env = settings.get('env') if isinstance(settings, dict) else None
             keys = list(settings) + (list(env) if isinstance(env, dict) else []) if isinstance(settings, dict) else []
             named += [f'{path}: {key}' for key in keys if 'fallback' in key.lower()]
@@ -199,7 +202,7 @@ def resolve(args, operation):
     if not Path(args.report).is_absolute():
         raise Refusal('Report path must be absolute.')
     checkout = checkout_of(args.contract)
-    check_no_fallback(checkout)
+    check_no_fallback()
     path = retained_session(args, model_id) if operation == 'resume' else None
     run_dir, inputs = run_files(args)
     commands = allowed_commands(checkout, run_dir)
@@ -218,9 +221,30 @@ def run_files(args):
     raise Refusal('Run profile must be light or full.')
 
 
+def committed_policy(checkout):
+    """The verification policy as committed: the builder can edit the working copy, and an edit
+    must never widen what a resumed builder may run."""
+    path = checkout / '_system/verification.json'
+    try:
+        committed = subprocess.run(['git', 'show', 'HEAD:_system/verification.json'], cwd=checkout,
+                                   capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+        current = path.read_bytes()
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise Refusal(f'Cannot read the committed verification policy: {error}') from None
+    if committed.returncode != 0:
+        raise Refusal('The verification policy is not committed; commit it before a Claude Code step.')
+    if committed.stdout != current:
+        raise Refusal(f'{path} differs from the committed policy; restore or commit it before launching or resuming.')
+    try:
+        return json.loads(current)
+    except ValueError as error:
+        raise Refusal(f'The verification policy is unreadable: {error}') from None
+
+
 def allowed_commands(checkout, run_dir):
-    """The run's own check commands, each allowed only as written."""
-    checks = list(read_json(checkout / '_system/verification.json', 'Verification policy').get('checks') or [])
+    """The run's own check commands, each allowed only as written. checklist.json and
+    seed-checks.json are held by the definition gate that launch and resume recheck."""
+    checks = list(committed_policy(checkout).get('checks') or [])
     for name in ('checklist.json', 'seed-checks.json'):
         if (run_dir / name).is_file():
             checks += [item['check'] for item in read_json(run_dir / name, name).get('items') or []
@@ -290,6 +314,7 @@ def admit(args, operation):
         before = len(entries(retained))
     allowed = [tool for tool in TOOLS if tool != 'Bash'] + [f'Bash({command})' for command in commands]
     argv = [claude_command(), '-p', *target, '--model', model_id, '--effort', effort,
+            '--setting-sources', '', '--strict-mcp-config',
             '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
             '--tools', ','.join(TOOLS), '--allowedTools', *allowed,
             '--output-format', 'stream-json', '--verbose', '--', prompt(args, checkout, inputs)]
