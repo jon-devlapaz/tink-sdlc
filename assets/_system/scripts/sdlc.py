@@ -2093,7 +2093,9 @@ def step_adapter(record, operation, contract, resolve=False):
     offline = resolve or operation == 'finished'
     result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, timeout=15 if offline else 60)
     if result.returncode:
-        raise ValueError(f'Step adapter {argv[1]} failed (exit {result.returncode}); inspect the adapter/session before retrying.')
+        reason = next((line.strip() for line in reversed(result.stderr.splitlines()) if line.strip()), '')[:300]
+        raise ValueError(f'Step adapter {argv[1]} failed (exit {result.returncode}); inspect the adapter/session before retrying.'
+                         + (f' Adapter said: {reason}' if reason else ''))
     reply = json.loads(result.stdout)
     if (not isinstance(reply, dict) or reply.get('protocol') != 'tink-sdlc-launcher'
             or type(reply.get('api_version')) is not int or reply['api_version'] != 1
