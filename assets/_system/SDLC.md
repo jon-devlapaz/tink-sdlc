@@ -391,6 +391,38 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
 pi-herdr 0.6.0's `herdr_resume_agent` re-derives the model without the spawn-level pin
 (it falls back to the parent's model), so do not resume pinned steps through it.
 
+### Bundled Claude Code adapter
+
+`_system/scripts/claude-launcher` runs headless Claude Code (`claude` on PATH;
+`TINK_SDLC_CLAUDE` names another executable). Prepare with
+`--launcher <checkout>/_system/scripts/claude-launcher` and a pin
+`anthropic/<model-id>:<effort>`, such as `anthropic/claude-sonnet-5-5:low`.
+
+- The model must be on the adapter's reviewed list of exact IDs; aliases such as `sonnet`
+  are refused. Effort is one of `low`, `medium`, `high`, `xhigh`, `max`, passed as `--effort`.
+- `resolve` makes no model request: it reads local settings and runs only
+  `claude auth status`. Claude Code keeps no local model catalog, so it cannot confirm
+  that the account can use the pin; a pin Claude Code rejects fails at launch.
+  A fallback model named in user, checkout or managed settings, or in an `ANTHROPIC_*` or
+  `CLAUDE_*` environment variable, is refused.
+- The builder may edit files and read the checkout. Bash runs only the run's own check
+  commands (`_system/verification.json`, `checklist.json` and `seed-checks.json`), each
+  allowed exactly as written; anything else is refused without a prompt
+  (`--permission-mode acceptEdits --permission-prompts none`). A check with parentheses or a
+  newline cannot be allowlisted exactly and refuses the step.
+- The child runs with stdin closed, without the caller's `CLAUDE*` session variables
+  (`CLAUDE_CONFIG_DIR` is kept), with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` so no
+  side request runs on another model, and with `TINK_SDLC_STEP_SESSION=1`.
+- Launch passes a new `--session-id`; admission waits until Claude Code's start event names
+  the pin and the prompt is recorded. A start on another model stops the run.
+  Output goes to `runs/<run>/steps/<name>.<op>-<time>.claude.log`.
+- Resume passes `--resume` with the same ID. It refuses a missing session, one recorded in
+  another checkout, or one whose last real answer was on another model.
+- `finished` reads only the transcript in `$CLAUDE_CONFIG_DIR/projects` (default
+  `~/.claude/projects`): the newest turn on the active branch must be an answer on the pin
+  with stop reason `end_turn`. Error entries (`<synthetic>` model, `isApiErrorMessage`), such as
+  a usage limit, are not finished; Claude Code's own result may still say `success` then.
+
 ### What Herdr resume would need
 
 A Herdr adapter must read the retained session's effective provider/model offline,
