@@ -1,5 +1,5 @@
 {
-  "version": "1.44.1",
+  "version": "1.44.2",
   "files": {
     ".tink/skillsets/build-skillset.json": "8e4b6397b31e9d830a7baa6d887891505d1b3354a3482ef2c9a876dbdb291445",
     ".tink/skillsets/deployment-skillset.json": "9a89b7593f86f593afe3d81878d97b14ee0143d734eeb4fd0adca6ef8f7a6732",
@@ -15,11 +15,11 @@
     "_system/SDLC.md": "3e4d9a4c8218d08cab122e78f64749066c42e28ca6e4621eeca88a3fce9c2019",
     "_system/scripts/claude-launcher": "701472af446c87e2c47b019b76a4c41bcb96fd1ff4268b83aaee3bcaae56a69b",
     "_system/scripts/pi-launcher": "10810f90039fadec7fa12dc0b16ddfb1e7d9736813551971ed71ff2eabb71253",
-    "_system/scripts/sdlc.py": "58a356f63f3143a8ca95a6e419363f5eb3788b2a11e49ca78b3004906ee0457c",
+    "_system/scripts/sdlc.py": "647a2e8591c2f688eb8f208627337c2e6e523b471c2883bc0142ed33033c32ca",
     "_system/verification.json": "1308d67c7c43c1a8f5c90cde99a69e217a7fa7c553cece572ecf3228b50fa937",
     "stages/01-plan/CONTEXT.md": "a2bb0ea20740f8d2debf7d7c3b4e09107fa49e50f7b06e86c0383a24a485540c",
     "stages/02-design/CONTEXT.md": "c23139482f386045b6a40d8efd3211e3a558393a2cfd21d4b3beb8f519182f94",
-    "stages/03-build/CONTEXT.md": "a62e31e5f8043032ce7fb3b15f402616d53935b576446d16e5e1bae1a0a847c9",
+    "stages/03-build/CONTEXT.md": "38a76ef71cb05f724bc6ac30a3267d1bf028fde526f53e05da059e4836752341",
     "stages/04-test/CONTEXT.md": "89a63674744da145cd265c39aeb34bd464c803aa3918f2d079c4edc6d23462b3",
     "stages/05-deploy/CONTEXT.md": "0dea5dde8990742fbf8fac1a7b52988a2fc2cf6fb90d98c2cf3e996facabde9d",
     "stages/06-maintain/CONTEXT.md": "362467f65f8b8ee3fb1e51af6feac74b299af88f908f936a1fec2ddca82ee844"
