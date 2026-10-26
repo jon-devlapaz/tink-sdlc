@@ -360,6 +360,8 @@ class HereMode(StageBase):
         self.assertIn(f'Checkout: {self.root}', out)
         self.assertEqual(self.tink_calls(), [f'{self.root}|use build-skillset --snapshot runs/r/03-build'])
         self.assertEqual(self.git('worktree', 'list').stdout.count('\n'), 1)
+        self.set_checks([PASSING])
+        self.assertNotIn('Building in', json.loads(self.sdlc('status', 'r', '--json').stdout)['run']['next_action'])
 
     def test_idempotent_rerun(self):
         self.new_run('r')
@@ -459,6 +461,16 @@ class WorktreeMode(StageBase):
         self.assertEqual(result.stdout.splitlines()[-3:], [f'Checkout: {worktree}', 'Launch prompt (start a NEW session there):',
                                                             'Begin stage 3 (build) of SDLC run `r`.'])
         self.assertEqual(self.git('status', '--porcelain', '--', 'runs/r').stdout, '')
+
+    def test_main_checkout_status_points_to_the_build_worktree(self):
+        # tinkery#433: Watch reads the main checkout, which held no hint of the build checkout.
+        self.new_run('r')
+        self.stage('r', 3, env=IDENT)
+        self.set_checks([PASSING])
+        view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(view['next_action'], f"Building in {self.wt / 'r'}; read status there.")
+        inside = json.loads(self.sdlc('status', 'r', '--json', root=self.wt / 'r', cwd=self.wt / 'r').stdout)['run']
+        self.assertNotIn('Building in', inside['next_action'])
 
     def test_walk_lint_still_passes_after_a_launch(self):
         self.new_run('r')

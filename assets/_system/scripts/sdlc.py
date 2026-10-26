@@ -1054,6 +1054,16 @@ def failed_reason(path, record):
     return str(record.get('error', 'Verification failed. Inspect the log, then rerun it.'))
 
 
+def build_checkout(run):
+    """The other checkout Git records on branch `run`, where its build evidence lives; None if there is none."""
+    listed = run_git(ROOT, 'worktree', 'list', '--porcelain')
+    for block in listed.stdout.split('\n\n') if listed.returncode == 0 else []:
+        fields = dict(line.split(' ', 1) for line in block.splitlines() if ' ' in line)
+        if fields.get('branch') == f'refs/heads/{run}' and Path(fields['worktree']).resolve() != ROOT.resolve():
+            return fields['worktree']
+    return None
+
+
 def status_state(path):
     """One calculation for the human CLI and machine clients; never an approval."""
     meta = require_run(path)
@@ -1154,7 +1164,8 @@ def status_state(path):
         'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',
-    }.get(state, (f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
+    }.get(state, (f'Building in {building}; read status there.' if (building := build_checkout(path.name)) else
+                  f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
                   if meta.get('seed_contract') else 'implement the approved brief, then run verification.'))
     bound = meta.get('seed_contract')
     seed_contract = {key: bound[key] for key in ('path', 'sha256', 'source')} if bound is not None else None
