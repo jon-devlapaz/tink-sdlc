@@ -10,7 +10,8 @@ MCP servers or auto memory load, so a builder's edits never add commands it may 
 allowed check still runs whatever code the builder edited, unconfined). The child gets a
 clean environment without the caller's Claude Code session variables, with non-essential
 traffic off and TINK_SDLC_STEP_SESSION set. resolve makes no model request (it reads
-local files and runs only `git show`, `claude --help` and `claude auth status`); resume
+local files and runs only `git show`, `sdlc.py status --json`, `claude --help` and
+`claude auth status`); resume
 refuses a session whose last answer was on another model, and a run that starts on
 another model is stopped; finished reads only local files and reports true only when the
 newest turn ended normally on the pin.
@@ -222,10 +223,11 @@ def resolve(args, operation):
     check_no_fallback()
     path = retained_session(args, model_id) if operation == 'resume' else None
     run_dir, inputs = run_files(args)
-    commands = allowed_commands(checkout, run_dir)
+    items = status_items(checkout, run_dir)
+    commands = allowed_commands(checkout, items)
     check_restricted()
     check_auth()
-    return model_id, effort, path, inputs, commands
+    return model_id, effort, path, inputs, commands, items
 
 
 def run_files(args):
@@ -259,14 +261,37 @@ def committed_policy(checkout):
         raise Refusal(f'The verification policy is unreadable: {error}') from None
 
 
-def allowed_commands(checkout, run_dir):
-    """The run's own check commands, each allowed only as written. checklist.json and
-    seed-checks.json are held by the definition gate that launch and resume recheck."""
+def status_items(checkout, run_dir):
+    """Read the versioned checklist mapping owned by sdlc.py, never the raw records."""
+    try:
+        result = subprocess.run(['python3', str(checkout / '_system/scripts/sdlc.py'),
+                                 'status', run_dir.name, '--json'], cwd=checkout,
+                                capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise Refusal(f'Cannot read sdlc status: {error}') from None
+    if result.returncode != 0:
+        raise Refusal(f'sdlc status exited {result.returncode}: {result.stderr.strip()}')
+    try:
+        reply = json.loads(result.stdout)
+    except ValueError:
+        raise Refusal('sdlc status returned invalid JSON.') from None
+    if (not isinstance(reply, dict) or reply.get('protocol') != 'tink-sdlc'
+            or type(reply.get('api_version')) is not int or reply['api_version'] != 1
+            or not isinstance(reply.get('run'), dict)
+            or not isinstance(reply['run'].get('checklist'), list)):
+        raise Refusal('sdlc status must return tink-sdlc API version 1 with a run checklist list.')
+    items = reply['run']['checklist']
+    if any(not isinstance(item, dict) or (item.get('pending') is True and
+           not all(isinstance(item.get(key), str) and item[key] for key in ('id', 'prerequisite')))
+           for item in items):
+        raise Refusal('sdlc status returned invalid checklist items.')
+    return items
+
+
+def allowed_commands(checkout, items):
+    """Committed policy first, then the run's status checks, each allowed only as written."""
     checks = list(committed_policy(checkout).get('checks') or [])
-    for name in ('checklist.json', 'seed-checks.json'):
-        if (run_dir / name).is_file():
-            checks += [item['check'] for item in read_json(run_dir / name, name).get('items') or []
-                       if isinstance(item, dict) and isinstance(item.get('check'), dict)]
+    checks += [item['check'] for item in items if 'check' in item]
     commands = []
     for check in checks:
         argv = check.get('argv') if isinstance(check, dict) else None
@@ -280,7 +305,7 @@ def allowed_commands(checkout, run_dir):
     return commands
 
 
-def prompt(args, checkout, inputs, commands):
+def prompt(args, checkout, inputs, commands, items):
     context = checkout / 'stages' / '03-build' / 'CONTEXT.md'
     named_inputs = ', '.join(str(path) for path in inputs)
     shell = ('The following are the only shell commands allowed, in configured order, '
@@ -288,14 +313,12 @@ def prompt(args, checkout, inputs, commands):
              + '\n'.join(f'- {command}' for command in commands) if commands else
              'No shell commands are allowed. Anything else is refused.')
     seed_path = Path(args.contract).resolve().parent.parent / 'seed-checks.json'
-    pending = [item for item in read_json(seed_path, 'seed-checks.json').get('items') or []
-               if isinstance(item, dict) and item.get('kind') == 'provisional'
-               and item.get('activation') is None] if seed_path.is_file() else []
+    pending = [item for item in items if item.get('pending') is True]
     activation = ''
     if pending:
         guide = checkout / '_system' / 'SDLC.md'
         activation = ('\nPending provisional seed checks:\n'
-                      + '\n'.join(f"{item['id']}: prerequisite: {item['missing']}" for item in pending)
+                      + '\n'.join(f"{item['id']}: prerequisite: {item['prerequisite']}" for item in pending)
                       + f'\nOnce the prerequisite exists, propose activation as described in '
                       f'{guide}#seed-definition-comparison: add an activation object to the item in '
                       f'{seed_path} with the real cmd, cwd and prerequisite evidence; keep the original '
@@ -338,7 +361,7 @@ def started_on(log, session_id):
 
 
 def admit(args, operation):
-    model_id, effort, retained, inputs, commands = resolve(args, operation)  # recheck right before any request
+    model_id, effort, retained, inputs, commands, items = resolve(args, operation)  # recheck right before any request
     checkout = checkout_of(args.contract)
     if operation == 'launch':
         session_id = str(uuid.uuid4())
@@ -356,7 +379,7 @@ def admit(args, operation):
             '--restricted', '--strict-mcp-config', '--add-dir', str(Path(args.report).parent),
             '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
             '--tools', ','.join(TOOLS), '--allowedTools', *allowed, '--disallowedTools', *denied,
-            '--output-format', 'stream-json', '--verbose', '--', prompt(args, checkout, inputs, commands)]
+            '--output-format', 'stream-json', '--verbose', '--', prompt(args, checkout, inputs, commands, items)]
     log = Path(args.contract).with_name(f'{Path(args.contract).stem}.{operation}-{int(time.time())}.claude.log')
     env = child_env()
     env['TINK_SDLC_STEP_SESSION'] = '1'
