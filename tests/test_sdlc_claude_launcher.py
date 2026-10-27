@@ -1,6 +1,7 @@
 """The bundled Claude Code launcher adapter, driven through sdlc.py step and its own CLI with a fake Claude Code."""
 import json
 import os
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -219,16 +220,27 @@ class ClaudeLauncherTests(StageBase):
         self.stage('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY))
         target = self.root / 'runs/r/seed-checks.json'
         value = json.loads(target.read_text())
-        value['items'][1]['activation'] = {'cmd': 'true', 'cwd': '.', 'evidence': 'TEST ready'}
+        value['items'][1]['activation'] = {'cmd': 'echo TEST activated', 'cwd': '.', 'evidence': 'TEST ready'}
         target.write_text(json.dumps(value))
         self.decide('r', 3)
+        self.commit_policy([{'argv': ['echo', 'TEST policy'], 'timeout_seconds': 5}])
+        status = json.loads(self.sdlc('status', 'r', '--json').stdout)
+        automatic = [item['check']['argv'] for item in status['run']['checklist'] if 'check' in item]
+        self.assertEqual(automatic[-2:], [['bash', '-c', records[0]['cmd']], ['bash', '-c', 'echo TEST activated']])
+        expected = [shlex.join(['echo', 'TEST policy'])] + [shlex.join(argv) for argv in automatic]
         self.prepare()
         self.launch()
         self.step('build', 'resume')
         self.settle(answers=2)
         self.assertEqual(len(self.runs()), 2)
         for record in self.runs():
-            prompt = record['argv'][-1]
+            argv = record['argv']
+            allowed = argv[argv.index('--allowedTools') + 1:argv.index('--disallowedTools')]
+            self.assertEqual(allowed, ['Read', 'Glob', 'Grep', 'Edit', 'Write'] +
+                             [f'Bash({command})' for command in expected])
+            prompt = argv[-1]
+            self.assertEqual([line[2:] for line in prompt.splitlines() if line.startswith('- ')], expected)
+            self.assertNotIn('false', '\n'.join(allowed))
             self.assertIn('seed-3', prompt)
             self.assertIn(value['items'][2]['missing'], prompt)
             self.assertNotIn('seed-2', prompt)  # Already activated, not pending.
@@ -250,6 +262,69 @@ class ClaudeLauncherTests(StageBase):
         context = (self.root / 'stages/03-build/CONTEXT.md').read_text()
         self.assertIn('[provisional activation step](../../_system/SDLC.md#seed-definition-comparison)', context)
         self.assertIn('operator stage-3 approval', context)
+
+    def test_status_is_read_only_under_the_step_recursion_guard(self):
+        self.prepare()
+        result = self.sdlc('status', 'r', '--json', env={'TINK_SDLC_STEP_SESSION': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsInstance(json.loads(result.stdout)['run']['checklist'], list)
+        for action in ('prepare', 'launch', 'resume', 'complete'):
+            with self.subTest(action=action):
+                result = self.step('build', action, ok=False, env={'TINK_SDLC_STEP_SESSION': '1'})
+                self.assertIn('Cannot operate a pinned build step from inside its agent session', result.stderr)
+        self.assertEqual(self.resolve(env={'TINK_SDLC_STEP_SESSION': '1'}).returncode, 0)
+        self.assertEqual(self.runs(), [])
+
+    def stub_status(self, body):
+        (self.root / '_system/scripts/sdlc.py').write_text(
+            'import json, sys, time\n' + body + '\n')
+
+    def test_bad_status_refuses_through_the_public_launcher(self):
+        self.prepare()
+        valid = {'protocol': 'tink-sdlc', 'api_version': 1, 'run': {'checklist': []}}
+        cases = [
+            ('print("not json")', 'invalid JSON'),
+            ('print("[]")', 'API version 1'),
+            ('print(json.dumps(' + repr({**valid, 'run': None}) + '))', 'run checklist list'),
+            ('print(json.dumps(' + repr({**valid, 'protocol': 'other'}) + '))', 'API version 1'),
+            ('print(json.dumps(' + repr({**valid, 'api_version': True}) + '))', 'API version 1'),
+            ('print(json.dumps(' + repr({**valid, 'run': {'checklist': {}}}) + '))', 'checklist list'),
+            ('print(json.dumps(' + repr({**valid, 'run': {'checklist': [None]}}) + '))', 'invalid checklist items'),
+            ('print(json.dumps(' + repr({**valid, 'run': {'checklist': [{'pending': True}]}}) + '))',
+             'invalid checklist items'),
+            ('print("TEST failure", file=sys.stderr); sys.exit(7)', 'exited 7: TEST failure'),
+            ('time.sleep(11)', 'Cannot read sdlc status'),
+        ]
+        for body, reason in cases:
+            with self.subTest(reason=reason, body=body):
+                self.stub_status(body)
+                result = self.resolve()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(reason, result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(self.records(), [])
+
+    def test_one_status_reply_supplies_both_commands_and_pending_prompt(self):
+        self.prepare()
+        log = self.base / 'TEST-status-calls'
+        reply = {'protocol': 'tink-sdlc', 'api_version': 1, 'run': {'checklist': [
+            {'id': 'seed-99', 'pending': True, 'prerequisite': 'TEST public prerequisite'},
+            {'id': 'seed-98', 'check': {'argv': ['bash', '-c', 'echo TEST status']}}]}}
+        self.stub_status('from pathlib import Path\n'
+                         f'assert sys.argv[1:] == ["status", "r", "--json"]\n'
+                         'assert sys.stdin.read() == ""\n'
+                         f'with Path({str(log)!r}).open("a") as log: log.write("status\\n")\n'
+                         f'print(json.dumps({reply!r}))')
+        result = subprocess.run([str(self.adapter), 'launch', '--model', PIN, '--report', str(self.report),
+                                 '--contract', str(self.root / 'runs/r/steps/build.json')],
+                                cwd=self.root, capture_output=True, text=True, env=self.env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(log.read_text(), 'status\n')
+        argv = self.runs()[0]['argv']
+        self.assertIn("Bash(bash -c 'echo TEST status')", argv)
+        self.assertIn("- bash -c 'echo TEST status'", argv[-1])
+        self.assertIn('seed-99: prerequisite: TEST public prerequisite', argv[-1])
+        time.sleep(0.5)  # Let the fake finish writing before its temporary checkout is removed.
 
     def test_only_the_runs_own_checks_are_allowlisted_and_unsafe_ones_refuse(self):
         self.commit_policy([{'argv': ['python3', '-m', 'unittest', 'discover'], 'timeout_seconds': 60}])
