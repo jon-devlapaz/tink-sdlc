@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from test_sdlc_stage import StageBase, PYTHON, IDENT
+from tinkery_fixture import TINKERY, confirmed, command, provisional, DEFAULT
 
 
 # A stand-in for Claude Code: records argv and environment, answers `auth status`, prints the
@@ -177,6 +178,78 @@ class ClaudeLauncherTests(StageBase):
     def commit_policy(self, checks):
         (self.root / '_system/verification.json').write_text(json.dumps({'require_tink': False, 'checks': checks}))
         self.git('commit', '-qam', 'TEST policy', env=IDENT)
+
+    def test_launch_and_resume_name_exact_allowlisted_commands_in_order(self):
+        self.commit_policy([
+            {'argv': ['npm', 'ci'], 'timeout_seconds': 60},
+            {'argv': ['npm', 'run', 'test', '--', 'TEST two words'], 'timeout_seconds': 60},
+        ])
+        self.prepare()
+        self.launch()
+        self.step('build', 'resume')
+        self.settle(answers=2)
+        self.assertEqual(len(self.runs()), 2)
+        for record in self.runs():
+            argv = record['argv']
+            allowed = argv[argv.index('--allowedTools') + 1:argv.index('--disallowedTools')]
+            commands = [entry[5:-1] for entry in allowed if entry.startswith('Bash(')]
+            self.assertEqual(commands, ['npm ci', "npm run test -- 'TEST two words'", 'python3 -c pass'])
+            prompt = argv[-1]
+            self.assertEqual([line[2:] for line in prompt.splitlines() if line.startswith('- ')], commands)
+            self.assertIn('only shell commands allowed', prompt)
+            self.assertIn('setup commands such as installs included', prompt)
+            self.assertIn('Anything else is refused', prompt)
+            self.assertNotIn('provisional', prompt.lower())
+
+    def test_no_checks_means_no_shell_commands_allowed(self):
+        self.commit_policy([])
+        (self.root / 'runs/r/checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+            {'id': 'a', 'description': 'TEST attestation', 'verify': 'TEST observation'}]}))
+        self.decide('r', 3)
+        self.prepare()
+        self.launch()
+        argv = self.runs()[0]['argv']
+        self.assertEqual(argv[argv.index('--allowedTools') + 1:argv.index('--disallowedTools')],
+                         ['Read', 'Glob', 'Grep', 'Edit', 'Write'])
+        self.assertIn('No shell commands are allowed', argv[-1])
+
+    def test_pending_provisional_checks_are_named_on_launch_and_resume(self):
+        records = [command(), provisional(), provisional('false'), {**DEFAULT[0], 'how_to_judge': 'Inspect'}]
+        seed = confirmed(self.base / 'TEST-sessions', records)
+        self.stage('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY))
+        target = self.root / 'runs/r/seed-checks.json'
+        value = json.loads(target.read_text())
+        value['items'][1]['activation'] = {'cmd': 'true', 'cwd': '.', 'evidence': 'TEST ready'}
+        target.write_text(json.dumps(value))
+        self.decide('r', 3)
+        self.prepare()
+        self.launch()
+        self.step('build', 'resume')
+        self.settle(answers=2)
+        self.assertEqual(len(self.runs()), 2)
+        for record in self.runs():
+            prompt = record['argv'][-1]
+            self.assertIn('seed-3', prompt)
+            self.assertIn(value['items'][2]['missing'], prompt)
+            self.assertNotIn('seed-2', prompt)  # Already activated, not pending.
+            self.assertNotIn('seed-1', prompt)
+            self.assertNotIn('seed-4', prompt)
+            self.assertIn(str(self.root / '_system/SDLC.md') + '#seed-definition-comparison', prompt)
+            self.assertIn(str(target), prompt)
+            for instruction in ('Once the prerequisite exists', 'activation', 'cmd', 'cwd', 'evidence',
+                                "operator's stage-3 approval", 'not proof', 'handoff report'):
+                self.assertIn(instruction, prompt)
+        for item in value['items']:
+            if item['kind'] == 'provisional' and 'activation' not in item:
+                item['activation'] = {'cmd': 'true', 'cwd': '.', 'evidence': 'TEST ready'}
+        target.write_text(json.dumps(value))
+        self.decide('r', 3)
+        self.step('build', 'resume')
+        self.settle(answers=3)
+        self.assertNotIn('provisional', self.runs()[-1]['argv'][-1].lower())
+        context = (self.root / 'stages/03-build/CONTEXT.md').read_text()
+        self.assertIn('[provisional activation step](../../_system/SDLC.md#seed-definition-comparison)', context)
+        self.assertIn('operator stage-3 approval', context)
 
     def test_only_the_runs_own_checks_are_allowlisted_and_unsafe_ones_refuse(self):
         self.commit_policy([{'argv': ['python3', '-m', 'unittest', 'discover'], 'timeout_seconds': 60}])

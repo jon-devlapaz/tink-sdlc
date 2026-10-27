@@ -280,15 +280,33 @@ def allowed_commands(checkout, run_dir):
     return commands
 
 
-def prompt(args, checkout, inputs):
+def prompt(args, checkout, inputs, commands):
     context = checkout / 'stages' / '03-build' / 'CONTEXT.md'
     named_inputs = ', '.join(str(path) for path in inputs)
+    shell = ('The following are the only shell commands allowed, in configured order, '
+             'setup commands such as installs included. Anything else is refused:\n'
+             + '\n'.join(f'- {command}' for command in commands) if commands else
+             'No shell commands are allowed. Anything else is refused.')
+    seed_path = Path(args.contract).resolve().parent.parent / 'seed-checks.json'
+    pending = [item for item in read_json(seed_path, 'seed-checks.json').get('items') or []
+               if isinstance(item, dict) and item.get('kind') == 'provisional'
+               and item.get('activation') is None] if seed_path.is_file() else []
+    activation = ''
+    if pending:
+        guide = checkout / '_system' / 'SDLC.md'
+        activation = ('\nPending provisional seed checks:\n'
+                      + '\n'.join(f"{item['id']}: prerequisite: {item['missing']}" for item in pending)
+                      + f'\nOnce the prerequisite exists, propose activation as described in '
+                      f'{guide}#seed-definition-comparison: add an activation object to the item in '
+                      f'{seed_path} with the real cmd, cwd and prerequisite evidence; keep the original '
+                      f'proposal intact. Activation needs the operator\'s stage-3 approval and is not '
+                      f'proof. Mention the activation proposal in your handoff report.')
     return (f'You are the build agent for this run. Implement the approved run work using '
             f'{named_inputs}; read those approved inputs, stage-3 CONTEXT.md at {context}, the '
             f'step contract at {args.contract}, and checkout instructions first. Work only in '
             f'{checkout}. Write your handoff report to exactly {args.report} (absolute path). '
             f'Never run sdlc.py step, stage or decide. Do not change the model or effort. '
-            f'Shell commands other than the run\'s own checks are refused.')
+            f'{shell}{activation}')
 
 
 def stop(process):
@@ -338,7 +356,7 @@ def admit(args, operation):
             '--restricted', '--strict-mcp-config', '--add-dir', str(Path(args.report).parent),
             '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
             '--tools', ','.join(TOOLS), '--allowedTools', *allowed, '--disallowedTools', *denied,
-            '--output-format', 'stream-json', '--verbose', '--', prompt(args, checkout, inputs)]
+            '--output-format', 'stream-json', '--verbose', '--', prompt(args, checkout, inputs, commands)]
     log = Path(args.contract).with_name(f'{Path(args.contract).stem}.{operation}-{int(time.time())}.claude.log')
     env = child_env()
     env['TINK_SDLC_STEP_SESSION'] = '1'
