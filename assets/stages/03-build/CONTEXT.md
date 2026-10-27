@@ -5,6 +5,7 @@ confirmed `seed-contract.md` and locked checks define it; its `brief.md` may sta
 Output: `runs/<slug>/03-build/output/plan.md` for full runs, the approved checklist definitions
 in `runs/<slug>/checklist.json` for both profiles, and code in an isolated worktree/clone.
 Items should carry a `check` whenever an automated proof exists; `verify` runs it and no mark is needed.
+When a pending provisional seed check's prerequisite exists, follow the guide's [provisional activation step](../../_system/SDLC.md#seed-definition-comparison) and surface the proposal for operator stage-3 approval.
 
 Gate: inspect code and follow the stage 3 gate before implementation; for seed-bound
 runs use the guide's [seed definition comparison](../../_system/SDLC.md#seed-definition-comparison).
