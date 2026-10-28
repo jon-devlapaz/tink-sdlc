@@ -93,17 +93,21 @@ original session after intake do not change the run-local snapshot.
 #### Seed definition comparison
 
 Stage 3 compares effective checks with the verified intake baseline. With no
-added, removed or changed checks and no provisional activation, it passes without
-another human question and records `matches confirmed seed (sha256: …)` as evidence,
-not a human decision. Intake saves the automatic binding receipt; read-only status
-also exposes the current comparison evidence. This is structural comparison of
-checks, not a semantic claim about the brief or implementation permission.
+added, removed or changed checks, and no activation other than the confirmed proposal,
+it passes without another human question and records `matches confirmed seed (sha256: …)`
+as evidence, not a human decision. An activation whose `cmd` and `cwd` equal the item's
+proposed `cmd` and `cwd` runs what the operator confirmed, so the evidence adds
+``seed-N activated as confirmed: runs `<cmd>` ``; verify must still run it green.
+Intake saves the automatic binding receipt; read-only status also exposes the current
+comparison evidence. This is structural comparison of checks, not a semantic claim about
+the brief or implementation permission.
 An explicit human `changes-requested` stays blocking across input edits until a
 later actual human decision supersedes it; automatic binding or agent receipts
 cannot clear that rejection.
 
 Any departure blocks automatic passage. Status shows one plain line per changed
-field, removed/added seed check, added worker checklist item or provisional activation,
+field, removed/added seed check, added worker checklist item or provisional activation
+that differs from the proposal (or has none),
 and asks only `Accept these departures from the confirmed seed?`. `decide … 3`
 records the actual human decision bound to those exact inputs; later edits stale it.
 It does not ask the operator to reconfirm unchanged checks in a new representation.
@@ -156,11 +160,14 @@ evidence by adding only this `activation` object to that item in `seed-checks.js
 {"activation": {"cmd": "./real-command", "cwd": ".", "evidence": "Prerequisite exists at <path>; observed <evidence>"}}
 ```
 
-Keep the original proposal intact; activation is surfaced by the comparison above.
+Keep the original proposal intact; the comparison above decides whether the activation
+needs a human. Status lists each pending item's `prerequisite` and, when the seed proposed
+one, `proposed` (`cmd`, `cwd`); both bundled launchers name them in the builder prompt.
 Verify refuses evidence that cites a relative file or `dir/` present in neither the run nor the
 checkout, so save each cited log before verifying. A prose
-prerequisite is not machine-detected: the worker must surface it when it becomes true,
-and the operator reviews the evidence rather than accepting a hidden automatic trigger.
+prerequisite is not machine-detected: the worker must surface it when it becomes true.
+Activating the confirmed proposal proves only through verify's green run; any other command
+waits for the operator to review the evidence rather than a hidden automatic trigger.
 
 Verification logs label seed checks separately; receipts report `seed_checks`
 (`proven`, `attested`, `pending`, or `not-run` on failure) separately from worker

@@ -242,13 +242,14 @@ class ClaudeLauncherTests(StageBase):
             self.assertEqual([line[2:] for line in prompt.splitlines() if line.startswith('- ')], expected)
             self.assertNotIn('false', '\n'.join(allowed))
             self.assertIn('seed-3', prompt)
-            self.assertIn(value['items'][2]['missing'], prompt)
+            self.assertIn(f"seed-3: prerequisite: {value['items'][2]['missing']}; proposed: `false` (cwd: .)", prompt)
             self.assertNotIn('seed-2', prompt)  # Already activated, not pending.
             self.assertNotIn('seed-1', prompt)
             self.assertNotIn('seed-4', prompt)
             self.assertIn(str(self.root / '_system/SDLC.md') + '#seed-definition-comparison', prompt)
             self.assertIn(str(target), prompt)
             for instruction in ('Once the prerequisite exists', 'activation', 'cmd', 'cwd', 'evidence',
+                                'Activating the proposed cmd in its cwd matches the confirmed seed',
                                 "operator's stage-3 approval", 'not proof', 'handoff report'):
                 self.assertIn(instruction, prompt)
         for item in value['items']:

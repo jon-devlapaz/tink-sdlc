@@ -283,6 +283,8 @@ def status_items(checkout, run_dir):
     items = reply['run']['checklist']
     if any(not isinstance(item, dict) or (item.get('pending') is True and
            not all(isinstance(item.get(key), str) and item[key] for key in ('id', 'prerequisite')))
+           or ('proposed' in item and not (isinstance(item['proposed'], dict) and all(
+               isinstance(item['proposed'].get(key), str) and item['proposed'][key] for key in ('cmd', 'cwd'))))
            for item in items):
         raise Refusal('sdlc status returned invalid checklist items.')
     return items
@@ -305,6 +307,12 @@ def allowed_commands(checkout, items):
     return commands
 
 
+def pending_line(item):
+    proposed = item.get('proposed')
+    return (f"{item['id']}: prerequisite: {item['prerequisite']}"
+            + (f"; proposed: `{proposed['cmd']}` (cwd: {proposed['cwd']})" if proposed else ''))
+
+
 def prompt(args, checkout, inputs, commands, items):
     context = checkout / 'stages' / '03-build' / 'CONTEXT.md'
     named_inputs = ', '.join(str(path) for path in inputs)
@@ -318,12 +326,13 @@ def prompt(args, checkout, inputs, commands, items):
     if pending:
         guide = checkout / '_system' / 'SDLC.md'
         activation = ('\nPending provisional seed checks:\n'
-                      + '\n'.join(f"{item['id']}: prerequisite: {item['prerequisite']}" for item in pending)
+                      + '\n'.join(pending_line(item) for item in pending)
                       + f'\nOnce the prerequisite exists, propose activation as described in '
                       f'{guide}#seed-definition-comparison: add an activation object to the item in '
                       f'{seed_path} with the real cmd, cwd and prerequisite evidence; keep the original '
-                      f'proposal intact. Activation needs the operator\'s stage-3 approval and is not '
-                      f'proof. Mention the activation proposal in your handoff report.')
+                      f'proposal intact. Activating the proposed cmd in its cwd matches the confirmed seed; '
+                      f'any other command needs the operator\'s stage-3 approval. Activation is not proof: '
+                      f'verify must run it green. Mention the activation in your handoff report.')
     return (f'You are the build agent for this run. Implement the approved run work using '
             f'{named_inputs}; read those approved inputs, stage-3 CONTEXT.md at {context}, the '
             f'step contract at {args.contract}, and checkout instructions first. Work only in '
