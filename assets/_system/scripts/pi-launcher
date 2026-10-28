@@ -6,7 +6,7 @@ Promises: every launch and resume passes the step pin to Pi explicitly as
 never starts Pi or opens a connection; resume refuses a session whose recorded
 model differs from the pin, stops a resumed run that answers on another model within
 the admission window, and admits one still thinking once its new prompt is recorded
-on the pin;
+on the pin; the builder prompt names pending provisional seed checks from sdlc status;
 finished reads only local files and reports true only when the newest turn ended
 normally on the pin.
 Refuses: pins without an explicit thinking level, models absent from Pi's local
@@ -203,11 +203,60 @@ def prompt(args, operation, checkout):
         raise Refusal('Run profile must be light or full.')
     context = checkout / 'stages' / '03-build' / 'CONTEXT.md'
     named_inputs = ', '.join(str(path) for path in inputs)
+    pending = pending_checks(checkout, run_dir)
+    activation = ''
+    if pending:
+        guide = checkout / '_system' / 'SDLC.md'
+        activation = ('\nPending provisional seed checks:\n'
+                      + '\n'.join(pending_line(item) for item in pending)
+                      + f'\nOnce the prerequisite exists, propose activation as described in '
+                      f'{guide}#seed-definition-comparison: add an activation object to the item in '
+                      f'{run_dir / "seed-checks.json"} with the real cmd, cwd and prerequisite evidence; keep '
+                      f'the original proposal intact. Activating the proposed cmd in its cwd matches the '
+                      f'confirmed seed; any other command needs the operator\'s stage-3 approval. Activation '
+                      f'is not proof: verify must run it green. Mention the activation in your handoff report.')
     return (f'You are the build agent for this run. Implement the approved run work using '
             f'{named_inputs}; read those approved inputs, stage-3 CONTEXT.md at {context}, the '
             f'step contract at {args.contract}, and checkout instructions first. Work only in '
             f'{checkout}. Write your handoff report to exactly {args.report} (absolute path). '
-            f'Never run sdlc.py step, stage or decide. Do not change the model or thinking level.')
+            f'Never run sdlc.py step, stage or decide. Do not change the model or thinking level.'
+            f'{activation}')
+
+
+def pending_checks(checkout, run_dir):
+    """Pending provisional seed checks from the versioned status owned by sdlc.py, never the raw records.
+    The adapter is hash-checked alone, so it reads status itself rather than sharing code."""
+    try:
+        result = subprocess.run(['python3', str(checkout / '_system/scripts/sdlc.py'),
+                                 'status', run_dir.name, '--json'], cwd=checkout,
+                                capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise Refusal(f'Cannot read sdlc status: {error}') from None
+    if result.returncode != 0:
+        raise Refusal(f'sdlc status exited {result.returncode}: {result.stderr.strip()}')
+    try:
+        reply = json.loads(result.stdout)
+    except ValueError:
+        raise Refusal('sdlc status returned invalid JSON.') from None
+    if (not isinstance(reply, dict) or reply.get('protocol') != 'tink-sdlc'
+            or type(reply.get('api_version')) is not int or reply['api_version'] != 1
+            or not isinstance(reply.get('run'), dict)
+            or not isinstance(reply['run'].get('checklist'), list)
+            or not all(isinstance(item, dict) for item in reply['run']['checklist'])):
+        raise Refusal('sdlc status must return tink-sdlc API version 1 with a run checklist list.')
+    pending = [item for item in reply['run']['checklist'] if item.get('pending') is True]
+    if any(not all(isinstance(item.get(key), str) and item[key] for key in ('id', 'prerequisite'))
+           or ('proposed' in item and not (isinstance(item['proposed'], dict) and all(
+               isinstance(item['proposed'].get(key), str) and item['proposed'][key] for key in ('cmd', 'cwd'))))
+           for item in pending):
+        raise Refusal('sdlc status returned invalid pending seed checks.')
+    return pending
+
+
+def pending_line(item):
+    proposed = item.get('proposed')
+    return (f"{item['id']}: prerequisite: {item['prerequisite']}"
+            + (f"; proposed: `{proposed['cmd']}` (cwd: {proposed['cwd']})" if proposed else ''))
 
 
 def pi_command():

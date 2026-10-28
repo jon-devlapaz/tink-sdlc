@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from test_sdlc_stage import StageBase, PYTHON
+from tinkery_fixture import TINKERY, confirmed, command, provisional, DEFAULT
 
 
 # A stand-in for Pi: records argv, writes session files the way Pi does, and answers
@@ -146,6 +147,37 @@ class PiLauncherTests(StageBase):
         self.report.with_name('build.md').write_text('TEST handoff')
         self.step('build', 'complete')
         self.assertEqual(self.contract()['state'], 'completed')
+
+    def test_pending_provisional_checks_and_proposals_are_named_on_launch_and_resume(self):
+        records = [command(), provisional(), provisional('false'), {**DEFAULT[0], 'how_to_judge': 'Inspect'}]
+        seed = confirmed(self.base / 'TEST-sessions', records)
+        self.stage('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY))
+        target = self.root / 'runs/r/seed-checks.json'
+        value = json.loads(target.read_text())
+        self.decide('r', 3)
+        self.prepare()
+        self.launch()
+        self.step('build', 'resume')
+        prompts = [argv[-1] for argv in self.calls()]
+        self.assertEqual(len(prompts), 2)
+        for prompt in prompts:
+            self.assertIn(f"seed-2: prerequisite: {value['items'][1]['missing']}\n", prompt)
+            self.assertIn(f"seed-3: prerequisite: {value['items'][2]['missing']}; proposed: `false` (cwd: .)", prompt)
+            self.assertNotIn('seed-1', prompt)
+            self.assertNotIn('seed-4', prompt)
+            self.assertIn(str(self.root / '_system/SDLC.md') + '#seed-definition-comparison', prompt)
+            self.assertIn(str(target), prompt)
+            for instruction in ('Once the prerequisite exists', 'keep the original proposal intact',
+                                'Activating the proposed cmd in its cwd matches the confirmed seed',
+                                "operator's stage-3 approval", 'not proof', 'handoff report'):
+                self.assertIn(instruction, prompt)
+        for item in value['items']:
+            if item['kind'] == 'provisional':
+                item['activation'] = {'cmd': 'true', 'cwd': '.', 'evidence': 'TEST ready'}
+        target.write_text(json.dumps(value))
+        self.decide('r', 3)
+        self.step('build', 'resume')
+        self.assertNotIn('provisional', self.calls()[-1][-1].lower())
 
     def test_full_profile_launch_and_resume_name_existing_approved_inputs(self):
         self.new_run('full-run', profile='full')

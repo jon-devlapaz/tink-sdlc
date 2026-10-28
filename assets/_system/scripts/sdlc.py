@@ -263,8 +263,8 @@ def seed_departures(path):
                 if before[name].get(key) != definition.get(key):
                     lines.append(f"{name} {key} changed: `{definition.get(key, '<removed>')}` "
                                  f"instead of `{before[name].get(key, '<absent>')}`")
-            if 'activation' in item:
-                activation = item['activation']
+            activation = item.get('activation')
+            if activation and not confirmed_activation(before[name], activation):
                 lines.append(f"{name} activated: runs `{activation['cmd']}` instead of "
                              f"`{before[name].get('cmd', '<no command>')}` "
                              f"(cwd: {activation['cwd']})")
@@ -278,10 +278,18 @@ def seed_departures(path):
     return lines
 
 
+def confirmed_activation(proposal, activation):
+    """Running exactly the proposed command where it was proposed is what the operator confirmed."""
+    return activation['cmd'] == proposal.get('cmd') and activation['cwd'] == proposal.get('cwd')
+
+
 def seed_match_evidence(path):
     departures = seed_departures(path)
     if departures is not None and not departures:
-        return f"matches confirmed seed (sha256: {require_run(path)['seed_contract']['sha256']})"
+        activated = [f"{item['id']} activated as confirmed: runs `{item['activation']['cmd']}`"
+                     for item in read_json(path / 'seed-checks.json')['items'] if 'activation' in item]
+        return '; '.join([f"matches confirmed seed (sha256: {require_run(path)['seed_contract']['sha256']})",
+                          *activated])
     return None
 
 
@@ -354,7 +362,8 @@ def seed_check_items(path):
                 'locked': True, 'pending': pending, 'seed_definition': digest(encoded(item))}
         if item['kind'] == 'judge' or pending:
             result.append({**base, 'operator_attestation': not pending,
-                           **({'prerequisite': item['missing']} if pending else {})})
+                           **({'prerequisite': item['missing']} if pending else {}),
+                           **({'proposed': {'cmd': item['cmd'], 'cwd': item['cwd']}} if pending and 'cmd' in item else {})})
             continue
         command = activation or item
         relative_check_cwd(command['cwd'])

@@ -142,6 +142,35 @@ class SeedDepartures(StageBase):
         self.assertEqual(passed.returncode, 0, passed.stderr)
         self.assertEqual([item['id'] for item in self.view()['checklist']], ['seed-1'])
 
+    def test_activating_the_confirmed_proposal_is_evidence_not_a_departure(self):
+        self.bind([provisional('./future')])
+        activate = lambda **fields: self.change(lambda items: items[0].update(
+            activation={'cmd': './future', 'cwd': '.', 'evidence': 'TEST ready', **fields}))
+        activate()
+        view = self.view()
+        self.assertEqual(view['definition']['departures'], [])
+        self.assertIsNone(view['definition']['question'])
+        self.assertEqual(view['gates'][0]['status'], 'approved')
+        self.assertIn('seed-1 activated as confirmed: runs `./future`', view['definition']['evidence'])
+        self.assertIn('seed-1 activated as confirmed', view['cli_status'])
+        failed = self.sdlc('verify', 'r')  # Matching the seed is not proof: the command must pass.
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn('Seed check failed: seed-1', failed.stderr)
+        future = self.root / 'future'
+        future.write_text('#!/bin/sh\nexit 0\n')
+        future.chmod(0o755)
+        passed = self.sdlc('verify', 'r')
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        receipt = json.loads((self.path / '04-test/output/verification.json').read_text())
+        self.assertEqual(receipt['seed_checks'], {'seed-1': 'proven'})
+        for fields in [{'cmd': 'true'}, {'cwd': 'sub'}]:
+            activate(**fields)
+            view = self.view()
+            self.assertTrue(any(line.startswith('seed-1 activated: runs')
+                                for line in view['definition']['departures']), fields)
+            self.assertNotEqual(view['gates'][0]['status'], 'approved')
+            self.assertEqual(view['definition']['question'], 'Accept these departures from the confirmed seed?')
+
     def test_judge_still_needs_actual_human_attestation(self):
         self.bind([DEFAULT[0]])
         self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
