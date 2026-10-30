@@ -1,5 +1,5 @@
 {
-  "version": "1.44.8",
+  "version": "1.45.0",
   "files": {
     ".tink/skillsets/build-skillset.json": "8e4b6397b31e9d830a7baa6d887891505d1b3354a3482ef2c9a876dbdb291445",
     ".tink/skillsets/deployment-skillset.json": "9a89b7593f86f593afe3d81878d97b14ee0143d734eeb4fd0adca6ef8f7a6732",
@@ -7,7 +7,7 @@
     ".tink/skillsets/maintenance-skillset.json": "f42b5acf4424679ed7fe36898161bcbce205eb4adb1d7039bbfea81395998366",
     ".tink/skillsets/planning-skillset.json": "2c115929d93996bf2c03fc633908fdaedce2ea79c802c28e81a3e01f4073772c",
     ".tink/skillsets/testing-skillset.json": "c105b11afd351461ca66a9bbae9bed5a478867539251d52273db9f818017203b",
-    "_shared/REVIEW.md": "5ea16a7479829df737744cc7915f76f171e3389fece4473496dcbde7017dd560",
+    "_shared/REVIEW.md": "4aa2fbfca65a8376078f93630686ff6b75a58d3d737302c92056b9d08417973d",
     "_shared/brief-template.md": "89fab54fd60afb0c2b80dc1c66760336ece1a0a835a99f7df54615e2811df5b7",
     "_shared/intent-template.md": "e2676829d95b2bb42977db3116ef336ad9cbf3a1ae6661c3e8167d3df21c1164",
     "_shared/plan-template.md": "fe93363211dcc70b73843b0fa7827f8f9ca7b26e185db7a6b6e9d2adf5a42c00",
@@ -15,7 +15,7 @@
     "_system/SDLC.md": "e0082b87f98a6a3194873f4b9a0ec2cb0deee3373721125537aacad936a9ddee",
     "_system/scripts/claude-launcher": "e30519d5a4eb7e9c7dc905f0f0544f8e57aa13db607233918569a11867516e79",
     "_system/scripts/pi-launcher": "931bd0edb23f4a31ab0b6497c08a92b8f08b50e6d1a8e3cad62eef255c333d69",
-    "_system/scripts/sdlc.py": "59b4cdf241a5c71784f0836a08b6203a2b0bf3fd45261baa9428b01e29906180",
+    "_system/scripts/sdlc.py": "009fa1cc727439e3885076ed92730d0e603e4ea4d3edc223ec91aeb032bab252",
     "_system/verification.json": "1308d67c7c43c1a8f5c90cde99a69e217a7fa7c553cece572ecf3228b50fa937",
     "stages/01-plan/CONTEXT.md": "a2bb0ea20740f8d2debf7d7c3b4e09107fa49e50f7b06e86c0383a24a485540c",
     "stages/02-design/CONTEXT.md": "c23139482f386045b6a40d8efd3211e3a558393a2cfd21d4b3beb8f519182f94",

@@ -1958,6 +1958,24 @@ def delivery_warning(run):
             f'hand the owner these commands instead of stopping silently: git push -u origin {run}; gh pr create --fill')
 
 
+REVIEW_ROUNDS = 3
+
+
+def review_round(run):
+    """The review round a stage-5 launch opens: one past the `Round: <n>` the checkout's findings
+    record. Findings without that line count as round 1; no findings means none yet."""
+    findings = run_path(run) / '05-deploy/output/REVIEW-findings.md'
+    if not findings.is_file():
+        return 1
+    records = re.findall(r'^\s*round\s*:.*$', findings.read_text(errors='replace'), re.M | re.I)
+    if not records:
+        return 2
+    exact = re.fullmatch(r'Round:[ \t]*([1-9][0-9]{0,2})\s*', records[0])
+    if len(records) > 1 or not exact:
+        raise ValueError(f'{findings.relative_to(ROOT)} must name its round once, as Round: <n>')
+    return int(exact.group(1)) + 1
+
+
 def stage(args):
     run, n = args.run, args.n
     path = run_path(run)
@@ -1983,6 +2001,10 @@ def stage(args):
             raise ValueError('stage 5 reviews a commit, and these candidate changes are uncommitted: ' + ', '.join(dirty[:5])
                              + (f' (+{len(dirty) - 5} more)' if len(dirty) > 5 else '')
                              + mode_note + '; commit the candidate changes (verify again only if the code changed since it passed)')
+        review = review_round(run)
+        if review > REVIEW_ROUNDS:
+            raise ValueError(f'{REVIEW_ROUNDS} review rounds are recorded for {run}; take any remaining Important findings '
+                             'to the human gate instead of a fourth review')
     if args.tinkery and not args.seed_contract:
         raise ValueError('--tinkery requires --seed-contract at stage 1.')
     seed_source, seed_bytes, seed_checks, confirmation = (
@@ -2040,6 +2062,8 @@ def stage(args):
         notice = 'skills: skipped (tink not installed); the agent will run without stage disciplines'
     snapshot_arg = f'runs/{run}/{stage_dir}'
     prompt = f'Begin stage {n} ({STAGE_WORDS[n]}) of SDLC run `{run}`.'
+    if n == 5:
+        prompt += f' This is review round {review} of {REVIEW_ROUNDS}.'
     if seed_contract:
         confirmer = 'agent' if confirmation['schema_version'] == 3 else 'operator'
         prompt += f' The {confirmer}-confirmed seed contract is at {seed_contract}; it is input, not authorization.'
