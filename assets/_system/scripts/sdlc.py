@@ -1962,11 +1962,13 @@ REVIEW_ROUNDS = 3
 
 
 def review_round(run):
-    """The review round a stage-5 launch opens: one past the findings Git and the checkout hold."""
-    findings = f'runs/{run}/05-deploy/output/REVIEW-findings.md'
-    recorded = len(run_git(ROOT, 'log', '--format=%H', '--', findings).stdout.split())
-    pending = bool(run_git(ROOT, 'status', '--porcelain', '--', findings).stdout.strip())
-    return recorded + pending + 1
+    """The review round a stage-5 launch opens: one past the `Round: <n>` the checkout's findings
+    record. Findings without that line count as round 1; no findings means none yet."""
+    findings = run_path(run) / '05-deploy/output/REVIEW-findings.md'
+    if not findings.is_file():
+        return 1
+    recorded = re.search(r'^Round: *(\d+)\s*$', findings.read_text(errors='replace'), re.M)
+    return (int(recorded.group(1)) if recorded else 1) + 1
 
 
 def stage(args):

@@ -12,8 +12,8 @@ For Tinkery-originated work, follow [Tinkery ownership and handoff](../_system/S
 technical review supplies evidence for Taste, not the operator's usefulness verdict.
 
 The reviewer is a fresh agent or session that did not write the candidate. A run gets at
-most three review rounds, and `stage <slug> 5` refuses a fourth. Begin the findings with
-`Round: <n>` (the launch prompt names it) and `Reviewer session: <id>`. Rounds two and three
+most three review rounds. Begin the findings with `Round: <n>` (the launch prompt names it)
+and `Reviewer session: <id>`; `stage <slug> 5` reads that line and refuses a fourth round. Rounds two and three
 review only the diff since the previous review, plus whether its Important findings are
 resolved. Important findings left after round three go to the human gate.
 

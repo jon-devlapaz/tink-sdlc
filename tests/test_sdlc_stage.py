@@ -576,10 +576,10 @@ class WorktreeMode(StageBase):
         self.verify_run()
         findings = self.root / 'runs/r/05-deploy/output/REVIEW-findings.md'
         findings.parent.mkdir(parents=True, exist_ok=True)
-        for n in (1, 2):
-            findings.write_text(f'Round: {n}\n')
+        for text in ('Round: 1\n', 'Round: 2\n', 'Round: 2\nTEST same-round correction\n'):
+            findings.write_text(text)
             self.git('add', str(findings))
-            self.git('commit', '-qm', f'review {n}', env=IDENT)
+            self.git('commit', '-qm', 'review findings', env=IDENT)
         result = self.stage('r', 5, env=IDENT)
         self.assertIn('This is review round 3 of 3.', result.stdout)
         findings.write_text('Round: 3\n')  # the owner brought round three back, uncommitted
