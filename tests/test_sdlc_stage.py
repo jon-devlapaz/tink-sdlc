@@ -547,7 +547,7 @@ class WorktreeMode(StageBase):
         self.assertIn('(detached HEAD)', self.git('worktree', 'list').stdout)
         self.assertEqual(self.tink_calls(), [f'{review}|use deployment-skillset --snapshot runs/r/05-deploy'])
         self.assertEqual(result.stdout.splitlines()[-3:], [f'Checkout: {review}', 'Launch prompt (start a NEW session there):',
-                                                            'Begin stage 5 (deploy) of SDLC run `r`.'])
+                                                            'Begin stage 5 (deploy) of SDLC run `r`. This is review round 1 of 3.'])
 
     def test_a_repeat_review_names_both_ways_forward_and_git_keeps_the_previous_findings(self):
         self.set_checks([PASSING])
@@ -568,6 +568,24 @@ class WorktreeMode(StageBase):
         self.assertEqual(self.git('show', 'HEAD:runs/r/05-deploy/output/REVIEW-findings.md').stdout,
                          'TEST first review\n')
         self.assertEqual((fresh / 'runs/r/05-deploy/output/REVIEW-findings.md').read_text(), 'TEST first review\n')
+
+    def test_a_fourth_review_round_is_refused(self):
+        self.set_checks([PASSING])
+        self.new_run('r')
+        self.commit_run()
+        self.verify_run()
+        findings = self.root / 'runs/r/05-deploy/output/REVIEW-findings.md'
+        findings.parent.mkdir(parents=True, exist_ok=True)
+        for n in (1, 2):
+            findings.write_text(f'Round: {n}\n')
+            self.git('add', str(findings))
+            self.git('commit', '-qm', f'review {n}', env=IDENT)
+        result = self.stage('r', 5, env=IDENT)
+        self.assertIn('This is review round 3 of 3.', result.stdout)
+        findings.write_text('Round: 3\n')  # the owner brought round three back, uncommitted
+        self.refuses('r', 5, '--worktree', str(self.wt / 'review-r-2'),
+                     message='3 review rounds are recorded for r; take any remaining Important findings to the human gate',
+                     env=IDENT)
 
     def test_stage_five_refuses_stale_verification(self):
         self.set_checks([PASSING])
