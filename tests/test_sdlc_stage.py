@@ -582,7 +582,7 @@ class WorktreeMode(StageBase):
             self.git('commit', '-qm', 'review findings', env=IDENT)
         result = self.stage('r', 5, env=IDENT)
         self.assertIn('This is review round 3 of 3.', result.stdout)
-        for text in ('Round: 1\nRound: 3\n', 'Round: 0\n', 'Round: two\n'):
+        for text in ('Round: 1\nRound: 3\n', 'Round: 0\n', 'Round: two\n', ' Round: 3\n', 'round: 3\n'):
             findings.write_text(text)
             self.refuses('r', 5, '--worktree', str(self.wt / 'review-r-2'),
                          message='must name its round once, as Round: <n>', env=IDENT)

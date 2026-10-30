@@ -1967,13 +1967,13 @@ def review_round(run):
     findings = run_path(run) / '05-deploy/output/REVIEW-findings.md'
     if not findings.is_file():
         return 1
-    records = re.findall(r'^Round:(.*)$', findings.read_text(errors='replace'), re.M)
+    records = re.findall(r'^\s*round\s*:.*$', findings.read_text(errors='replace'), re.M | re.I)
     if not records:
         return 2
-    number = records[0].strip()
-    if len(records) > 1 or not re.fullmatch(r'[1-9][0-9]{0,2}', number):
+    exact = re.fullmatch(r'Round:[ \t]*([1-9][0-9]{0,2})\s*', records[0])
+    if len(records) > 1 or not exact:
         raise ValueError(f'{findings.relative_to(ROOT)} must name its round once, as Round: <n>')
-    return int(number) + 1
+    return int(exact.group(1)) + 1
 
 
 def stage(args):
