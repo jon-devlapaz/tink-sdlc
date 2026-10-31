@@ -173,6 +173,8 @@ class ClaudeLauncherTests(StageBase):
             # tinkery#615: one 'work only in' sentence read as forbidding the reads the brief named.
             self.assertIn(f'Write only in {self.root}, plus your handoff report', prompt)
             self.assertIn('Outside the checkout you may read, never change, what those approved inputs name', prompt)
+            self.assertIn('never read secrets or credentials', prompt)
+            self.assertIn('If a named fact cannot be read, say so in the report instead of building around it', prompt)
             self.assertNotIn('Work only in', prompt)
         self.assertEqual(launch['argv'][launch['argv'].index('--session-id') + 1], session)
         self.assertEqual(resume['argv'][resume['argv'].index('--resume') + 1], session)
