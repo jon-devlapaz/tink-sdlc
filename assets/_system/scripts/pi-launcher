@@ -217,8 +217,11 @@ def prompt(args, operation, checkout):
                       f'is not proof: verify must run it green. Mention the activation in your handoff report.')
     return (f'You are the build agent for this run. Implement the approved run work using '
             f'{named_inputs}; read those approved inputs, stage-3 CONTEXT.md at {context}, the '
-            f'step contract at {args.contract}, and checkout instructions first. Work only in '
-            f'{checkout}. Write your handoff report to exactly {args.report} (absolute path). '
+            f'step contract at {args.contract}, and checkout instructions first. Write only in '
+            f'{checkout}, plus your handoff report at exactly {args.report} (absolute path). '
+            f'Outside the checkout you may read, never change, what those approved inputs name; '
+            f'never read secrets or credentials. If a named fact cannot be read, say so in the '
+            f'report instead of building around it. '
             f'Never run sdlc.py step, stage or decide. Do not change the model or thinking level.'
             f'{activation}')
 

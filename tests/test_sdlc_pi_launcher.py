@@ -141,6 +141,12 @@ class PiLauncherTests(StageBase):
             self.assertTrue((self.root / 'stages/03-build/CONTEXT.md').is_file())
             self.assertIn(str(self.report.with_name('build.md')), prompt)
             self.assertIn('Never run sdlc.py step, stage or decide', prompt)
+            # tinkery#615: one 'work only in' sentence read as forbidding the reads the brief named.
+            self.assertIn(f'Write only in {self.root}, plus your handoff report', prompt)
+            self.assertIn('Outside the checkout you may read, never change, what those approved inputs name', prompt)
+            self.assertIn('never read secrets or credentials', prompt)
+            self.assertIn('If a named fact cannot be read, say so in the report instead of building around it', prompt)
+            self.assertNotIn('Work only in', prompt)
         answers = [json.loads(line)['message']['model'] for line in self.session_file().read_text().splitlines()
                    if '"assistant"' in line]
         self.assertEqual(answers, ['pinned-v1', 'pinned-v1'])

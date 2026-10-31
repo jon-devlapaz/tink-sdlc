@@ -319,7 +319,10 @@ stored pin and absolute report path regardless of caller cwd or changed defaults
 agent prompt must identify the run's approved input files: `runs/<run>/brief.md` for
 light runs, or `runs/<run>/01-plan/output/intent.md`, `02-design/output/spec.md` and
 `03-build/output/plan.md` for full runs, plus `stages/03-build/CONTEXT.md`. It names the
-exact report destination and prohibits running `sdlc.py step`, `stage` or `decide`. The
+exact report destination and prohibits running `sdlc.py step`, `stage` or `decide`. It
+limits writes to the checkout and that report, and lets the agent read, never change, what the
+approved inputs name outside the checkout (never secrets); an unreadable named fact goes in the
+report rather than being built around. The
 adapter marks the child environment with
 `TINK_SDLC_STEP_SESSION=1`; while set, `sdlc.py step` refuses `prepare`, `launch`,
 `resume` and `complete` (read-only `show` remains available), preventing recursive
