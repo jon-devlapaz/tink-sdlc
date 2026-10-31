@@ -170,6 +170,10 @@ class ClaudeLauncherTests(StageBase):
             self.assertIn(str(self.root / 'stages/03-build/CONTEXT.md'), prompt)
             self.assertIn(str(self.report.with_name('build.md')), prompt)
             self.assertIn('Never run sdlc.py step, stage or decide', prompt)
+            # tinkery#615: one 'work only in' sentence read as forbidding the reads the brief named.
+            self.assertIn(f'Write only in {self.root}, plus your handoff report', prompt)
+            self.assertIn('Outside the checkout you may read, never change, what those approved inputs name', prompt)
+            self.assertNotIn('Work only in', prompt)
         self.assertEqual(launch['argv'][launch['argv'].index('--session-id') + 1], session)
         self.assertEqual(resume['argv'][resume['argv'].index('--resume') + 1], session)
         self.report.with_name('build.md').write_text('TEST handoff')
