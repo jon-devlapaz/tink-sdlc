@@ -187,12 +187,13 @@ def is_seed_check(item):
 
 
 def unproven_goal(items):
-    """Says so when every seed check is still provisional: verify may pass, yet nothing proves the goal."""
+    """Names every still-provisional seed check: verify may pass, yet those parts of the goal stay unproven."""
     seeds = [item for item in items or [] if is_seed_check(item)]
-    if seeds and all(item.get('pending') for item in seeds):
-        return ('Nothing proves the confirmed goal yet: '
-                + '; '.join(f"{item['id']} is provisional (awaiting {item['prerequisite']})" for item in seeds) + '.')
-    return None
+    pending = [item for item in seeds if item.get('pending')]
+    if not pending:
+        return None
+    lead = 'Nothing proves the confirmed goal yet: ' if len(pending) == len(seeds) else 'Part of the confirmed goal is unproven: '
+    return lead + '; '.join(f"{item['id']} is provisional (awaiting {item['prerequisite']})" for item in pending) + '.'
 
 
 def record_definitions(records, confirmer='operator'):
@@ -2185,12 +2186,25 @@ def step_adapter(record, operation, contract, resolve=False):
         raise ValueError('Step adapter cannot resolve the exact model pin or is incompatible; no default is accepted.')
     if operation == 'resume' and reply.get('session') != record['session']:
         raise ValueError('Step adapter cannot resume the pinned session.')
-    if operation == 'finished' and (reply.get('session') != record['session'] or reply.get('finished') is not True):
-        raise ValueError('The agent has not finished its latest turn on the pin (paused, stopped, failed or still '
-                         'running); resume the step and complete it after the agent ends its turn.')
+    if operation == 'finished' and (reply.get('session') != record['session'] or type(reply.get('finished')) is not bool):
+        raise ValueError('Step adapter gave no finished answer for the pinned session.')
     if not resolve and (not isinstance(reply.get('session'), str) or not reply['session'].strip()):
         raise ValueError('Step adapter returned no session identity.')
     return reply
+
+
+NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, stopped, failed or still running)'
+
+
+def observed_turn(record, contract):
+    """What the adapter's offline finished probe sees now; shown beside the record, never stored.
+    `active` alone cannot tell a running agent from an ended turn (tinkery#615)."""
+    try:
+        step_paths(record)
+        ended = step_adapter(record, 'finished', contract)['finished']
+    except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
+        return f'unknown: {error}'
+    return 'ended: read the report, then complete the step' if ended else f'not ended: {NOT_FINISHED}'
 
 
 def step(args):
@@ -2207,7 +2221,10 @@ def step(args):
     if args.action != 'prepare' and any(value is not None for value in supplied):
         raise ValueError('Step report, model and launcher are fixed at prepare; overrides are refused.')
     if args.action == 'show':
-        print(json.dumps(read_json(contract), indent=2))
+        record = read_json(contract)
+        if isinstance(record, dict) and record.get('state') == 'active':
+            record['observed_turn'] = observed_turn(record, contract)
+        print(json.dumps(record, indent=2))
         return
     with locked(path / '.writer-lock'):
         if args.action == 'prepare':
@@ -2246,7 +2263,8 @@ def step(args):
                 if not contents.strip():
                     raise ValueError('Step report is empty; completion refused.')
                 # A report alone can be left by an interrupted run; the adapter must confirm the agent finished.
-                step_adapter(record, 'finished', contract)
+                if not step_adapter(record, 'finished', contract)['finished']:
+                    raise ValueError(NOT_FINISHED + '; resume the step and complete it after the agent ends its turn.')
                 record.update(state='completed', report_sha256=digest(contents))
                 write_json(contract, record)
             else:

@@ -166,6 +166,25 @@ class StepTests(StageBase):
         self.assertEqual(calls[-1]['session'], 'TEST-session')
         self.assertEqual(self.requests(), ['launch ' + self.model])
 
+    def test_show_says_whether_an_active_steps_turn_ended_without_storing_it(self):
+        # tinkery#615: `active` alone cannot tell a running agent from an ended turn.
+        self.prepare()
+        self.assertNotIn('observed_turn', json.loads(self.step('show').stdout))
+        self.step('launch', env={'TEST_WRITE_REPORT': '1'})
+        before = self.contract.read_bytes()
+        for env, seen in (({}, 'ended: read the report, then complete the step'),
+                          ({'TEST_UNFINISHED': '1'}, 'not ended: The agent has not finished'),
+                          ({'TEST_NO_FINISHED': '1'}, 'unknown: Step adapter finished failed'),
+                          ({'TEST_INCOMPATIBLE': '1'}, 'unknown: Step adapter cannot resolve')):
+            with self.subTest(env=env):
+                shown = json.loads(self.step('show', env=env).stdout)
+                self.assertEqual(shown['state'], 'active')
+                self.assertTrue(shown['observed_turn'].startswith(seen), shown['observed_turn'])
+        self.launcher.write_text(self.launcher.read_text() + '\n')
+        self.assertTrue(json.loads(self.step('show').stdout)['observed_turn'].startswith('unknown: Step launcher changed'))
+        self.assertEqual(before, self.contract.read_bytes())
+        self.assertEqual(self.requests(), ['launch ' + self.model])
+
     def test_symlink_or_empty_report_cannot_complete(self):
         self.prepare()
         self.step('launch')
