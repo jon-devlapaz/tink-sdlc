@@ -1183,7 +1183,7 @@ def status_state(path):
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
     checks = (config['checks'] if config else []) + [i['check'] for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
-    next_action = unavailable or worker_action(path.name, steps) or (errors[0] if errors else '') or {
+    next_action = unavailable or worker_action(path.name, steps, newest_step(path)) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
         'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
@@ -2232,12 +2232,33 @@ def step_facts(path):
     return facts
 
 
-def worker_action(slug, steps):
-    """The next action an active step owes, so a run never reads as being worked on by nobody."""
+def newest_step(path):
+    """The most recently prepared step's name. Contracts without a prepare time (older runtimes)
+    count as oldest and order among themselves by name; unreadable ones count too."""
+    newest = None
+    for contract in (path / 'steps').glob('*.json'):
+        record = None
+        with contextlib.suppress(ValueError, OSError):
+            record = read_json(contract)
+        prepared = record.get('prepared_ns') if isinstance(record, dict) else None
+        key = (prepared if type(prepared) is int else 0, contract.stem)
+        newest = max(newest, key) if newest else key
+    return newest[1] if newest else None
+
+
+def worker_action(slug, steps, newest=None):
+    """The next action an active step owes, so a run never reads as being worked on by nobody.
+    An uncertain step owes reconciliation while it is the newest step; preparing another ends that."""
     step = next((s for s in steps if s['state'] == 'active'), None)
+    if step is None:
+        step = next((s for s in steps if s['state'] == 'uncertain' and s['name'] == newest), None)
     if step is None:
         return ''
     command = f"python3 _system/scripts/sdlc.py step {slug} {step['name']}"
+    if step['state'] == 'uncertain':
+        return (f"The {step['name']} step's launch or resume did not confirm; a worker may still be running. "
+                f'Inspect it with {command} show and the actual harness or session, then reconcile that session '
+                'before explicitly preparing another uniquely named step.')
     if step['turn'] == 'ended':
         return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
     if step['turn'] == 'not-ended':
@@ -2275,7 +2296,8 @@ def step(args):
                 raise ValueError('Step report already exists; choose a fresh destination, never reuse old evidence.')
             record = {'schema': 1, 'run_id': meta['run_id'], 'checkout': str(ROOT),
                       'report': str(report), 'model': model, 'launcher': str(launcher),
-                      'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None}
+                      'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None,
+                      'prepared_ns': time.time_ns()}
             step_paths(record)
             write_json(contract, record)
         else:

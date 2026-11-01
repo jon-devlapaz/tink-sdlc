@@ -263,6 +263,51 @@ class StepTests(StageBase):
         self.step('resume', ok=False)
         self.assertEqual(self.requests(), ['launch ' + self.model])
 
+    def test_status_names_an_uncertain_step_as_the_next_action(self):
+        # tink-sdlc#137: an uncertain step was skipped, so the run read as ready for ordinary work.
+        self.prepare()
+        self.step('launch', ok=False, env={'TEST_ADAPTER_FAIL': '1'})
+        result = self.sdlc('status', 'r', '--json')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run = json.loads(result.stdout)['run']
+        self.assertEqual(run['steps'], [{'name': 'build', 'state': 'uncertain'}])
+        self.assertTrue(run['next_action'].startswith(
+            "The build step's launch or resume did not confirm; a worker may still be running. "
+            'Inspect it with python3 _system/scripts/sdlc.py step r build show'), run['next_action'])
+        # Reconciling means preparing another uniquely named step; the old one stops owing.
+        prepared = self.sdlc('step', 'r', 'build2', 'prepare', '--report', str(self.base / 'TEST-notes' / 'handoff2.md'),
+                             '--model', self.model, '--launcher', str(self.launcher))
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        result = self.sdlc('status', 'r', '--json')
+        run = json.loads(result.stdout)['run']
+        self.assertEqual([s['state'] for s in run['steps']], ['uncertain', 'prepared'])
+        self.assertNotIn('build step', run['next_action'])
+
+    def test_status_names_an_uncertain_step_prepared_after_a_completed_one(self):
+        # An earlier completed step must not hide a newer uncertain one, which must be named, not the older.
+        def run_step(name, *actions, env=None):
+            for action in actions:
+                args = ('--report', str(self.base / 'TEST-notes' / f'{name}.md'), '--model', self.model,
+                        '--launcher', str(self.launcher)) if action == 'prepare' else ()
+                result = self.sdlc('step', 'r', name, action, *args, env=env)
+                failing = bool(env and env.get('TEST_ADAPTER_FAIL'))
+                self.assertEqual(result.returncode != 0, failing, result.stdout + result.stderr)
+        run_step('build', 'prepare', 'launch')
+        run_step('build', 'resume', env={'TEST_WRITE_REPORT': '1'})
+        run_step('build', 'complete')
+        run_step('abuild', 'prepare')
+        run_step('abuild', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(run['steps'], [{'name': 'abuild', 'state': 'uncertain'}, {'name': 'build', 'state': 'completed'}])
+        self.assertTrue(run['next_action'].startswith("The abuild step's launch or resume did not confirm"),
+                        run['next_action'])
+        # Order is by preparation, not by name: a newer "zz" outranks the older "abuild",
+        # which sorts first by name.
+        run_step('zz', 'prepare')
+        run_step('zz', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertTrue(run['next_action'].startswith("The zz step's"), run['next_action'])
+
     def test_malformed_active_contract_cannot_complete(self):
         self.prepare()
         record = json.loads(self.contract.read_text())
