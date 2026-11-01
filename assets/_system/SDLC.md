@@ -337,7 +337,7 @@ still-running agent leaves the step `active`: resume it, then complete. For an a
 read now, never stored, and makes no provider request. Missing reports refuse completion: no root
 fallback, copying or invented report. A report is not proof of passing checks,
 authenticated authorship, approval, or release; existing `verify` and forge gates
-remain independent. API 1 status and capabilities are unchanged.
+remain independent. Status reports each step, below; capabilities are unchanged.
 
 ### Trusted launcher adapter contract
 
@@ -573,6 +573,10 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   than being coerced into display text. Also included: `verification_config`
   (display-only checks/policy or null), `errors`, `next_action`, and `cli_status`
   (display-only human output). Human and machine status share one calculation.
+- `steps`: each pinned build step by `name`, with its `state` (`prepared`, `active`,
+  `uncertain`, `completed`, or `unreadable`) and, when active, the same `observed_turn` as
+  `step show`. An active step's turn sets `next_action` (after gates and locks), so a run that nothing is building
+  is never mistaken for running work. Older runtimes omit the field: absence means unknown.
 - `log`: `path` (checkout-relative, regular UTF-8 file), `text` (last 256 KiB,
   decoded with replacement), and `truncated`. The advertised path stays fixed
   for that verification invocation; the runtime may truncate/rewrite it on start.

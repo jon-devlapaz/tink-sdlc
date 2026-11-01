@@ -185,6 +185,33 @@ class StepTests(StageBase):
         self.assertEqual(before, self.contract.read_bytes())
         self.assertEqual(self.requests(), ['launch ' + self.model])
 
+    def test_status_reports_each_step_and_an_active_turn_sets_the_next_action(self):
+        # tinkery#614: an imported run read as being worked on while no worker ran.
+        def status(env=None):
+            result = self.sdlc('status', 'r', '--json', env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout)['run']
+        idle = status()
+        self.assertEqual(idle['steps'], [])
+        self.prepare()
+        self.assertEqual(status()['steps'], [{'name': 'build', 'state': 'prepared'}])
+        self.step('launch')
+        before = self.contract.read_bytes()
+        command = 'python3 _system/scripts/sdlc.py step r build'
+        for env, turn, action in (
+                ({'TEST_UNFINISHED': '1'}, 'not ended', f'The build worker has not ended its turn. Check it with {command} show.'),
+                ({}, 'ended', f"The build worker's turn ended: read its report, then run {command} complete."),
+                ({'TEST_NO_FINISHED': '1'}, 'unknown', 'Whether the build worker is running is unknown: ')):
+            with self.subTest(turn=turn):
+                run = status(env)
+                self.assertEqual(run['steps'][0]['state'], 'active')
+                self.assertTrue(run['steps'][0]['observed_turn'].startswith(turn), run['steps'])
+                self.assertTrue(run['next_action'].startswith(action), run['next_action'])
+        self.assertEqual(before, self.contract.read_bytes())
+        self.assertEqual(self.requests(), ['launch ' + self.model])
+        self.contract.write_text('not JSON')
+        self.assertEqual(status()['steps'], [{'name': 'build', 'state': 'unreadable'}])
+
     def test_symlink_or_empty_report_cannot_complete(self):
         self.prepare()
         self.step('launch')

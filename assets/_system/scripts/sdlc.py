@@ -1176,13 +1176,14 @@ def status_state(path):
                           'question': 'Accept these departures from the confirmed seed?' if needs_review else None}
             if first_gate and first_gate['stage'] == 3 and departures:
                 gate_reason = definition['question'] + ' Record only the actual human decision.'
+    steps = step_facts(path)
     unavailable = 'A writer already owns this run.' if active else gate_reason
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
     checks = (config['checks'] if config else []) + [i['check'] for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
-    next_action = unavailable or (errors[0] if errors else '') or {
+    next_action = unavailable or worker_action(path.name, steps) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
         'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
@@ -1200,7 +1201,7 @@ def status_state(path):
     return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract,
             **({'checkout': str(ROOT)} if ROOT != HOME else {}),
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
-            'gates': gates, 'verification_status': state, 'has_lock': active,
+            'gates': gates, 'verification_status': state, 'has_lock': active, 'steps': steps,
             **({'definition': definition} if definition is not None else {}),
             'verification': {**{key: record.get(key) for key in ('result', 'candidate', 'log', 'error')}, 'passed': verified} if record else None,
             'checklist': checklist['items'], 'checklist_state': checklist['state'],
@@ -2205,6 +2206,36 @@ def observed_turn(record, contract):
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
         return f'unknown: {error}'
     return 'ended: read the report, then complete the step' if ended else f'not ended: {NOT_FINISHED}'
+
+
+def step_facts(path):
+    """Each pinned step's recorded state, by name; an active one adds what its adapter sees now."""
+    facts = []
+    for contract in sorted((path / 'steps').glob('*.json')):
+        record = None
+        with contextlib.suppress(ValueError, OSError):
+            record = read_json(contract)
+        state = record.get('state') if isinstance(record, dict) else None
+        if state not in ('prepared', 'active', 'uncertain', 'completed'):
+            facts.append({'name': contract.stem, 'state': 'unreadable'})
+            continue
+        facts.append({'name': contract.stem, 'state': state,
+                      **({'observed_turn': observed_turn(record, contract)} if state == 'active' else {})})
+    return facts
+
+
+def worker_action(slug, steps):
+    """The next action an active step owes, so a run never reads as being worked on by nobody."""
+    step = next((s for s in steps if s['state'] == 'active'), None)
+    if step is None:
+        return ''
+    command = f"python3 _system/scripts/sdlc.py step {slug} {step['name']}"
+    turn = step['observed_turn']
+    if turn.startswith('ended'):
+        return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
+    if turn.startswith('not ended'):
+        return f"The {step['name']} worker has not ended its turn. Check it with {command} show."
+    return f"Whether the {step['name']} worker is running is {turn}"
 
 
 def step(args):
