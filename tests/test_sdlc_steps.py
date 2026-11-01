@@ -283,6 +283,30 @@ class StepTests(StageBase):
         self.assertEqual([s['state'] for s in run['steps']], ['uncertain', 'prepared'])
         self.assertNotIn('build step', run['next_action'])
 
+    def test_status_names_an_uncertain_step_prepared_after_a_completed_one(self):
+        # An earlier completed step must not hide a newer uncertain one, which must be named, not the older.
+        def run_step(name, *actions, env=None):
+            for action in actions:
+                args = ('--report', str(self.base / 'TEST-notes' / f'{name}.md'), '--model', self.model,
+                        '--launcher', str(self.launcher)) if action == 'prepare' else ()
+                self.sdlc('step', 'r', name, action, *args, env=env)
+        run_step('build', 'prepare', 'launch')
+        run_step('build', 'resume', env={'TEST_WRITE_REPORT': '1'})
+        run_step('build', 'complete')
+        run_step('abuild', 'prepare')
+        run_step('abuild', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(run['steps'], [{'name': 'abuild', 'state': 'uncertain'}, {'name': 'build', 'state': 'completed'}])
+        self.assertTrue(run['next_action'].startswith("The abuild step's launch or resume did not confirm"),
+                        run['next_action'])
+        # Order is by preparation, not by name: a newer "aa" outranks an older "zz".
+        run_step('zz', 'prepare')
+        run_step('zz', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
+        run_step('aa', 'prepare')
+        run_step('aa', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertTrue(run['next_action'].startswith("The aa step's"), run['next_action'])
+
     def test_malformed_active_contract_cannot_complete(self):
         self.prepare()
         record = json.loads(self.contract.read_text())
