@@ -274,6 +274,14 @@ class StepTests(StageBase):
         self.assertTrue(run['next_action'].startswith(
             "The build step's launch or resume did not confirm; a worker may still be running. "
             'Inspect it with python3 _system/scripts/sdlc.py step r build show'), run['next_action'])
+        # Reconciling means preparing another uniquely named step; the old one stops owing.
+        prepared = self.sdlc('step', 'r', 'build2', 'prepare', '--report', str(self.base / 'TEST-notes' / 'handoff2.md'),
+                             '--model', self.model, '--launcher', str(self.launcher))
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        result = self.sdlc('status', 'r', '--json')
+        run = json.loads(result.stdout)['run']
+        self.assertEqual([s['state'] for s in run['steps']], ['uncertain', 'prepared'])
+        self.assertNotIn('build step', run['next_action'])
 
     def test_malformed_active_contract_cannot_complete(self):
         self.prepare()

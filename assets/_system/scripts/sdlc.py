@@ -2233,15 +2233,18 @@ def step_facts(path):
 
 
 def worker_action(slug, steps):
-    """The next action an active step owes, so a run never reads as being worked on by nobody."""
-    step = next((s for s in steps if s['state'] == 'active'), None) or next(
-        (s for s in steps if s['state'] == 'uncertain'), None)
+    """The next action an active step owes, so a run never reads as being worked on by nobody.
+    An uncertain step owes reconciliation until another step is prepared after it."""
+    step = next((s for s in steps if s['state'] == 'active'), None)
+    if step is None and not any(s['state'] in ('prepared', 'completed') for s in steps):
+        step = next((s for s in steps if s['state'] == 'uncertain'), None)
     if step is None:
         return ''
     command = f"python3 _system/scripts/sdlc.py step {slug} {step['name']}"
     if step['state'] == 'uncertain':
         return (f"The {step['name']} step's launch or resume did not confirm; a worker may still be running. "
-                f'Inspect it with {command} show and the harness, then reconcile it before preparing a new step.')
+                f'Inspect it with {command} show and the actual harness or session, then reconcile that session '
+                'before explicitly preparing another uniquely named step.')
     if step['turn'] == 'ended':
         return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
     if step['turn'] == 'not-ended':
