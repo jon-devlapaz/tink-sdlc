@@ -2234,10 +2234,14 @@ def step_facts(path):
 
 def worker_action(slug, steps):
     """The next action an active step owes, so a run never reads as being worked on by nobody."""
-    step = next((s for s in steps if s['state'] == 'active'), None)
+    step = next((s for s in steps if s['state'] == 'active'), None) or next(
+        (s for s in steps if s['state'] == 'uncertain'), None)
     if step is None:
         return ''
     command = f"python3 _system/scripts/sdlc.py step {slug} {step['name']}"
+    if step['state'] == 'uncertain':
+        return (f"The {step['name']} step's launch or resume did not confirm; a worker may still be running. "
+                f'Inspect it with {command} show and the harness, then reconcile it before preparing a new step.')
     if step['turn'] == 'ended':
         return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
     if step['turn'] == 'not-ended':

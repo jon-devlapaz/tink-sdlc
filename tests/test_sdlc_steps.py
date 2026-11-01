@@ -263,6 +263,18 @@ class StepTests(StageBase):
         self.step('resume', ok=False)
         self.assertEqual(self.requests(), ['launch ' + self.model])
 
+    def test_status_names_an_uncertain_step_as_the_next_action(self):
+        # tink-sdlc#137: an uncertain step was skipped, so the run read as ready for ordinary work.
+        self.prepare()
+        self.step('launch', ok=False, env={'TEST_ADAPTER_FAIL': '1'})
+        result = self.sdlc('status', 'r', '--json')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run = json.loads(result.stdout)['run']
+        self.assertEqual(run['steps'], [{'name': 'build', 'state': 'uncertain'}])
+        self.assertTrue(run['next_action'].startswith(
+            "The build step's launch or resume did not confirm; a worker may still be running. "
+            'Inspect it with python3 _system/scripts/sdlc.py step r build show'), run['next_action'])
+
     def test_malformed_active_contract_cannot_complete(self):
         self.prepare()
         record = json.loads(self.contract.read_text())
