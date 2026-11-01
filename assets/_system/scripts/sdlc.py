@@ -2197,15 +2197,21 @@ def step_adapter(record, operation, contract, resolve=False):
 NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, stopped, failed or still running)'
 
 
-def observed_turn(record, contract):
-    """What the adapter's offline finished probe sees now; shown beside the record, never stored.
+def probe_turn(record, contract):
+    """What the adapter's offline finished probe sees now, as (turn, words); never stored.
     `active` alone cannot tell a running agent from an ended turn (tinkery#615)."""
     try:
         step_paths(record)
         ended = step_adapter(record, 'finished', contract)['finished']
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
-        return f'unknown: {error}'
-    return 'ended: read the report, then complete the step' if ended else f'not ended: {NOT_FINISHED}'
+        return 'unknown', f'unknown: {error}'
+    if ended:
+        return 'ended', 'ended: read the report, then complete the step'
+    return 'not-ended', f'not ended: {NOT_FINISHED}'
+
+
+def observed_turn(record, contract):
+    return probe_turn(record, contract)[1]
 
 
 def step_facts(path):
@@ -2219,8 +2225,10 @@ def step_facts(path):
         if state not in ('prepared', 'active', 'uncertain', 'completed'):
             facts.append({'name': contract.stem, 'state': 'unreadable'})
             continue
-        facts.append({'name': contract.stem, 'state': state,
-                      **({'observed_turn': observed_turn(record, contract)} if state == 'active' else {})})
+        fact = {'name': contract.stem, 'state': state}
+        if state == 'active':
+            fact['turn'], fact['observed_turn'] = probe_turn(record, contract)
+        facts.append(fact)
     return facts
 
 
@@ -2230,12 +2238,11 @@ def worker_action(slug, steps):
     if step is None:
         return ''
     command = f"python3 _system/scripts/sdlc.py step {slug} {step['name']}"
-    turn = step['observed_turn']
-    if turn.startswith('ended'):
+    if step['turn'] == 'ended':
         return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
-    if turn.startswith('not ended'):
+    if step['turn'] == 'not-ended':
         return f"The {step['name']} worker has not ended its turn. Check it with {command} show."
-    return f"Whether the {step['name']} worker is running is {turn}"
+    return f"Whether the {step['name']} worker is running is {step['observed_turn']}"
 
 
 def step(args):

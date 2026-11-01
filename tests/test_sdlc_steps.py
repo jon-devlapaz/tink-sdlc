@@ -205,6 +205,7 @@ class StepTests(StageBase):
             with self.subTest(turn=turn):
                 run = status(env)
                 self.assertEqual(run['steps'][0]['state'], 'active')
+                self.assertEqual(run['steps'][0]['turn'], turn.replace(' ', '-'), run['steps'])
                 self.assertTrue(run['steps'][0]['observed_turn'].startswith(turn), run['steps'])
                 self.assertTrue(run['next_action'].startswith(action), run['next_action'])
         self.assertEqual(before, self.contract.read_bytes())
