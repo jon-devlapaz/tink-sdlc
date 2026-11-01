@@ -854,8 +854,7 @@ def verify(args):
                 missing = [i for i in attested if marked.get(i, {}).get('result') != 'passed'
                            or (i in seed_results and seed_results[i] != 'attested')]
                 if missing:
-                    raise ValueError(f"Checklist incomplete: {', '.join(missing)} "
-                                     f'(mark them with: sdlc.py mark {args.run} <id> passed --evidence "...")')
+                    raise ValueError(f"Checklist incomplete: {', '.join(missing)} ({mark_hint(args.run, items, missing)})")
                 proof = {'checklist_items': {item['id']: 'proven' if 'check' in item else 'attested'
                                              for item in items if not is_seed_check(item)}}
                 if seed_results:
@@ -997,6 +996,16 @@ def checklist_view(path, verified=False):
                        'needs_recheck': bool(not automatic and record and state == 'passed'
                                              and tree is not None and record.get('candidate') != tree)})
     return {'state': 'defined' if items else 'empty', 'items': result}
+
+
+def mark_hint(run, items, missing):
+    """The mark command each missing item accepts: seed checks also name the operator's attestation."""
+    attested = {item['id'] for item in items if item.get('operator_attestation')}
+    groups = [(ids, flags) for ids, flags in (([i for i in missing if i not in attested], ''),
+                                              ([i for i in missing if i in attested], " --reviewer 'REVIEWER' --source 'SOURCE'"))
+              if ids]
+    return '; '.join(f"mark {'them' if len(groups) == 1 else ', '.join(ids)} with: "
+                     f'sdlc.py mark {run} <id> passed --evidence "..."{flags}' for ids, flags in groups)
 
 
 def checklist_text(view):
