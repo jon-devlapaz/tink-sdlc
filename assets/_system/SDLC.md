@@ -307,7 +307,7 @@ python3 _system/scripts/sdlc.py step <run> build complete
 These are separate deliberate actions, not a script to run without inspection.
 `prepare` writes `runs/<run>/steps/<name>.json` (schema 1): canonical checkout,
 run ID, canonical absolute report path, exact model, canonical launcher path and
-its SHA-256, plus state, session identity and when it was prepared (`prepared_ns`). It starts nothing. Names are unique
+its SHA-256, plus state, session identity and when it was prepared (`prepared_ns`; older contracts lack it and order by name). It starts nothing. Names are unique
 within a run; prepare refuses an existing contract or report. Relative report paths,
 model aliases/wildcards, changed launchers, copied contracts in another checkout,
 path substitutions and launch/resume overrides are refused. Prepare a new step

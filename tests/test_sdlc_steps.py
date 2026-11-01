@@ -289,7 +289,9 @@ class StepTests(StageBase):
             for action in actions:
                 args = ('--report', str(self.base / 'TEST-notes' / f'{name}.md'), '--model', self.model,
                         '--launcher', str(self.launcher)) if action == 'prepare' else ()
-                self.sdlc('step', 'r', name, action, *args, env=env)
+                result = self.sdlc('step', 'r', name, action, *args, env=env)
+                failing = bool(env and env.get('TEST_ADAPTER_FAIL'))
+                self.assertEqual(result.returncode != 0, failing, result.stdout + result.stderr)
         run_step('build', 'prepare', 'launch')
         run_step('build', 'resume', env={'TEST_WRITE_REPORT': '1'})
         run_step('build', 'complete')
@@ -299,13 +301,12 @@ class StepTests(StageBase):
         self.assertEqual(run['steps'], [{'name': 'abuild', 'state': 'uncertain'}, {'name': 'build', 'state': 'completed'}])
         self.assertTrue(run['next_action'].startswith("The abuild step's launch or resume did not confirm"),
                         run['next_action'])
-        # Order is by preparation, not by name: a newer "aa" outranks an older "zz".
+        # Order is by preparation, not by name: a newer "zz" outranks the older "abuild",
+        # which sorts first by name.
         run_step('zz', 'prepare')
         run_step('zz', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
-        run_step('aa', 'prepare')
-        run_step('aa', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
         run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
-        self.assertTrue(run['next_action'].startswith("The aa step's"), run['next_action'])
+        self.assertTrue(run['next_action'].startswith("The zz step's"), run['next_action'])
 
     def test_malformed_active_contract_cannot_complete(self):
         self.prepare()

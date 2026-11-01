@@ -2233,8 +2233,8 @@ def step_facts(path):
 
 
 def newest_step(path):
-    """The most recently prepared step's name. Contracts without a prepare time count as oldest,
-    then by name; unreadable ones count too, so they can't make an older step look newest."""
+    """The most recently prepared step's name. Contracts without a prepare time (older runtimes)
+    count as oldest and order among themselves by name; unreadable ones count too."""
     newest = None
     for contract in (path / 'steps').glob('*.json'):
         record = None
