@@ -1,5 +1,5 @@
 {
-  "version": "1.48.2",
+  "version": "1.48.3",
   "files": {
     ".tink/skillsets/build-skillset.json": "8e4b6397b31e9d830a7baa6d887891505d1b3354a3482ef2c9a876dbdb291445",
     ".tink/skillsets/deployment-skillset.json": "9a89b7593f86f593afe3d81878d97b14ee0143d734eeb4fd0adca6ef8f7a6732",
@@ -15,7 +15,7 @@
     "_system/SDLC.md": "c02c1661c5507a2ae21eafd41448231b8cacabf79f55084dbc269055442e5262",
     "_system/scripts/claude-launcher": "d63001c2f26904655d0c30f6f5f18b12c19b9c784f746dc9daab7e8dfc09ace7",
     "_system/scripts/pi-launcher": "147347214e5679a0ce5832d47b43015d510ec55eb3e07e578182e5d8aef8d5c3",
-    "_system/scripts/sdlc.py": "b0e858990f6e7f5b281bdadcc35026b9c6c6d367485144a4a5989330fcfdfbcb",
+    "_system/scripts/sdlc.py": "b625dd92e35153cde3a6acc61c6477624f5f4bfcfd012cb47b2cca2e2661e1d5",
     "_system/verification.json": "1308d67c7c43c1a8f5c90cde99a69e217a7fa7c553cece572ecf3228b50fa937",
     "stages/01-plan/CONTEXT.md": "a2bb0ea20740f8d2debf7d7c3b4e09107fa49e50f7b06e86c0383a24a485540c",
     "stages/02-design/CONTEXT.md": "c23139482f386045b6a40d8efd3211e3a558393a2cfd21d4b3beb8f519182f94",

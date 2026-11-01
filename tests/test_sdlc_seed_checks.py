@@ -1,5 +1,7 @@
 """Operator-confirmed seed checks are independent acceptance evidence (#194)."""
 import json
+import re
+import shlex
 from tinkery_fixture import TINKERY, confirmed, command, provisional, DEFAULT
 
 from test_sdlc_stage import StageBase, PASSING
@@ -86,6 +88,24 @@ class SeedChecks(StageBase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads((self.path / '04-test/output/verification.json').read_text())
                          ['seed_checks']['seed-2'], 'attested')
+
+    def test_incomplete_hint_prints_a_mark_each_item_accepts(self):
+        # #139: the pi-pulse run copied the hint for a judge check and mark refused it.
+        self.bind([command(), DEFAULT[0]])
+        (self.path / 'checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+            {'id': 'a', 'description': 'd', 'verify': 'v'}]}))
+        self.approve_all()
+        failed = self.sdlc('verify', 'r')
+        self.assertIn('Checklist incomplete: a, seed-2', failed.stderr)
+        hints = dict(re.findall(r'mark ([\w, -]+?) with: sdlc\.py (mark .+?)(?=; mark |\)$)', failed.stderr.strip()))
+        self.assertEqual(sorted(hints), ['a', 'seed-2'], failed.stderr)
+        for item, template in hints.items():
+            filled = (template.replace('<id>', item).replace('...', f'synthetic operator observation of {item}')
+                      .replace('REVIEWER', 'synthetic-operator').replace('SOURCE', 'isolated-test'))
+            marked = self.sdlc(*shlex.split(filled))
+            self.assertEqual(marked.returncode, 0, filled + marked.stderr)
+        result = self.sdlc('verify', 'r')
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_one_quote_cannot_attest_several_judge_checks(self):
         # #77: the Stacker run recorded one operator quote for four marks (tink-arcade runs/stacker/marks/).
