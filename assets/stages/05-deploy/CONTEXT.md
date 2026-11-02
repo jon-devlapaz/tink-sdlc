@@ -9,7 +9,7 @@ Two jobs, kept apart:
   It does not change code, run `verify`, mark items or touch the PR. Missing or stale verification is a finding, not a repair.
 - **Owner** (the session that built the candidate): pushes the stage-open commit before review so the PR head
   is what the reviewer reads, brings `REVIEW-findings.md` back to the PR branch, opens or updates the PR, and
-  runs verify again after any code change. The agent may open the PR. Only a human authorizes a merge: directly for this PR, or through a recorded standing approval that names merging (tink-substrate's approved-sequence contract). With that authorization the agent may merge.
+  runs verify again after any code change. The agent may open the PR. Only a human authorizes a merge: directly for this PR, or through a recorded standing approval that names merging, such as the operator approving the issue this run serves. With that authorization the agent may merge.
 
 A repeat review replaces `REVIEW-findings.md`; Git keeps the previous one, because once the owner has brought it back,
 the next `stage <slug> 5` commits `runs/<slug>` first. Begin a repeat review with `Previous review: <commit>`. If the old review checkout

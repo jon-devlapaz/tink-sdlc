@@ -146,6 +146,12 @@ class WordingTests(unittest.TestCase):
         self.assertIn('Review logic and edge cases', text)
         self.assertIn('Automated review is advisory', text)
 
+    def test_payload_never_routes_through_tink_substrate(self):
+        # tink-substrate is deprecated; a pointer to it leaves agents a step they cannot run (#142).
+        offenders = [str(path.relative_to(ROOT)) for path in operational_docs()
+                     if 'substrate' in path.read_text().lower()]
+        self.assertEqual(offenders, [], 'docs still point at the deprecated tink-substrate')
+
 
 if __name__ == '__main__':
     unittest.main()

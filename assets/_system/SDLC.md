@@ -496,7 +496,7 @@ Runs are created atomically and have one writer at a time; busy or interrupted o
 
 Use protected branches, current required CI, independent code-owner approval and deployment checks in your forge. Open the PR once the candidate is committed and verification is current (end of stage 4; `stage <slug> 5` enforces it); stages 1-2 need none, and a draft PR during build is not review. Delivery, merge authority and the no-`origin` warning are owned by `stages/05-deploy/CONTEXT.md`; `stage <slug> 3` prints that warning early, without refusing. PR creation and review findings do not prove deployment: keep deployed revision, result and rollback references in the deployment system.
 
-A run ends when its closure record exists: after review and rework, commit `runs/<run>/closure.md` (PR URL, merge revision, outcome), then record it with `python3 -m tink_substrate archive --checkout <path> --project <repo> --run <run> --phase closure` (see tink-substrate's `docs/finish-a-change.md`); strip only after that. `status` describes candidate evidence and never marks a run merged or closed.
+A run ends when its closure record exists: after review and rework, commit `runs/<run>/closure.md` (PR URL, merge revision, outcome). `status` describes candidate evidence and never marks a run merged or closed.
 
 Maintenance is optional intake, not a required completion stage. Enable it only after defining metric-specific thresholds, deduplication, cooldowns, and run limits. Alerts create drafts for service-owner triage, never fabricated approvals.
 
