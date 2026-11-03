@@ -24,7 +24,8 @@ import uuid
 ROOT = Path(__file__).resolve().parents[2]
 HOME = ROOT
 API_VERSION = 1
-API_CAPABILITIES = ['status-json', 'verify', 'mark', 'log-file']
+API_CAPABILITIES = ['status-json', 'verify', 'mark', 'log-file', 'pr', 'close']
+PR_URL = re.compile(r'https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/[1-9][0-9]{0,9}')
 ITEM_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
 ITEM_KEYS = {'id', 'description', 'verify'}
 CHECK_KEYS = {'argv', 'timeout_seconds'}
@@ -1099,6 +1100,63 @@ def reading_build_checkout(run):
         ROOT = HOME
 
 
+def delivery(path):
+    """The run's recorded PR and closure, each null until recorded. Malformed records invalidate the run."""
+    pr = read_json(regular_evidence(path / 'pr.json')) if (path / 'pr.json').exists() else None
+    if pr is not None and not (isinstance(pr, dict) and isinstance(pr.get('url'), str) and PR_URL.fullmatch(pr['url'])
+                               and isinstance(pr.get('candidate'), str) and pr['candidate']):
+        raise ValueError(f'runs/{path.name}/pr.json must name a GitHub PR url and its candidate commit.')
+    closure = read_json(regular_evidence(path / 'closure.json')) if (path / 'closure.json').exists() else None
+    if closure is not None and not (isinstance(closure, dict) and closure.get('outcome') in ('merged', 'abandoned')
+                                    and (closure['outcome'] == 'abandoned' or (isinstance(closure.get('merge'), str)
+                                                                               and re.fullmatch(r'[0-9a-f]{40}', closure['merge'])))):
+        raise ValueError(f'runs/{path.name}/closure.json must record merged with its merge commit, or abandoned.')
+    return pr, closure
+
+
+def record_pr(args):
+    path = run_path(args.run)
+    require_run(path)
+    if not PR_URL.fullmatch(args.url):
+        raise ValueError('PR must be a full GitHub URL: https://github.com/OWNER/REPO/pull/NUMBER')
+    with locked(path / '.writer-lock'):
+        pr, closure = delivery(path)
+        if pr is not None:
+            if pr['url'] != args.url:
+                raise ValueError(f"This run's PR is already recorded as {pr['url']}; a run has one PR.")
+            print(f"PR already recorded: {pr['url']}")
+            return
+        if closure is not None:
+            raise ValueError('This run is closed; its PR can no longer change.')
+        record_path, _ = verification_files(path)
+        current = False
+        with contextlib.suppress(ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
+            current = record_path.exists() and verification_matches(path, read_json(record_path))
+        if not current:
+            raise ValueError(f'Record the PR for verified work: run python3 _system/scripts/sdlc.py verify {args.run} first.')
+        write_json(path / 'pr.json', {'url': args.url, 'candidate': read_json(record_path)['candidate']['head'],
+                                      'time_ns': time.time_ns()})
+    print(f'Recorded PR {args.url}. Put this line in its description: Tink-Run: {require_run(path)["run_id"]}')
+
+
+def close(args):
+    path = run_path(args.run)
+    require_run(path)
+    if args.outcome == 'merged' and not (args.merge and re.fullmatch(r'[0-9a-f]{40}', args.merge)):
+        raise ValueError('A merged run needs --merge with the full 40-character merge commit.')
+    if args.outcome == 'abandoned' and args.merge:
+        raise ValueError('An abandoned run has no merge commit; leave out --merge.')
+    with locked(path / '.writer-lock'):
+        pr, closure = delivery(path)
+        if closure is not None:
+            raise ValueError(f"This run is already closed as {closure['outcome']}.")
+        if args.outcome == 'merged' and pr is None:
+            raise ValueError(f'Record the PR first: python3 _system/scripts/sdlc.py pr {args.run} <PR URL>')
+        write_json(path / 'closure.json', {'outcome': args.outcome, **({'merge': args.merge} if args.merge else {}),
+                                           'time_ns': time.time_ns()})
+    print(f'Closed {args.run}: {args.outcome}.')
+
+
 def status_state(path):
     """One calculation for the human CLI and machine clients; never an approval."""
     meta = require_run(path)
@@ -1204,13 +1262,20 @@ def status_state(path):
                   fix_step_action(path, steps, newest_step(path)) or
                   (f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
                    if meta.get('seed_contract') else 'implement the approved brief, then run verification.')))
+    pr, closure = delivery(path)
+    if closure is not None and not active:
+        next_action = (f"Closed: merged as {closure['merge']}." if closure['outcome'] == 'merged' else 'Closed: abandoned.')
+    elif state == 'current' and next_action.endswith('independent PR review and release checks.'):
+        next_action += (f" After merge or abandonment, record it: python3 _system/scripts/sdlc.py close {path.name} "
+                        '--outcome merged --merge <commit> (or --outcome abandoned).' if pr else
+                        f' Once the PR is open, record it: python3 _system/scripts/sdlc.py pr {path.name} <PR URL>.')
     if ROOT != HOME:
         next_action = f'In {ROOT}: {next_action}'
     bound = meta.get('seed_contract')
     seed_contract = {key: bound[key] for key in ('path', 'sha256', 'source')} if bound is not None else None
     if bound is not None and bound.get('confirmation', {}).get('schema_version') == 3:
         seed_contract['confirmation'] = bound['confirmation']
-    return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract,
+    return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract, 'pr': pr, 'closure': closure,
             **({'checkout': str(ROOT)} if ROOT != HOME else {}),
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active, 'steps': steps,
@@ -1254,6 +1319,10 @@ def status_text(view):
         lines.append('Verification: not run (implementation may be pending; a text log is not passing evidence)')
     if all(g['status'] == 'approved' for g in view['gates']):
         lines.append(f"Next: {view['next_action']}")
+    if view['pr']:
+        lines.append(f"PR: {view['pr']['url']}")
+    if view['closure']:
+        lines.append(f"Closed: {view['closure']['outcome']}" + (f" as {view['closure']['merge']}" if view['closure'].get('merge') else ''))
     lines.append('Deployment: not inferred from local review files; consult the deployment system.')
     return '\n'.join(lines)
 
@@ -1277,7 +1346,7 @@ def checkout_run_view(slug):
         raise FileNotFoundError(f"Run '{slug}' not found.")
     names = {'brief': 'brief.md', 'intent': ARTIFACTS[0], 'spec': ARTIFACTS[1], 'plan': ARTIFACTS[2]}
     receipt, log = verification_files(path)
-    evidence = [path / name for name in ['run.json', 'checklist.json', 'test-lock.json', '.writer-lock']]
+    evidence = [path / name for name in ['run.json', 'checklist.json', 'test-lock.json', '.writer-lock', 'pr.json', 'closure.json']]
     evidence += [receipt, log] + [path / name for name in names.values()] + [ROOT / '_system/verification.json']
     evidence += list((path / 'decisions').glob('*.json')) + list((path / 'marks').glob('*.json'))
     for file in evidence:
@@ -1352,7 +1421,7 @@ def status(args):
         try:
             view = run_view(name)
             runs.append({'slug': name, 'run_id': view['run_id'], **view['meta'], 'verification_status': view['verification_status'],
-                         'seed_contract': view['seed_contract'],
+                         'seed_contract': view['seed_contract'], 'pr': view['pr'], 'closure': view['closure'],
                          'next_action': view['next_action'], 'has_lock': view['has_lock'],
                          'checklist_summary': {'total': len(view['checklist']),
                                                'passed': sum(i['status'] == 'passed' for i in view['checklist'])}})
@@ -2387,7 +2456,7 @@ def step(args):
 class ShortErrorParser(argparse.ArgumentParser):
     def error(self, message):
         self.exit(2, f'sdlc.py: error: {message}\n'
-                     'Commands: new, status, decide, dry-run, verify, mark, lock-tests, skills, stage, step, walk. See _system/SDLC.md.\n')
+                     'Commands: new, status, decide, dry-run, verify, mark, pr, close, lock-tests, skills, stage, step, walk. See _system/SDLC.md.\n')
 
 
 def main():
@@ -2425,6 +2494,13 @@ def main():
     marking.add_argument('--covers-all', action='store_true',
                          help='the operator meant this evidence to attest every expectation it is already recorded for')
     marking.add_argument('--actor', type=json.loads, help='caller-declared reviewer actor JSON; not authentication')
+    recording = commands.add_parser('pr', help="record the run's one PR once its work is verified")
+    recording.add_argument('run')
+    recording.add_argument('url')
+    closing = commands.add_parser('close', help='record how the run ended: merged (with its merge commit) or abandoned')
+    closing.add_argument('run')
+    closing.add_argument('--outcome', choices=['merged', 'abandoned'], required=True)
+    closing.add_argument('--merge', help='full merge commit of a merged PR')
     baseline = commands.add_parser('lock-tests')
     baseline.add_argument('run')
     baseline.add_argument('paths', nargs='+')
@@ -2455,7 +2531,7 @@ def main():
     lint.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
-        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'mark': mark, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'step': step, 'walk': walk}[args.command](args)
+        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'mark': mark, 'pr': record_pr, 'close': close, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'step': step, 'walk': walk}[args.command](args)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
         if args.command in ('status', 'capabilities') and args.json:
             machine_output({'error': {'code': 'not-found' if isinstance(error, FileNotFoundError) else 'invalid-state',

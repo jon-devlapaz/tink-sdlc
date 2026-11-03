@@ -61,7 +61,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_capabilities_are_machine_readable_and_not_the_package_version(self):
         value = self.machine('capabilities')
-        self.assertEqual(set(value['capabilities']), {'status-json', 'verify', 'mark', 'log-file'})
+        self.assertEqual(set(value['capabilities']), {'status-json', 'verify', 'mark', 'log-file', 'pr', 'close'})
         self.assertEqual(self.machine('status')['runs'], [])
 
     def test_run_ids_distinguish_creations_in_both_status_views(self):
@@ -474,6 +474,109 @@ class SeedBindingStatusTests(StageBase):
                 self.assertNotEqual(human.returncode, 0)
                 self.assertIn('Seed binding', human.stderr)
                 self.assertEqual(self.tree(), before)
+
+
+class DeliveryRecordTests(unittest.TestCase):
+    """#146: a run records its one PR and how it ended, as typed records clients can read."""
+    setUp = fixtures.WorkflowTests.setUp
+    git = fixtures.WorkflowTests.git
+    config = fixtures.WorkflowTests.config
+    cli = fixtures.WorkflowTests.cli
+    approve = fixtures.WorkflowTests.approve
+    define_checklist = fixtures.WorkflowTests.define_checklist
+    create_ready = fixtures.WorkflowTests.create_ready
+    machine = ProtocolTests.machine
+    view = ProtocolTests.view
+
+    URL = 'https://github.com/TEST/example/pull/7'
+    MERGE = 'a' * 40
+
+    def verified(self):
+        self.create_ready()
+        self.cli('verify', 'example')
+        self.assertEqual(self.view()['verification_status'], 'current')
+
+    def test_new_runs_have_no_pr_or_closure(self):
+        self.create_ready()
+        view = self.view()
+        self.assertIsNone(view['pr'])
+        self.assertIsNone(view['closure'])
+        summary = self.machine('status')['runs'][0]
+        self.assertIsNone(summary['pr'])
+        self.assertIsNone(summary['closure'])
+
+    def test_pr_needs_current_verification(self):
+        self.create_ready()
+        self.assertIn('verify example first', self.cli('pr', 'example', self.URL, ok=False))
+        self.assertFalse((self.root / 'runs/example/pr.json').exists())
+
+    def test_pr_records_url_and_verified_candidate_and_names_the_next_record(self):
+        self.verified()
+        self.assertIn('Once the PR is open, record it: python3 _system/scripts/sdlc.py pr example', self.view()['next_action'])
+        out = self.cli('pr', 'example', self.URL)
+        run_id = json.loads((self.root / 'runs/example/run.json').read_text())['run_id']
+        self.assertIn(f'Tink-Run: {run_id}', out)
+        view = self.view()
+        self.assertEqual(view['pr']['url'], self.URL)
+        self.assertEqual(view['pr']['candidate'], view['verification']['candidate']['head'])
+        self.assertIn('sdlc.py close example --outcome merged', view['next_action'])
+        self.assertIn(f'PR: {self.URL}', view['cli_status'])
+        self.assertEqual(self.machine('status')['runs'][0]['pr']['url'], self.URL)
+
+    def test_a_run_has_one_pr(self):
+        self.verified()
+        self.cli('pr', 'example', self.URL)
+        before = (self.root / 'runs/example/pr.json').read_bytes()
+        self.assertIn('already recorded', self.cli('pr', 'example', self.URL))
+        self.assertIn('a run has one PR', self.cli('pr', 'example', 'https://github.com/TEST/example/pull/8', ok=False))
+        self.assertEqual((self.root / 'runs/example/pr.json').read_bytes(), before)
+
+    def test_pr_must_be_a_full_github_pull_url(self):
+        self.verified()
+        for url in ('github.com/TEST/example/pull/7', 'https://github.com/TEST/example/issues/7',
+                    'https://example.com/TEST/example/pull/7', 'https://github.com/TEST/example/pull/7/files'):
+            with self.subTest(url=url):
+                self.assertIn('full GitHub URL', self.cli('pr', 'example', url, ok=False))
+
+    def test_merged_needs_the_recorded_pr_and_full_merge_commit(self):
+        self.verified()
+        self.assertIn('Record the PR first', self.cli('close', 'example', '--outcome', 'merged', '--merge', self.MERGE, ok=False))
+        self.cli('pr', 'example', self.URL)
+        self.assertIn('40-character merge commit', self.cli('close', 'example', '--outcome', 'merged', '--merge', 'abc1234', ok=False))
+        self.assertIn('40-character merge commit', self.cli('close', 'example', '--outcome', 'merged', ok=False))
+        self.assertFalse((self.root / 'runs/example/closure.json').exists())
+        self.cli('close', 'example', '--outcome', 'merged', '--merge', self.MERGE)
+        view = self.view()
+        self.assertEqual(view['closure']['outcome'], 'merged')
+        self.assertEqual(view['closure']['merge'], self.MERGE)
+        self.assertEqual(view['next_action'], f'Closed: merged as {self.MERGE}.')
+        self.assertEqual(self.machine('status')['runs'][0]['closure']['outcome'], 'merged')
+
+    def test_abandoned_needs_no_pr_and_takes_no_merge(self):
+        self.create_ready()
+        self.assertIn('no merge commit', self.cli('close', 'example', '--outcome', 'abandoned', '--merge', self.MERGE, ok=False))
+        self.cli('close', 'example', '--outcome', 'abandoned')
+        self.assertEqual(self.view()['next_action'], 'Closed: abandoned.')
+
+    def test_a_run_closes_once_and_its_pr_is_then_fixed(self):
+        self.create_ready()
+        self.cli('close', 'example', '--outcome', 'abandoned')
+        before = (self.root / 'runs/example/closure.json').read_bytes()
+        self.assertIn('already closed as abandoned', self.cli('close', 'example', '--outcome', 'abandoned', ok=False))
+        self.assertIn('This run is closed', self.cli('pr', 'example', self.URL, ok=False))
+        self.assertEqual((self.root / 'runs/example/closure.json').read_bytes(), before)
+
+    def test_malformed_records_invalidate_the_run(self):
+        self.create_ready()
+        for name, value in (('pr.json', {'url': 'not a url', 'candidate': 'x'}),
+                            ('closure.json', {'outcome': 'merged'})):
+            with self.subTest(name=name):
+                record = self.root / 'runs/example' / name
+                record.write_text(json.dumps(value))
+                summary = self.machine('status')['runs'][0]
+                self.assertEqual(summary['verification_status'], 'invalid')
+                self.assertIn(name, summary['error'])
+                record.unlink()
 
 
 if __name__ == '__main__':

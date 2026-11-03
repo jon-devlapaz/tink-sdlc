@@ -497,7 +497,7 @@ Runs are created atomically and have one writer at a time; busy or interrupted o
 
 Use protected branches, current required CI, independent code-owner approval and deployment checks in your forge. Open the PR once the candidate is committed and verification is current (end of stage 4; `stage <slug> 5` enforces it); stages 1-2 need none, and a draft PR during build is not review. Delivery, merge authority and the no-`origin` warning are owned by `stages/05-deploy/CONTEXT.md`; `stage <slug> 3` prints that warning early, without refusing. PR creation and review findings do not prove deployment: keep deployed revision, result and rollback references in the deployment system.
 
-A run ends when its closure record exists: after review and rework, commit `runs/<run>/closure.md` (PR URL, merge revision, outcome). `status` describes candidate evidence and never marks a run merged or closed.
+Once the PR is open, record it: `sdlc.py pr <run> <PR URL>` writes `runs/<run>/pr.json` (the URL and the verified candidate commit it was opened from). It needs current verification, and a run has one PR: a different URL is refused. Put `Tink-Run: <run_id>` in the PR description so the link reads back from the forge. A run ends when `sdlc.py close <run> --outcome merged --merge <commit>` (needs the recorded PR and the full merge commit) or `--outcome abandoned` writes `runs/<run>/closure.json`; a run closes once. Until then, current runs say what to record next. These are local records of what happened, not merge authority; a `closure.md` note is optional and is not the record.
 
 Maintenance is optional intake, not a required completion stage. Enable it only after defining metric-specific thresholds, deduplication, cooldowns, and run limits. Alerts create drafts for service-owner triage, never fabricated approvals.
 
@@ -515,7 +515,7 @@ python3 _system/scripts/sdlc.py status example --json
 These read-only commands emit one JSON object on stdout. Every response carries
 `protocol: "tink-sdlc"`, integer `api_version: 1`, and `workspace` (the canonical
 absolute checkout path). The API version is independent of the scaffold release.
-`capabilities` lists `status-json`, `verify`, `mark`, and `log-file`. Clients must
+`capabilities` lists `status-json`, `verify`, `mark`, `log-file`, `pr`, and `close`. Clients must
 check the identity, version, and capabilities before enabling actions. Extra fields
 and capabilities are additive; removing fields or changing their meaning requires
 a new API major. Unknown critical states, malformed responses, and unsupported
@@ -543,6 +543,9 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   `attribution: agent-recorded` discloses an invalid human receipt; optional `evidence`
   names an independent confirmed-seed match. Seed-bound views add `definition` with
   `departures`, `question` (null for equality or current accepted departures), and `evidence`.
+- `pr`: the recorded PR (`url`, `candidate`, `time_ns`) or null; `closure`: `outcome` (`merged` or
+  `abandoned`), `merge` for merged runs, and `time_ns`, or null. Both appear in run summaries too.
+  Malformed records invalidate the run.
 - `seed_contract`: `path`, `sha256`, and `source` from run.json, or null
   when unbound (absent or null in run.json). Both status forms expose this binding;
   human run status adds one `Seed contract:` line when bound. A binding must be an
