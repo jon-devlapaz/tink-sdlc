@@ -6,10 +6,12 @@ import errno
 import fnmatch
 import fcntl
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import signal
 import stat
@@ -1199,8 +1201,9 @@ def status_state(path):
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',
     }.get(state, (f'Building in {building}; read status there.' if (building := build_checkout(path.name)) else
-                  f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
-                  if meta.get('seed_contract') else 'implement the approved brief, then run verification.'))
+                  fix_step_action(path, steps, newest_step(path)) or
+                  (f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
+                   if meta.get('seed_contract') else 'implement the approved brief, then run verification.')))
     if ROOT != HOME:
         next_action = f'In {ROOT}: {next_action}'
     bound = meta.get('seed_contract')
@@ -2275,6 +2278,29 @@ def worker_action(slug, steps, newest=None):
     return f"Whether the {step['name']} worker is running is {step['observed_turn']}"
 
 
+def fix_step_action(path, steps, newest):
+    """After lock-tests, the command that prepares the fix's step: a completed build step cannot be prepared again.
+    Says nothing once a step has been prepared since the lock, or while any step is unfinished or unreadable."""
+    lock = path / 'test-lock.json'
+    if not lock.is_file() or not steps or any(s['state'] != 'completed' for s in steps):
+        return ''
+    try:
+        record = read_json(path / 'steps' / f'{newest}.json')
+        prepared, report = record['prepared_ns'], Path(record['report'])
+        pins = f"--model {shlex.quote(record['model'])} --launcher {shlex.quote(record['launcher'])}"
+        locked_ns = lock.stat().st_mtime_ns
+    except (ValueError, OSError, KeyError, TypeError):
+        return ''
+    if type(prepared) is not int or prepared > locked_ns:
+        return ''
+    names = {s['name'] for s in steps}
+    name = next(n for n in (f'fix-{i}' if i else 'fix' for i in itertools.count())
+                if n not in names and not (report.parent / f'{n}-report.md').exists())
+    return (f'The failing test is locked; prepare a new step for the fix (a completed step cannot be prepared again): '
+            f'python3 _system/scripts/sdlc.py step {path.name} {name} prepare '
+            f"--report {shlex.quote(str(report.parent / f'{name}-report.md'))} {pins}, then launch it.")
+
+
 def step(args):
     if os.environ.get('TINK_SDLC_STEP_SESSION') == '1' and args.action in ('prepare', 'launch', 'resume', 'complete'):
         raise ValueError('Cannot operate a pinned build step from inside its agent session.')
@@ -2296,6 +2322,9 @@ def step(args):
         return
     with locked(path / '.writer-lock'):
         if args.action == 'prepare':
+            if building := build_checkout(args.run):
+                raise ValueError(f'Run {args.run} builds in {building}; prepare its steps there '
+                                 f'(cd {shlex.quote(building)} first), so the worker writes where the build lives.')
             if contract.exists():
                 raise ValueError('Step already exists; inspect it instead of replacing its contract.')
             report = step_absolute(args.report, 'Step report')

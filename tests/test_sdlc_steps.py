@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from test_sdlc_stage import StageBase, PYTHON
+from test_sdlc_stage import StageBase, PYTHON, PASSING
 
 
 FAKE = '''#!{python}
@@ -307,6 +307,41 @@ class StepTests(StageBase):
         run_step('zz', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
         run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
         self.assertTrue(run['next_action'].startswith("The zz step's"), run['next_action'])
+
+    def test_status_names_the_fix_step_command_after_lock_tests(self):
+        # tink-sdlc#144: after the failing test was locked, status said "implement" and hid that a new step is needed.
+        self.set_checks([PASSING])
+        self.prepare()
+        self.step('launch', env={'TEST_WRITE_REPORT': '1'})
+        self.step('complete')
+        (self.root / 'test_regression.py').write_text('TEST failing regression\n')
+        locked = self.sdlc('lock-tests', 'r', 'test_regression.py', '--source', 'TEST review', '--failure-evidence', 'TEST ci')
+        self.assertEqual(locked.returncode, 0, locked.stderr)
+        fix_report = self.report.parent / 'fix-report.md'
+        command = (f'python3 _system/scripts/sdlc.py step r fix prepare --report {fix_report} '
+                   f'--model {self.model} --launcher {self.launcher}')
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(run['next_action'], 'The failing test is locked; prepare a new step for the fix '
+                         f'(a completed step cannot be prepared again): {command}, then launch it.')
+        self.assertIn(f'Next: {run["next_action"]}', self.sdlc('status', 'r').stdout)
+        prepared = self.sdlc(*command.split()[2:])
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        self.assertEqual(self.requests(), ['launch ' + self.model])
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertNotIn('new step', run['next_action'])
+        self.sdlc('step', 'r', 'fix', 'launch', env={'TEST_WRITE_REPORT': '1'})
+        self.assertEqual(self.sdlc('step', 'r', 'fix', 'complete').returncode, 0)
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertNotIn('new step', run['next_action'])  # the fix step came after the lock
+
+    def test_prepare_refuses_the_main_checkout_while_the_run_builds_in_a_worktree(self):
+        # tinkery#658: a step pinned to the main checkout sent the worker where it must not write.
+        worktree = self.base / 'TEST-worktree'
+        self.git('worktree', 'add', '-q', '-b', 'r', str(worktree), 'HEAD')
+        result = self.prepare(ok=False)
+        self.assertIn(f'Run r builds in {worktree}; prepare its steps there', result.stderr)
+        self.assertFalse(self.contract.exists())
+        self.assertEqual(self.requests(), [])
 
     def test_malformed_active_contract_cannot_complete(self):
         self.prepare()
