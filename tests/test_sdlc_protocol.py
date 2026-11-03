@@ -3,6 +3,7 @@ import fcntl
 import hashlib
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -641,7 +642,10 @@ class LabelTests(unittest.TestCase):
 
     def test_about_must_be_a_checkout_file_or_outside(self):
         self.create_ready()
-        for about in ('runs/example/missing.md', '../outside.md', '/etc/hostname'):
+        beside = Path(tempfile.mkdtemp(prefix='tink-sdlc-TEST-beside-'))
+        self.addCleanup(shutil.rmtree, beside)
+        (beside / 'TEST-beside.md').write_text('outside the checkout')
+        for about in ('runs/example/missing.md', os.path.relpath(beside / 'TEST-beside.md', self.root), str(beside / 'TEST-beside.md')):
             with self.subTest(about=about):
                 self.assertIn('--about must name a file', self.label('--about', about, ok=False))
 
@@ -661,6 +665,35 @@ class LabelTests(unittest.TestCase):
                 self.assertIn('append-only', self.label(ok=False))
         file.write_text(original)
         self.assertEqual(self.view()['labels']['count'], 2)
+
+    def test_an_agent_attributed_label_line_invalidates_the_run(self):
+        self.create_ready()
+        file = self.root / 'runs/example/labels.jsonl'
+        line = {'kind': 'none', 'words': 'No corrections', 'reviewer': 'Agent Pi', 'source': 'TEST', 'consent': 'local',
+                'time_ns': 1, 'prev': hashlib.sha256(b'').hexdigest()}
+        file.write_text(json.dumps(line) + '\n')
+        self.assertIn('not an operator label', self.machine('status')['runs'][0]['error'])
+        self.assertIn('not an operator label', self.cli('close', 'example', '--outcome', 'abandoned', ok=False))
+
+    def test_a_closed_run_keeps_its_labels(self):
+        self.create_ready()
+        self.label(kind='none', words='No corrections')
+        self.cli('close', 'example', '--outcome', 'abandoned')
+        self.assertIn('closed; its labels can no longer change', self.label(kind='rejected', ok=False))
+        (self.root / 'runs/example/labels.jsonl').unlink()
+        summary = self.machine('status')['runs'][0]
+        self.assertEqual(summary['verification_status'], 'invalid')
+        self.assertIn('closed but has no labels', summary['error'])
+
+    def test_delivery_records_refuse_the_main_checkout_while_the_run_builds_in_a_worktree(self):
+        self.create_ready()
+        worktree = Path(tempfile.mkdtemp(prefix='tink-sdlc-TEST-build-')) / 'checkout'
+        self.addCleanup(shutil.rmtree, worktree.parent)
+        self.git('worktree', 'add', '-q', '-b', 'example', str(worktree), 'HEAD')
+        self.assertIn(f'Run example builds in {worktree}; record it there', self.label(ok=False))
+        self.assertIn('builds in', self.cli('close', 'example', '--outcome', 'abandoned', ok=False))
+        self.assertIn('builds in', self.cli('pr', 'example', 'https://github.com/TEST/example/pull/1', ok=False))
+        self.assertFalse((self.root / 'runs/example/labels.jsonl').exists())
 
     def test_close_needs_a_label(self):
         self.create_ready()

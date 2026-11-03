@@ -51,12 +51,16 @@ def read_json(path):
 
 
 def write_json(path, value):
+    write_bytes(path, (json.dumps(value, indent=2) + '\n').encode())
+
+
+def write_bytes(path, data):
+    """Replaces `path` whole, so a crash leaves the old file or the new one, never a torn write."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent)
     try:
-        with os.fdopen(fd, 'w') as stream:
-            json.dump(value, stream, indent=2)
-            stream.write('\n')
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(tmp, path)
@@ -1102,7 +1106,8 @@ def reading_build_checkout(run):
 
 
 def delivery(path):
-    """The run's recorded PR and closure, each null until recorded. Malformed records invalidate the run."""
+    """The run's recorded PR, closure and labels; PR and closure are null until recorded. Malformed records,
+    or a closure whose labels are gone, invalidate the run."""
     pr = read_json(regular_evidence(path / 'pr.json')) if (path / 'pr.json').exists() else None
     if pr is not None and not (isinstance(pr, dict) and isinstance(pr.get('url'), str) and PR_URL.fullmatch(pr['url'])
                                and isinstance(pr.get('candidate'), str) and pr['candidate']):
@@ -1112,28 +1117,32 @@ def delivery(path):
                                     and (closure['outcome'] == 'abandoned' or (isinstance(closure.get('merge'), str)
                                                                                and re.fullmatch(r'[0-9a-f]{40}', closure['merge'])))):
         raise ValueError(f'runs/{path.name}/closure.json must record merged with its merge commit, or abandoned.')
-    return pr, closure
+    records = labels(path)
+    if closure is not None and not records:
+        raise ValueError(f'runs/{path.name} is closed but has no labels; restore labels.jsonl from Git.')
+    return pr, closure, records
 
 
 def labels(path):
     """The run's operator labels, oldest first. Each line names the digest of the file before it,
-    so an edited or removed earlier line invalidates the run rather than changing the count."""
+    so an edited or removed earlier line invalidates the run rather than changing the count. Labels are
+    human-only: an agent-attributed line invalidates the run too."""
     file = regular_evidence(path / 'labels.jsonl')
     if not file.exists():
         return []
-    data, records, offset = file.read_bytes(), [], 0
-    for number, line in enumerate(data.splitlines(keepends=True), 1):
+    records, before = [], hashlib.sha256()
+    for number, line in enumerate(file.read_bytes().splitlines(keepends=True), 1):
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
             record = None
-        if not (isinstance(record, dict) and record.get('kind') in LABEL_KINDS and record.get('prev') == digest(data[:offset])
+        if not (isinstance(record, dict) and record.get('kind') in LABEL_KINDS and record.get('prev') == before.hexdigest()
                 and all(isinstance(record.get(key), str) and record[key].strip() for key in ('words', 'reviewer', 'source'))
-                and record.get('consent') in ('local', 'shareable') and line.endswith(b'\n')):
-            raise ValueError(f'runs/{path.name}/labels.jsonl line {number} was changed or is not a label; '
+                and record.get('consent') in ('local', 'shareable') and not agent_record(record) and line.endswith(b'\n')):
+            raise ValueError(f'runs/{path.name}/labels.jsonl line {number} was changed or is not an operator label; '
                              'labels are append-only, so restore the file from Git.')
         records.append(record)
-        offset += len(line)
+        before.update(line)
     return records
 
 
@@ -1142,9 +1151,16 @@ def label_summary(records):
             'outside': sum(r.get('about') == 'outside' for r in records)}
 
 
+def writing_here(run):
+    """Delivery records live beside the run's evidence; refuse here while another checkout builds it."""
+    if building := build_checkout(run):
+        raise ValueError(f'Run {run} builds in {building}; record it there (cd {shlex.quote(building)} first).')
+
+
 def label(args):
     path = run_path(args.run)
     require_run(path)
+    writing_here(args.run)
     human_review(args, path)
     if os.environ.get('TINK_SDLC_STEP_SESSION') == '1':
         raise ValueError('Labels are the operator\'s; a build step session cannot record them.')
@@ -1160,17 +1176,15 @@ def label(args):
             raise ValueError('--about must name a file in this checkout (checkout-relative), or outside.')
         about = {'about': str(target.relative_to(ROOT)), 'about_sha256': digest(target.read_bytes())}
     with locked(path / '.writer-lock'):
-        labels(path)
+        if delivery(path)[1] is not None:
+            raise ValueError('This run is closed; its labels can no longer change.')
         file = path / 'labels.jsonl'
         before = file.read_bytes() if file.exists() else b''
         record = {'kind': args.kind, 'words': args.words, 'reviewer': args.reviewer, 'source': args.source,
                   **(about or {}), 'consent': args.consent,
                   **({'actor': args.actor} if getattr(args, 'actor', None) is not None else {}),
                   'time_ns': time.time_ns(), 'prev': digest(before)}
-        with open(file, 'ab') as stream:
-            stream.write(json.dumps(record, sort_keys=True, ensure_ascii=False).encode() + b'\n')
-            stream.flush()
-            os.fsync(stream.fileno())
+        write_bytes(file, before + json.dumps(record, sort_keys=True, ensure_ascii=False).encode() + b'\n')
     print(f'Recorded {args.kind} label for {args.run}.')
 
 
@@ -1179,8 +1193,9 @@ def record_pr(args):
     require_run(path)
     if not PR_URL.fullmatch(args.url):
         raise ValueError('PR must be a full GitHub URL: https://github.com/OWNER/REPO/pull/NUMBER')
+    writing_here(args.run)
     with locked(path / '.writer-lock'):
-        pr, closure = delivery(path)
+        pr, closure, _ = delivery(path)
         if pr is not None:
             if pr['url'] != args.url:
                 raise ValueError(f"This run's PR is already recorded as {pr['url']}; a run has one PR.")
@@ -1206,11 +1221,12 @@ def close(args):
         raise ValueError('A merged run needs --merge with the full 40-character merge commit.')
     if args.outcome == 'abandoned' and args.merge:
         raise ValueError('An abandoned run has no merge commit; leave out --merge.')
+    writing_here(args.run)
     with locked(path / '.writer-lock'):
-        pr, closure = delivery(path)
+        pr, closure, records = delivery(path)
         if closure is not None:
             raise ValueError(f"This run is already closed as {closure['outcome']}.")
-        if not labels(path):
+        if not records:
             raise ValueError(f'Label the run before closing it (no corrections counts): python3 _system/scripts/sdlc.py label {args.run} '
                              "--kind none --words 'No corrections' --reviewer NAME --source REF")
         if args.outcome == 'merged' and pr is None:
@@ -1325,8 +1341,8 @@ def status_state(path):
                   fix_step_action(path, steps, newest_step(path)) or
                   (f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
                    if meta.get('seed_contract') else 'implement the approved brief, then run verification.')))
-    pr, closure = delivery(path)
-    label_counts = label_summary(labels(path))
+    pr, closure, records = delivery(path)
+    label_counts = label_summary(records)
     if closure is not None and not active:
         next_action = (f"Closed: merged as {closure['merge']}." if closure['outcome'] == 'merged' else 'Closed: abandoned.')
     elif state == 'current' and next_action.endswith('independent PR review and release checks.'):
