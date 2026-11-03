@@ -207,7 +207,7 @@ python3 _system/scripts/sdlc.py lock-tests fix-example tests/test_regression.py 
   --failure-evidence 'Actual failing CI job or retained reproduction evidence'
 ```
 
-Include relevant fixtures, snapshots, discovery configuration, and runner helpers in the locked paths. Bug runs cannot verify without a lock; changed or missing locked files fail. Add `--reproduce '["python3","-m","unittest","tests.test_regression"]'` (a JSON argv array) to run the reproduction at lock time: the lock is refused if it passes, and the exit code and log digest are recorded and shown by `status` (`reproduction` in `status --json`). Without it the lock records review evidence only, `status` says the failure was not run locally, and CI must confirm it. A mistaken baseline requires an independently reviewed replacement run, linked to the previous one; tests are never unlocked silently.
+Include relevant fixtures, snapshots, discovery configuration, and runner helpers in the locked paths. Bug runs cannot verify without a lock; changed or missing locked files fail. Add `--reproduce '["python3","-m","unittest","tests.test_regression"]'` (a JSON argv array) to run the reproduction at lock time: the lock is refused if it passes, and the exit code and log digest are recorded and shown by `status` (`reproduction` in `status --json`). Without it the lock records review evidence only, `status` says the failure was not run locally, and CI must confirm it. A completed build step cannot be prepared again, so prepare the fix as a new step; once the step before the lock has completed, `status` names that command. A mistaken baseline requires an independently reviewed replacement run, linked to the previous one; tests are never unlocked silently.
 
 This detects local changes, not adversarial tampering. Strict protection requires CI to fetch the accepted test revision independently, protect verification policy, run against the candidate revision, and require the resulting check before merge. Agent-writable lock files and hooks are not an authorization boundary. This scaffold does not configure a forge or deployment environment.
 
@@ -311,7 +311,8 @@ its SHA-256, plus state, session identity and when it was prepared (`prepared_ns
 within a run; prepare refuses an existing contract or report. Relative report paths,
 model aliases/wildcards, changed launchers, copied contracts in another checkout,
 path substitutions and launch/resume overrides are refused. Prepare a new step
-in a new checkout; contracts are not portable session records.
+in a new checkout; contracts are not portable session records. While the run's
+branch is checked out in another worktree, prepare refuses here and names that checkout.
 
 `launch` and `resume` recheck every definition gate and perform offline exact-model
 resolution before admitting a provider-capable adapter operation. Both receive the
