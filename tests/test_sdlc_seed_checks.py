@@ -165,7 +165,7 @@ class SeedChecks(StageBase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('Nothing proves', result.stdout)
         view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
-        self.assertEqual(view['next_action'], 'independent PR review and release checks.')
+        self.assertEqual(view['next_action'], 'independent PR review and release checks. Once the PR is open, record it: python3 _system/scripts/sdlc.py pr r <PR URL>.')
 
     def test_a_passing_verify_names_pending_live_checks_beside_a_proven_one(self):
         # tinkery#615: one passing seed check must not hide the provisional ones still unproven.
@@ -179,7 +179,7 @@ class SeedChecks(StageBase):
         self.assertIn('seed-1: proven, seed-2: pending, seed-3: pending, seed-4: attested', result.stdout)
         self.assertIn(warning, result.stdout)
         view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
-        self.assertEqual(view['next_action'], warning + ' Then independent PR review and release checks.')
+        self.assertEqual(view['next_action'], warning + ' Then independent PR review and release checks. Once the PR is open, record it: python3 _system/scripts/sdlc.py pr r <PR URL>.')
 
     def test_provisional_activation_requires_evidence_and_renewed_review(self):
         self.bind([provisional('./future')])
