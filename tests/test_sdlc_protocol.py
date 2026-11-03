@@ -2,6 +2,7 @@
 import fcntl
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -61,7 +62,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_capabilities_are_machine_readable_and_not_the_package_version(self):
         value = self.machine('capabilities')
-        self.assertEqual(set(value['capabilities']), {'status-json', 'verify', 'mark', 'log-file', 'pr', 'close'})
+        self.assertEqual(set(value['capabilities']), {'status-json', 'verify', 'mark', 'log-file', 'pr', 'close', 'label'})
         self.assertEqual(self.machine('status')['runs'], [])
 
     def test_run_ids_distinguish_creations_in_both_status_views(self):
@@ -491,6 +492,9 @@ class DeliveryRecordTests(unittest.TestCase):
     URL = 'https://github.com/TEST/example/pull/7'
     MERGE = 'a' * 40
 
+    def label_none(self):
+        self.cli('label', 'example', '--kind', 'none', '--words', 'No corrections', '--reviewer', 'human', '--source', 'review:1')
+
     def verified(self):
         self.create_ready()
         self.cli('verify', 'example')
@@ -540,6 +544,7 @@ class DeliveryRecordTests(unittest.TestCase):
 
     def test_merged_needs_the_recorded_pr_and_full_merge_commit(self):
         self.verified()
+        self.label_none()
         self.assertIn('Record the PR first', self.cli('close', 'example', '--outcome', 'merged', '--merge', self.MERGE, ok=False))
         self.cli('pr', 'example', self.URL)
         self.assertIn('40-character merge commit', self.cli('close', 'example', '--outcome', 'merged', '--merge', 'abc1234', ok=False))
@@ -554,12 +559,14 @@ class DeliveryRecordTests(unittest.TestCase):
 
     def test_abandoned_needs_no_pr_and_takes_no_merge(self):
         self.create_ready()
+        self.label_none()
         self.assertIn('no merge commit', self.cli('close', 'example', '--outcome', 'abandoned', '--merge', self.MERGE, ok=False))
         self.cli('close', 'example', '--outcome', 'abandoned')
         self.assertEqual(self.view()['next_action'], 'Closed: abandoned.')
 
     def test_a_run_closes_once_and_its_pr_is_then_fixed(self):
         self.create_ready()
+        self.label_none()
         self.cli('close', 'example', '--outcome', 'abandoned')
         before = (self.root / 'runs/example/closure.json').read_bytes()
         self.assertIn('already closed as abandoned', self.cli('close', 'example', '--outcome', 'abandoned', ok=False))
@@ -577,6 +584,89 @@ class DeliveryRecordTests(unittest.TestCase):
                 self.assertEqual(summary['verification_status'], 'invalid')
                 self.assertIn(name, summary['error'])
                 record.unlink()
+
+
+class LabelTests(unittest.TestCase):
+    """#147: the operator's judgments of a run, append-only and theirs alone."""
+    setUp = fixtures.WorkflowTests.setUp
+    git = fixtures.WorkflowTests.git
+    config = fixtures.WorkflowTests.config
+    cli = fixtures.WorkflowTests.cli
+    approve = fixtures.WorkflowTests.approve
+    define_checklist = fixtures.WorkflowTests.define_checklist
+    create_ready = fixtures.WorkflowTests.create_ready
+    machine = ProtocolTests.machine
+    view = ProtocolTests.view
+
+    WORDS = "Shape's check command can't import tomli as cloned — Ω"
+
+    def label(self, *extra, kind='correction', words=WORDS, reviewer='jondev', ok=True, env=None):
+        argv = ['python3', str(self.root / '_system/scripts/sdlc.py'), 'label', 'example', '--kind', kind,
+                '--words', words, '--reviewer', reviewer, '--source', 'retro 2026-11-03', *extra]
+        result = subprocess.run(argv, cwd='/', capture_output=True, text=True, env={**os.environ, **(env or {})})
+        self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
+        return result.stdout + result.stderr
+
+    def lines(self):
+        return [json.loads(line) for line in (self.root / 'runs/example/labels.jsonl').read_text().splitlines()]
+
+    def test_labels_keep_words_verbatim_and_count_by_kind(self):
+        self.create_ready()
+        self.assertEqual(self.view()['labels'], {'count': 0, 'kinds': {'correction': 0, 'none': 0, 'accepted': 0, 'rejected': 0}, 'outside': 0})
+        self.label('--about', 'runs/example/checklist.json')
+        self.label('--about', 'outside')
+        self.label(kind='accepted', words='Result serves the goal')
+        first = self.lines()[0]
+        self.assertEqual(first['words'], self.WORDS)
+        self.assertEqual(first['about'], 'runs/example/checklist.json')
+        self.assertEqual(first['about_sha256'], hashlib.sha256((self.root / 'runs/example/checklist.json').read_bytes()).hexdigest())
+        self.assertEqual(first['consent'], 'local')
+        view = self.view()
+        self.assertEqual(view['labels']['count'], 3)
+        self.assertEqual(view['labels']['kinds']['correction'], 2)
+        self.assertEqual(view['labels']['outside'], 1)
+        self.assertIn('Labels: 2 correction, 1 accepted; 1 outside the run', view['cli_status'])
+        self.assertEqual(self.machine('status')['runs'][0]['labels']['count'], 3)
+
+    def test_labels_are_human_only(self):
+        self.create_ready()
+        self.assertIn('human-only', self.label(reviewer='Agent Pi', ok=False))
+        self.assertIn('human-only', self.label('--actor', '{"by":"agent"}', ok=False))
+        self.assertFalse((self.root / 'runs/example/labels.jsonl').exists())
+
+    def test_a_build_step_session_cannot_label(self):
+        self.create_ready()
+        self.assertIn('build step session', self.label(ok=False, env={'TINK_SDLC_STEP_SESSION': '1'}))
+        self.assertFalse((self.root / 'runs/example/labels.jsonl').exists())
+
+    def test_about_must_be_a_checkout_file_or_outside(self):
+        self.create_ready()
+        for about in ('runs/example/missing.md', '../outside.md', '/etc/hostname'):
+            with self.subTest(about=about):
+                self.assertIn('--about must name a file', self.label('--about', about, ok=False))
+
+    def test_an_edited_or_removed_earlier_label_invalidates_the_run(self):
+        self.create_ready()
+        self.label()
+        self.label(kind='none', words='Nothing else')
+        file = self.root / 'runs/example/labels.jsonl'
+        original = file.read_text()
+        first, second = original.splitlines(keepends=True)
+        for changed in (original.replace(self.WORDS, 'Softened words'), second, first.replace('correction', 'accepted') + second):
+            with self.subTest(changed=changed[:40]):
+                file.write_text(changed)
+                summary = self.machine('status')['runs'][0]
+                self.assertEqual(summary['verification_status'], 'invalid')
+                self.assertIn('labels.jsonl line', summary['error'])
+                self.assertIn('append-only', self.label(ok=False))
+        file.write_text(original)
+        self.assertEqual(self.view()['labels']['count'], 2)
+
+    def test_close_needs_a_label(self):
+        self.create_ready()
+        self.assertIn('Label the run before closing it', self.cli('close', 'example', '--outcome', 'abandoned', ok=False))
+        self.label(kind='none', words='No corrections')
+        self.cli('close', 'example', '--outcome', 'abandoned')
 
 
 if __name__ == '__main__':

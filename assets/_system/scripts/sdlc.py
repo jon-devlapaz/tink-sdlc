@@ -24,7 +24,8 @@ import uuid
 ROOT = Path(__file__).resolve().parents[2]
 HOME = ROOT
 API_VERSION = 1
-API_CAPABILITIES = ['status-json', 'verify', 'mark', 'log-file', 'pr', 'close']
+API_CAPABILITIES = ['status-json', 'verify', 'mark', 'log-file', 'pr', 'close', 'label']
+LABEL_KINDS = ('correction', 'none', 'accepted', 'rejected')
 PR_URL = re.compile(r'https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/[1-9][0-9]{0,9}')
 ITEM_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
 ITEM_KEYS = {'id', 'description', 'verify'}
@@ -1114,6 +1115,65 @@ def delivery(path):
     return pr, closure
 
 
+def labels(path):
+    """The run's operator labels, oldest first. Each line names the digest of the file before it,
+    so an edited or removed earlier line invalidates the run rather than changing the count."""
+    file = regular_evidence(path / 'labels.jsonl')
+    if not file.exists():
+        return []
+    data, records, offset = file.read_bytes(), [], 0
+    for number, line in enumerate(data.splitlines(keepends=True), 1):
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            record = None
+        if not (isinstance(record, dict) and record.get('kind') in LABEL_KINDS and record.get('prev') == digest(data[:offset])
+                and all(isinstance(record.get(key), str) and record[key].strip() for key in ('words', 'reviewer', 'source'))
+                and record.get('consent') in ('local', 'shareable') and line.endswith(b'\n')):
+            raise ValueError(f'runs/{path.name}/labels.jsonl line {number} was changed or is not a label; '
+                             'labels are append-only, so restore the file from Git.')
+        records.append(record)
+        offset += len(line)
+    return records
+
+
+def label_summary(records):
+    return {'count': len(records), 'kinds': {kind: sum(r['kind'] == kind for r in records) for kind in LABEL_KINDS},
+            'outside': sum(r.get('about') == 'outside' for r in records)}
+
+
+def label(args):
+    path = run_path(args.run)
+    require_run(path)
+    human_review(args, path)
+    if os.environ.get('TINK_SDLC_STEP_SESSION') == '1':
+        raise ValueError('Labels are the operator\'s; a build step session cannot record them.')
+    for flag in ('words', 'reviewer', 'source'):
+        if not getattr(args, flag).strip():
+            raise ValueError(f'--{flag} must be nonempty.')
+    about = None
+    if args.about == 'outside':
+        about = {'about': 'outside'}
+    elif args.about:
+        target = (ROOT / args.about).resolve()
+        if not target.is_relative_to(ROOT) or not target.is_file():
+            raise ValueError('--about must name a file in this checkout (checkout-relative), or outside.')
+        about = {'about': str(target.relative_to(ROOT)), 'about_sha256': digest(target.read_bytes())}
+    with locked(path / '.writer-lock'):
+        labels(path)
+        file = path / 'labels.jsonl'
+        before = file.read_bytes() if file.exists() else b''
+        record = {'kind': args.kind, 'words': args.words, 'reviewer': args.reviewer, 'source': args.source,
+                  **(about or {}), 'consent': args.consent,
+                  **({'actor': args.actor} if getattr(args, 'actor', None) is not None else {}),
+                  'time_ns': time.time_ns(), 'prev': digest(before)}
+        with open(file, 'ab') as stream:
+            stream.write(json.dumps(record, sort_keys=True, ensure_ascii=False).encode() + b'\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+    print(f'Recorded {args.kind} label for {args.run}.')
+
+
 def record_pr(args):
     path = run_path(args.run)
     require_run(path)
@@ -1150,6 +1210,9 @@ def close(args):
         pr, closure = delivery(path)
         if closure is not None:
             raise ValueError(f"This run is already closed as {closure['outcome']}.")
+        if not labels(path):
+            raise ValueError(f'Label the run before closing it (no corrections counts): python3 _system/scripts/sdlc.py label {args.run} '
+                             "--kind none --words 'No corrections' --reviewer NAME --source REF")
         if args.outcome == 'merged' and pr is None:
             raise ValueError(f'Record the PR first: python3 _system/scripts/sdlc.py pr {args.run} <PR URL>')
         write_json(path / 'closure.json', {'outcome': args.outcome, **({'merge': args.merge} if args.merge else {}),
@@ -1263,10 +1326,12 @@ def status_state(path):
                   (f"implement the confirmed seed (runs/{path.name}/seed-contract.md), then run verification."
                    if meta.get('seed_contract') else 'implement the approved brief, then run verification.')))
     pr, closure = delivery(path)
+    label_counts = label_summary(labels(path))
     if closure is not None and not active:
         next_action = (f"Closed: merged as {closure['merge']}." if closure['outcome'] == 'merged' else 'Closed: abandoned.')
     elif state == 'current' and next_action.endswith('independent PR review and release checks.'):
-        next_action += (f" After merge or abandonment, record it: python3 _system/scripts/sdlc.py close {path.name} "
+        next_action += (f" After merge or abandonment, label the run's corrections (sdlc.py label) and record how it ended: "
+                        f"python3 _system/scripts/sdlc.py close {path.name} "
                         '--outcome merged --merge <commit> (or --outcome abandoned).' if pr else
                         f' Once the PR is open, record it: python3 _system/scripts/sdlc.py pr {path.name} <PR URL>.')
     if ROOT != HOME:
@@ -1276,6 +1341,7 @@ def status_state(path):
     if bound is not None and bound.get('confirmation', {}).get('schema_version') == 3:
         seed_contract['confirmation'] = bound['confirmation']
     return {'slug': path.name, 'run_id': meta['run_id'], 'seed_contract': seed_contract, 'pr': pr, 'closure': closure,
+            'labels': label_counts,
             **({'checkout': str(ROOT)} if ROOT != HOME else {}),
             'meta': {'profile': meta['profile'], 'kind': meta.get('kind', 'feature')},
             'gates': gates, 'verification_status': state, 'has_lock': active, 'steps': steps,
@@ -1321,6 +1387,9 @@ def status_text(view):
         lines.append(f"Next: {view['next_action']}")
     if view['pr']:
         lines.append(f"PR: {view['pr']['url']}")
+    if view['labels']['count']:
+        kinds = ', '.join(f'{n} {kind}' for kind, n in view['labels']['kinds'].items() if n)
+        lines.append(f"Labels: {kinds}" + (f"; {view['labels']['outside']} outside the run" if view['labels']['outside'] else ''))
     if view['closure']:
         lines.append(f"Closed: {view['closure']['outcome']}" + (f" as {view['closure']['merge']}" if view['closure'].get('merge') else ''))
     lines.append('Deployment: not inferred from local review files; consult the deployment system.')
@@ -1346,7 +1415,7 @@ def checkout_run_view(slug):
         raise FileNotFoundError(f"Run '{slug}' not found.")
     names = {'brief': 'brief.md', 'intent': ARTIFACTS[0], 'spec': ARTIFACTS[1], 'plan': ARTIFACTS[2]}
     receipt, log = verification_files(path)
-    evidence = [path / name for name in ['run.json', 'checklist.json', 'test-lock.json', '.writer-lock', 'pr.json', 'closure.json']]
+    evidence = [path / name for name in ['run.json', 'checklist.json', 'test-lock.json', '.writer-lock', 'pr.json', 'closure.json', 'labels.jsonl']]
     evidence += [receipt, log] + [path / name for name in names.values()] + [ROOT / '_system/verification.json']
     evidence += list((path / 'decisions').glob('*.json')) + list((path / 'marks').glob('*.json'))
     for file in evidence:
@@ -1421,7 +1490,7 @@ def status(args):
         try:
             view = run_view(name)
             runs.append({'slug': name, 'run_id': view['run_id'], **view['meta'], 'verification_status': view['verification_status'],
-                         'seed_contract': view['seed_contract'], 'pr': view['pr'], 'closure': view['closure'],
+                         'seed_contract': view['seed_contract'], 'pr': view['pr'], 'closure': view['closure'], 'labels': view['labels'],
                          'next_action': view['next_action'], 'has_lock': view['has_lock'],
                          'checklist_summary': {'total': len(view['checklist']),
                                                'passed': sum(i['status'] == 'passed' for i in view['checklist'])}})
@@ -2456,7 +2525,7 @@ def step(args):
 class ShortErrorParser(argparse.ArgumentParser):
     def error(self, message):
         self.exit(2, f'sdlc.py: error: {message}\n'
-                     'Commands: new, status, decide, dry-run, verify, mark, pr, close, lock-tests, skills, stage, step, walk. See _system/SDLC.md.\n')
+                     'Commands: new, status, decide, dry-run, verify, mark, pr, close, label, lock-tests, skills, stage, step, walk. See _system/SDLC.md.\n')
 
 
 def main():
@@ -2501,6 +2570,15 @@ def main():
     closing.add_argument('run')
     closing.add_argument('--outcome', choices=['merged', 'abandoned'], required=True)
     closing.add_argument('--merge', help='full merge commit of a merged PR')
+    labelling = commands.add_parser('label', help="append the operator's judgment of a run: a correction, none, accepted or rejected")
+    labelling.add_argument('run')
+    labelling.add_argument('--kind', choices=LABEL_KINDS, required=True)
+    labelling.add_argument('--words', required=True, help="the operator's words, kept verbatim")
+    labelling.add_argument('--reviewer', required=True)
+    labelling.add_argument('--source', required=True, help='where the judgment came from')
+    labelling.add_argument('--about', help='checkout-relative file the label is about, or outside for work outside the run')
+    labelling.add_argument('--consent', choices=['local', 'shareable'], default='local')
+    labelling.add_argument('--actor', type=json.loads, help='caller-declared reviewer actor JSON; not authentication')
     baseline = commands.add_parser('lock-tests')
     baseline.add_argument('run')
     baseline.add_argument('paths', nargs='+')
@@ -2531,7 +2609,7 @@ def main():
     lint.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
-        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'mark': mark, 'pr': record_pr, 'close': close, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'step': step, 'walk': walk}[args.command](args)
+        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'mark': mark, 'pr': record_pr, 'close': close, 'label': label, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'step': step, 'walk': walk}[args.command](args)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
         if args.command in ('status', 'capabilities') and args.json:
             machine_output({'error': {'code': 'not-found' if isinstance(error, FileNotFoundError) else 'invalid-state',
