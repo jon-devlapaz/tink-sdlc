@@ -1269,7 +1269,7 @@ class WorkflowTests(unittest.TestCase):
         lines = result.stderr.strip().splitlines()
         self.assertEqual(len(lines), 2, result.stderr)
         self.assertTrue(lines[0].startswith('sdlc.py: error: '), lines[0])
-        self.assertEqual(lines[1], 'Commands: new, status, decide, dry-run, verify, mark, pr, close, lock-tests, skills, stage, step, walk. See _system/SDLC.md.')
+        self.assertEqual(lines[1], 'Commands: new, status, decide, dry-run, verify, mark, pr, close, label, lock-tests, skills, stage, step, walk. See _system/SDLC.md.')
         self.assertNotIn('usage:', result.stderr)
 
     def test_clarity_missing_argument_prints_short_error(self):

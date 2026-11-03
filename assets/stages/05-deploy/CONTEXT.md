@@ -10,8 +10,8 @@ Two jobs, kept apart:
 - **Owner** (the session that built the candidate): pushes the stage-open commit before review so the PR head
   is what the reviewer reads, brings `REVIEW-findings.md` back to the PR branch, opens or updates the PR, and
   runs verify again after any code change. Once the PR is open, the owner records it with
-  `sdlc.py pr <slug> <PR URL>` and puts `Tink-Run: <run_id>` in its description; after merge or abandonment,
-  `sdlc.py close <slug>` records how the run ended. The agent may open the PR. Only a human authorizes a merge: directly for this PR, or through a recorded standing approval that names merging, such as the operator approving the issue this run serves. With that authorization the agent may merge.
+  `sdlc.py pr <slug> <PR URL>` and puts `Tink-Run: <run_id>` in its description; after merge or abandonment, the
+  operator labels the run (`sdlc.py label`) and `sdlc.py close <slug>` records how it ended. The agent may open the PR. Only a human authorizes a merge: directly for this PR, or through a recorded standing approval that names merging, such as the operator approving the issue this run serves. With that authorization the agent may merge.
 
 A repeat review replaces `REVIEW-findings.md`; Git keeps the previous one, because once the owner has brought it back,
 the next `stage <slug> 5` commits `runs/<slug>` first. Begin a repeat review with `Previous review: <commit>`. If the old review checkout
