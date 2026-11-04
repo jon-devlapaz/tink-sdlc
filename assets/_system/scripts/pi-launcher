@@ -6,7 +6,9 @@ Promises: every launch and resume passes the step pin to Pi explicitly as
 never starts Pi or opens a connection; resume refuses a session whose recorded
 model differs from the pin, stops a resumed run that answers on another model within
 the admission window, and admits one still thinking once its new prompt is recorded
-on the pin; the builder prompt states its write and network
+on the pin; with a response cap, a watcher left after admission ends Pi's process group
+once the session holds that many answers, and resume refuses a session already at its cap;
+the builder prompt states its write and network
 boundaries and names pending provisional seed checks from sdlc status;
 finished reads only local files and reports true only when the newest turn ended
 normally on the pin.
@@ -15,6 +17,7 @@ catalog cache, providers without stored credentials, missing or archived session
 It is not a Herdr adapter and does not use pi-herdr routing or Pi session restore.
 """
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -32,6 +35,8 @@ THINKING = ('off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 # Admission must finish inside sdlc.py's 60-second adapter timeout; TINK_SDLC_PI_ADMISSION
 # may only shorten it (tests use a short window).
 ADMISSION_SECONDS = 50
+# How often a capped step's watcher counts the session's responses.
+WATCH_SECONDS = 0.5
 
 
 class Refusal(Exception):
@@ -187,6 +192,11 @@ def resolve(args, operation):
     if not Path(args.report).is_absolute():
         raise Refusal('Report path must be absolute.')
     path = retained_session(args, provider, model_id) if operation == 'resume' else None
+    if args.max_responses is not None and args.max_responses < 1:
+        raise Refusal('A response cap must be at least 1.')
+    if path and args.max_responses and responses(path) >= args.max_responses:
+        raise Refusal(f'The session already holds its cap of {args.max_responses} responses; resume refused. '
+                      'Finish the step with complete --stopped-by cap.')
     if operation == 'launch':
         checkout_of(args.contract)
     return provider, model_id, thinking, path
@@ -279,6 +289,53 @@ def stop(process):
         pass
 
 
+def responses(path):
+    return sum(1 for entry in entries(path) if answered_by(entry))
+
+
+def watched(args, process, path, log):
+    """With a response cap, leave a watcher that stops the worker's process group once the session holds that
+    many responses; the launcher itself still exits after admission. Returns the worker's process group."""
+    if args.max_responses:
+        with log.open('ab') as output:
+            subprocess.Popen([sys.executable, str(Path(__file__).resolve()), 'watch', '--contract', args.contract,
+                              '--session-file', str(path), '--group', str(process.pid),
+                              '--max-responses', str(args.max_responses)],
+                             stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=True)
+    return process.pid
+
+
+def watch(args):
+    """Runs until the worker exits, or stops its whole process group at the cap and says so in the step's log."""
+    path, group = Path(args.session_file), args.group
+    while True:
+        try:
+            os.kill(group, 0)
+        except OSError:
+            return
+        if responses(path) >= args.max_responses:
+            for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 1)):
+                with contextlib.suppress(OSError):
+                    os.killpg(group, sig)
+                deadline = time.monotonic() + wait
+                while time.monotonic() < deadline and alive(group):
+                    time.sleep(0.05)
+            print(f'pi-launcher: response cap {args.max_responses} reached; stopped process group {group}. '
+                  'Finish the step with sdlc.py step <run> <name> complete --stopped-by cap.', file=sys.stderr)
+            return
+        time.sleep(WATCH_SECONDS)
+
+
+def alive(group):
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def admission_seconds():
     try:
         configured = float(os.environ.get('TINK_SDLC_PI_ADMISSION', ADMISSION_SECONDS))
@@ -326,24 +383,29 @@ def admit(args, operation):
             if model or (operation == 'launch' and asked
                          and any(e.get('type') == 'thinking_level_change' and e.get('thinkingLevel') == thinking
                                  for e in new)):
-                return session_id, process.pid
+                return session_id, watched(args, process, path, log)
         if process.poll() not in (None, 0):
             raise Refusal(f'Pi exited {process.returncode} before admission was confirmed. Log: {log}')
         time.sleep(0.2)
     # A resumed turn can think past the window: its recorded prompt on the pin admits it.
     if operation == 'resume' and prompted and process.poll() is None:
-        return session_id, process.pid
+        return session_id, watched(args, process, retained, log)
     raise Refusal(f'Pi admission was not confirmed in {window:g}s; process {process.pid} '
                   f'may still run. Inspect {log} and the session before reconciling.')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['resolve', 'launch', 'resume', 'finished'])
-    for flag in ('model', 'report', 'contract', 'session'):
+    parser.add_argument('operation', choices=['resolve', 'launch', 'resume', 'finished', 'watch'])
+    for flag in ('model', 'report', 'contract', 'session', 'session-file'):
         parser.add_argument('--' + flag)
     parser.add_argument('--for-operation', choices=['launch', 'resume'])
+    parser.add_argument('--max-responses', type=int)
+    parser.add_argument('--group', type=int)
     args = parser.parse_args()
+    if args.operation == 'watch':
+        watch(args)
+        return 0
     operation = args.for_operation if args.operation == 'resolve' else args.operation
     try:
         if not operation or not args.contract:

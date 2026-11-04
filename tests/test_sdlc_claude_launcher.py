@@ -461,6 +461,15 @@ class ClaudeLauncherTests(StageBase):
         self.assertIn('differs from the committed policy', self.resolve().stderr)
         self.assertEqual(self.runs(), [])
 
+    def test_a_response_cap_refuses_before_claude_starts(self):
+        # tink-sdlc#151: this launcher cannot enforce a cap, so it must not silently ignore one.
+        self.step('build', 'prepare', '--report', str(self.report.with_name('build.md')), '--model', PIN,
+                  '--launcher', str(self.adapter), '--max-responses', '5')
+        result = self.step('build', 'launch', ok=False)
+        self.assertIn('cannot enforce a response cap', result.stderr)
+        self.assertEqual(self.contract()['state'], 'prepared')
+        self.assertEqual(self.runs(), [])
+
     def test_missing_or_foreign_sessions_are_refused_not_replaced(self):
         self.prepare()
         self.launch()

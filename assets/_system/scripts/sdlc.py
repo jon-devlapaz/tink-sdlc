@@ -2345,6 +2345,8 @@ def step_adapter(record, operation, contract, resolve=False):
         argv += ['--for-operation', operation]
     if operation in ('resume', 'finished'):
         argv += ['--session', record['session']]
+    if operation in ('launch', 'resume') and 'max_responses' in record:
+        argv += ['--max-responses', str(record['max_responses'])]
     offline = resolve or operation == 'finished'
     result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, timeout=15 if offline else 60)
     if result.returncode:
@@ -2518,9 +2520,9 @@ def step(args):
     contract = path / 'steps' / f'{args.name}.json'
     if contract.resolve() != contract.absolute():
         raise ValueError('Step contract paths must not contain symlinks.')
-    supplied = (args.report, args.model, args.launcher)
+    supplied = (args.report, args.model, args.launcher, args.max_responses)
     if args.action != 'prepare' and any(value is not None for value in supplied):
-        raise ValueError('Step report, model and launcher are fixed at prepare; overrides are refused.')
+        raise ValueError('Step report, model, launcher and response cap are fixed at prepare; overrides are refused.')
     if args.stopped_by and args.action != 'complete':
         raise ValueError('--stopped-by only completes a stopped step.')
     if args.action == 'show':
@@ -2541,10 +2543,13 @@ def step(args):
             model = step_model(args.model)
             if report.exists():
                 raise ValueError('Step report already exists; choose a fresh destination, never reuse old evidence.')
+            if args.max_responses is not None and args.max_responses < 1:
+                raise ValueError('A response cap must be at least 1.')
             record = {'schema': 1, 'run_id': meta['run_id'], 'checkout': str(ROOT),
                       'report': str(report), 'model': model, 'launcher': str(launcher),
                       'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None,
-                      'prepared_ns': time.time_ns()}
+                      'prepared_ns': time.time_ns(),
+                      **({'max_responses': args.max_responses} if args.max_responses is not None else {})}
             step_paths(record)
             write_json(contract, record)
         else:
@@ -2553,6 +2558,8 @@ def step(args):
                     or record.get('run_id') != meta['run_id'] or record.get('checkout') != str(ROOT)):
                 raise ValueError('Step contract is invalid or belongs to another run/checkout; prepare a new step here.')
             step_model(record['model'])
+            if 'max_responses' in record and not (type(record['max_responses']) is int and record['max_responses'] >= 1):
+                raise ValueError('Step contract has an invalid response cap.')
             if record.get('state') not in STEP_STATES:
                 raise ValueError('Step contract has an invalid state.')
             session = record.get('session')
@@ -2688,6 +2695,8 @@ def main():
     execution.add_argument('--report', metavar='ABSOLUTE_PATH')
     execution.add_argument('--model', metavar='PROVIDER/MODEL')
     execution.add_argument('--launcher', metavar='ABSOLUTE_PATH')
+    execution.add_argument('--max-responses', type=int, metavar='N',
+                           help='at prepare: the launcher stops the worker once its session holds N responses')
     execution.add_argument('--stopped-by', choices=list(STOPPED_WORDS),
                            help='complete a worker stopped before its turn ended: ends its process group, records what exists')
     lint = commands.add_parser('walk', help='structural walk lint (read-only)')
