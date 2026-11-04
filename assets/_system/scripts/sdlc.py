@@ -639,7 +639,10 @@ def test_lock(path):
     lock = path / 'test-lock.json'
     if not lock.exists():
         if require_run(path)['kind'] == 'bug':
-            raise ValueError('Bug runs require a reproduction test lock.')
+            raise ValueError('Bug runs require a reproduction test lock. Have the failing test reviewed by someone '
+                             'other than the worker that wrote it (a human or a separate agent session), then lock it: '
+                             f'python3 _system/scripts/sdlc.py lock-tests {path.name} TEST_PATHS '
+                             "--source 'REVIEW REFERENCE' --failure-evidence 'FAILURE EVIDENCE' --reproduce 'ARGV_JSON'.")
         return None
     record = read_json(lock)
     for name, expected in record['files'].items():

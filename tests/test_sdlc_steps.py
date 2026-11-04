@@ -308,6 +308,23 @@ class StepTests(StageBase):
         run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
         self.assertTrue(run['next_action'].startswith("The zz step's"), run['next_action'])
 
+    def test_bug_run_status_names_the_review_and_lock_command_after_the_build_step(self):
+        # tink-sdlc#150: after the worker wrote the red test, status named no review and no lock-tests command.
+        self.assertEqual(self.sdlc('new', 'bug', '--kind', 'bug').returncode, 0)
+        (self.root / 'runs/bug/checklist.json').write_text(json.dumps({'schema': 1, 'items': [
+            {'id': 'a', 'description': 'd', 'verify': 'v', 'check': PASSING}]}))
+        self.decide('bug', 3)
+        self.set_checks([PASSING])
+        for action, env in (('prepare', None), ('launch', {'TEST_WRITE_REPORT': '1'}), ('complete', None)):
+            args = ('--report', str(self.report), '--model', self.model, '--launcher', str(self.launcher)) if action == 'prepare' else ()
+            result = self.sdlc('step', 'bug', 'build', action, *args, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        run = json.loads(self.sdlc('status', 'bug', '--json').stdout)['run']
+        self.assertIn('reviewed by someone other than the worker that wrote it', run['next_action'])
+        self.assertIn('python3 _system/scripts/sdlc.py lock-tests bug TEST_PATHS', run['next_action'])
+        self.assertIn('--reproduce', run['next_action'])
+        self.assertIn(f'Next: {run["next_action"]}', self.sdlc('status', 'bug').stdout)
+
     def test_status_names_the_fix_step_command_after_lock_tests(self):
         # tink-sdlc#144: after the failing test was locked, status said "implement" and hid that a new step is needed.
         self.set_checks([PASSING])
