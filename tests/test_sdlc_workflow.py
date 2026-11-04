@@ -337,6 +337,26 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('changes-requested', self.cli('status', 'example'))
         self.cli('verify', 'example', ok=False)
 
+    def test_a_later_stage_contract_change_keeps_earlier_approvals_current(self):
+        # tink-sdlc#153: an upgrade that changed only stage 5's contract staled an in-flight stage 3 approval.
+        for stage in ('03-build', '05-deploy'):
+            (self.root / 'stages' / stage).mkdir()
+            (self.root / 'stages' / stage / 'CONTEXT.md').write_text('contract')
+        self.cli('new', 'example', '--profile', 'full')
+        self.define_checklist()
+        for stage in ['1', '2', '3']:
+            self.approve(stage)
+        (self.root / 'stages/05-deploy/CONTEXT.md').write_text('new delivery rules')
+        out = self.cli('status', 'example')
+        self.assertIn('Stage 1: approved', out)
+        self.assertIn('Stage 3: approved', out)
+        (self.root / 'stages/03-build/CONTEXT.md').write_text('new build rules')
+        out = self.cli('status', 'example')
+        self.assertIn('Stage 2: approved', out)
+        self.assertIn('Stage 3: stale', out)
+        (self.root / 'stages/01-plan/CONTEXT.md').write_text('new plan rules')
+        self.assertIn('Stage 1: stale', self.cli('status', 'example'))
+
     def test_full_dependency_chain(self):
         self.cli('new', 'example', '--profile', 'full')
         self.cli('decide', 'example', '2', 'approved', '--reviewer', 'human', '--source', 'review:1', '--reason', 'yes', ok=False)

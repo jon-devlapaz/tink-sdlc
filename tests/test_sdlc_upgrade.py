@@ -301,6 +301,16 @@ class UpgradeTests(unittest.TestCase):
         self.assertEqual(before, tree(self.root / 'runs'))
         self.assertIn('In-flight runs: approvals will read as stale until re-approved: r0, r1 (stage docs/templates changed)', out)
 
+    def test_no_inflight_warning_when_only_later_stage_contracts_change(self):
+        # tink-sdlc#153: approvals bind stages 1-3, so a stage 5 change alone keeps them current.
+        later = make_package(Path(self.pkgs.name) / 'later', '1.5.0', {'stages/05-deploy/CONTEXT.md': 'new delivery rules\n'})
+        self.install_old()
+        (self.root / 'runs/r1/decisions').mkdir(parents=True)
+        (self.root / 'runs/r1/decisions/a.json').write_text('{}')
+        out = self.run_pkg(later, '--upgrade').stdout
+        self.assertIn('stages/05-deploy/CONTEXT.md', out)
+        self.assertNotIn('In-flight', out)
+
     def test_no_warning_without_context_change_or_without_decisions(self):
         self.install_old()
         (self.root / 'runs/r1/decisions').mkdir(parents=True)
