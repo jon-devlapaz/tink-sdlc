@@ -164,7 +164,8 @@ def print_plan(root, previous, manifest, plan, overwrite, check):
         for name in plan['blocked']:
             print(f'  {name}: compare with: diff {root / name} {PACKAGE / name}')
     changing = plan['update'] + plan['create'] + plan['restore'] + plan['remove'] + (plan['blocked'] if overwrite else [])
-    if any(re.fullmatch(r'stages/[^/]+/CONTEXT\.md', name) for name in changing):
+    # Approvals (stages 1-3) and verification bind only the contracts of stages 1-3 (sdlc.py inputs).
+    if any(re.fullmatch(r'stages/0[1-3]-[^/]+/CONTEXT\.md', name) for name in changing):
         slugs = inflight_runs(root)
         if slugs:
             print('In-flight runs: approvals will read as stale until re-approved: ' + ', '.join(slugs) + ' (stage docs/templates changed)')

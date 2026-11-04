@@ -450,9 +450,11 @@ def marks(path, items, include_agents=False):
 
 
 def inputs(path, stage):
+    """Digest of what a stage-N approval rests on: the run's definitions and the contracts of stages 1..N.
+    A later stage's contract is not bound, so changing it never stales an earlier approval (#153)."""
     metadata = require_run(path)
     files = [path / 'brief.md'] if metadata['profile'] == 'light' else [path / p for p in ARTIFACTS[:stage]]
-    files += sorted((ROOT / 'stages').glob('*/CONTEXT.md'))
+    files += [context for n in range(1, stage + 1) if (context := ROOT / 'stages' / STAGE_DIRS[n] / 'CONTEXT.md').is_file()]
     values = {str(p.relative_to(ROOT)): digest(p.read_bytes()) for p in files}
     seed_contract = metadata.get('seed_contract')
     if seed_contract:

@@ -641,8 +641,10 @@ Preview, then apply (the receipt `_system/scaffold.json` is the trust baseline):
   with `--overwrite-customized` to take the package version (git keeps your old copy).
 - Only the router block of `AGENTS.md` is replaced; the rest of the file is preserved.
   Missing or duplicated router markers refuse the upgrade. Downgrades are refused.
-- `runs/` is never modified. When stage `CONTEXT.md` files change, approvals in runs that
-  have decision receipts read as stale until re-approved.
+- `runs/` is never modified. A stage's approval binds the `CONTEXT.md` files of stages 1
+  up to it, so when those change, approvals in runs that have decision receipts read as stale
+  until re-approved; a change to stages 4-6 alone keeps them current. Upgrading from before
+  1.52.0 stales in-flight approvals once, because the binding changed.
 - The receipt is written last, so an interrupted upgrade is safe to rerun.
 - Afterward run `python3 _system/scripts/sdlc.py walk`.
 
