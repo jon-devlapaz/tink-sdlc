@@ -147,6 +147,9 @@ class PiLauncherTests(StageBase):
             self.assertIn('never read secrets or credentials', prompt)
             self.assertIn('If a named fact cannot be read, say so in the report instead of building around it', prompt)
             self.assertNotIn('Work only in', prompt)
+            # tink-sdlc#154: a build worker curled the live site and left a dev server running.
+            self.assertIn('Send no requests to production or live endpoints unless the approved inputs allow them', prompt)
+            self.assertIn('stop any local server or background process you start before ending your turn', prompt)
         answers = [json.loads(line)['message']['model'] for line in self.session_file().read_text().splitlines()
                    if '"assistant"' in line]
         self.assertEqual(answers, ['pinned-v1', 'pinned-v1'])
