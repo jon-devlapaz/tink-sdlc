@@ -297,7 +297,7 @@ already exists:
 ```sh
 python3 _system/scripts/sdlc.py step <run> build prepare \
   --report /absolute/run-notes/build-report.md \
-  --model provider/exact-model-id --launcher /absolute/trusted-adapter
+  --model provider/exact-model-id --launcher /absolute/trusted-adapter [--max-responses N]
 python3 _system/scripts/sdlc.py step <run> build show
 python3 _system/scripts/sdlc.py step <run> build launch
 python3 _system/scripts/sdlc.py step <run> build resume
@@ -312,7 +312,10 @@ its SHA-256, plus state, session identity and when it was prepared (`prepared_ns
 within a run; prepare refuses an existing contract or report. Relative report paths,
 model aliases/wildcards, changed launchers, copied contracts in another checkout,
 path substitutions and launch/resume overrides are refused. Prepare a new step
-in a new checkout; contracts are not portable session records. While the run's
+in a new checkout; contracts are not portable session records. `--max-responses N` stores a
+response cap (`max_responses`) that every resolve, launch and resume passes to the adapter as
+`--max-responses N`; an adapter that cannot enforce it must refuse at resolve, so a cap is never
+silently ignored. The bundled Claude Code adapter does not enforce caps and refuses them. While the run's
 branch is checked out in another worktree, prepare refuses here and names that checkout.
 
 `launch` and `resume` recheck every definition gate and perform offline exact-model
@@ -410,6 +413,11 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   aborted, failed or answered off the pin is not finished.
 - The check is per answer the adapter observes. Later model switches inside the session
   are not watched.
+- With `--max-responses N`, admission leaves a watcher (in its own session) that counts the
+  assistant answers in the session file every half second and, once there are N, ends Pi's
+  process group and writes the stop to the step's `.pi.log`. Finish such a step with
+  `complete --stopped-by cap`. Resume refuses a session that already holds N answers. An
+  answer requested before the stop may still be charged; the cap counts recorded answers.
 
 pi-herdr 0.6.0's `herdr_resume_agent` re-derives the model without the spawn-level pin
 (it falls back to the parent's model), so do not resume pinned steps through it.

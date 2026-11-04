@@ -15,7 +15,7 @@ local files and runs only `git show`, `sdlc.py status --json`, `claude --help` a
 refuses a session whose last answer was on another model, and a run that starts on
 another model is stopped; finished reads only local files and reports true only when the
 newest turn ended normally on the pin.
-Refuses: pins without an explicit effort, models outside the reviewed allowlist (so
+Refuses: response caps (it cannot enforce one), pins without an explicit effort, models outside the reviewed allowlist (so
 aliases never resolve), a Claude Code without --restricted, a signed-out Claude Code,
 managed settings or environment that name a fallback model, an uncommitted verification
 policy, missing sessions, and sessions recorded in another checkout.
@@ -426,11 +426,14 @@ def main():
     for flag in ('model', 'report', 'contract', 'session'):
         parser.add_argument('--' + flag)
     parser.add_argument('--for-operation', choices=['launch', 'resume'])
+    parser.add_argument('--max-responses', type=int)
     args = parser.parse_args()
     operation = args.for_operation if args.operation == 'resolve' else args.operation
     try:
         if not operation or not args.contract:
             raise Refusal('resolve needs --for-operation and every operation needs --contract.')
+        if args.max_responses is not None:
+            raise Refusal('This launcher cannot enforce a response cap; prepare the step without --max-responses.')
         if args.operation == 'resolve':
             resolve(args, operation)
             session = args.session

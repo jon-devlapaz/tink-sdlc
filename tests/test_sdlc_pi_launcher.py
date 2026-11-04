@@ -53,6 +53,13 @@ if os.environ.get('FAKE_PI_CHILD'):
     # A background child, like a dev server the worker started; it shares Pi's process group.
     import subprocess
     Path(os.environ['FAKE_PI_CHILD']).write_text(str(subprocess.Popen(['sleep', '60']).pid))
+for _ in range(int(os.environ.get('FAKE_PI_MORE', '0'))):
+    # A tool loop: one more response each interval, as long as nothing stops it.
+    time.sleep(1)
+    answered = [message(answered[-1]['id'], 'assistant', provider=answer.split('/')[0],
+                        model=answer.split('/', 1)[1], stopReason='toolUse')]
+    with path.open('a') as stream:
+        stream.write(json.dumps(answered[0]) + '\\n')
 time.sleep(float(os.environ.get('FAKE_PI_LINGER', '0')))
 '''
 
@@ -273,6 +280,39 @@ class PiLauncherTests(StageBase):
         self.assertNotIn('build', run['next_action'])
         self.step('build', 'complete', ok=False)
         self.step('build', 'complete', '--stopped-by', 'operator', ok=False)
+
+    def test_a_capped_step_is_stopped_at_its_cap_with_its_children_and_cannot_resume(self):
+        # tink-sdlc#151: the operator's 40 s polling let a step capped at 8 responses reach 13.
+        self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
+                  '--launcher', str(self.adapter), '--max-responses', '3')
+        child_file = self.base / 'TEST-child.pid'
+        self.step('build', 'launch', env={'FAKE_PI_MORE': '20', 'FAKE_PI_CHILD': str(child_file)})
+        pid = int(Path(str(self.pi_log) + '.pid').read_text())
+        for _ in range(100):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            self.fail('the capped worker was not stopped')
+        answers = [line for line in self.session_file().read_text().splitlines() if '"assistant"' in line]
+        self.assertEqual(len(answers), 3)
+        child = int(child_file.read_text())
+        self.addCleanup(lambda: subprocess.run(['kill', '-9', str(child)], capture_output=True))
+        [log] = (self.root / 'runs/r/steps').glob('build.launch-*.pi.log')
+        for _ in range(100):
+            if 'response cap 3 reached' in log.read_text():
+                break
+            time.sleep(0.1)
+        else:
+            self.fail('the watcher did not report the cap: ' + log.read_text())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(child, 0)
+        self.assertIn('already holds its cap of 3 responses', self.step('build', 'resume', ok=False).stderr)
+        self.assertEqual(len(self.calls()), 1)
+        self.step('build', 'complete', '--stopped-by', 'cap')
+        self.assertEqual(self.contract()['state'], 'stopped')
 
     def test_a_stop_refuses_a_process_group_that_is_no_longer_the_step(self):
         self.prepare()
