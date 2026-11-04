@@ -49,6 +49,10 @@ path.write_text(''.join(json.dumps(r) + '\\n' for r in rows))
 time.sleep(float(os.environ.get('FAKE_PI_THINK', '0.3')))
 with path.open('a') as stream:
     stream.write(''.join(json.dumps(r) + '\\n' for r in answered))
+if os.environ.get('FAKE_PI_CHILD'):
+    # A background child, like a dev server the worker started; it shares Pi's process group.
+    import subprocess
+    Path(os.environ['FAKE_PI_CHILD']).write_text(str(subprocess.Popen(['sleep', '60']).pid))
 time.sleep(float(os.environ.get('FAKE_PI_LINGER', '0')))
 '''
 
@@ -235,6 +239,53 @@ class PiLauncherTests(StageBase):
         self.step('build', 'complete')
         self.assertEqual(self.contract()['state'], 'completed')
         self.assertEqual(len(self.calls()), 2)
+
+    def test_a_stopped_step_completes_as_stopped_and_its_background_child_is_ended(self):
+        # tink-sdlc#151: a capped step could never be completed, and a dev server it started kept listening.
+        self.prepare()
+        child_file = self.base / 'TEST-child.pid'
+        self.step('build', 'launch', env={'FAKE_PI_PAUSED': '1', 'FAKE_PI_LINGER': '60', 'FAKE_PI_CHILD': str(child_file)})
+        for _ in range(50):
+            if child_file.exists() and child_file.read_text():
+                break
+            time.sleep(0.1)
+        pids = [int(Path(str(self.pi_log) + '.pid').read_text()), int(child_file.read_text())]
+        self.assertEqual(self.contract()['process_group'], pids[0])
+        self.addCleanup(lambda: [subprocess.run(['kill', '-9', str(pid)], capture_output=True) for pid in pids])
+        self.assertIn('completion refused', self.step('build', 'complete', ok=False).stderr)
+        self.step('build', 'resume', '--stopped-by', 'cap', ok=False)
+        result = self.step('build', 'complete', '--stopped-by', 'cap')
+        self.assertIn(f"Ended the step's process group {pids[0]}", result.stdout)
+        self.assertIn('stopped (at its response cap), not as an ended turn; it left no report', result.stdout)
+        for pid in pids:
+            for _ in range(50):
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.1)
+            else:
+                self.fail(f'process {pid} survived the stop')
+        contract = self.contract()
+        self.assertEqual((contract['state'], contract['stopped_by'], contract['report_sha256']), ('stopped', 'cap', None))
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(run['steps'], [{'name': 'build', 'state': 'stopped', 'stopped_by': 'cap'}])
+        self.assertNotIn('build', run['next_action'])
+        self.step('build', 'complete', ok=False)
+        self.step('build', 'complete', '--stopped-by', 'operator', ok=False)
+
+    def test_a_stop_refuses_a_process_group_that_is_no_longer_the_step(self):
+        self.prepare()
+        self.launch()
+        contract_path = self.root / 'runs/r/steps/build.json'
+        stranger = subprocess.Popen(['sleep', '60'], start_new_session=True)
+        self.addCleanup(stranger.wait)
+        self.addCleanup(stranger.kill)
+        contract_path.write_text(json.dumps({**self.contract(), 'process_group': stranger.pid}))
+        result = self.step('build', 'complete', '--stopped-by', 'operator', ok=False)
+        self.assertIn('no longer this step', result.stderr)
+        self.assertIsNone(stranger.poll())
+        self.assertEqual(self.contract()['state'], 'active')
 
     def test_a_final_answer_off_the_pin_cannot_complete(self):
         self.prepare()

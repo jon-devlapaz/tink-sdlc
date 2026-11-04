@@ -302,6 +302,7 @@ python3 _system/scripts/sdlc.py step <run> build show
 python3 _system/scripts/sdlc.py step <run> build launch
 python3 _system/scripts/sdlc.py step <run> build resume
 python3 _system/scripts/sdlc.py step <run> build complete
+python3 _system/scripts/sdlc.py step <run> build complete --stopped-by operator  # or cap
 ```
 
 These are separate deliberate actions, not a script to run without inspection.
@@ -333,7 +334,13 @@ session. The adapter owns delivering the contract/report instructions to the age
 `complete` requires an active step, a nonempty regular report at the exact
 recorded path and the adapter's offline confirmation that the agent finished its
 latest turn on the pin, then stores the report digest. A paused, stopped, failed or
-still-running agent leaves the step `active`: resume it, then complete. For an active step, `show` adds
+still-running agent leaves the step `active`: resume it, then complete, or finish it as stopped.
+`complete --stopped-by operator|cap` is for a worker stopped before its turn ended, by the operator
+or at a response cap. It ends the step's process group (so children such as dev servers stop too) and
+records the step `stopped` with who stopped it and the report digest, or none if no report exists. It
+is never recorded as an ended turn; status moves on past it. It refuses to end a process group whose
+live leader does not name this step's contract, and says so when the adapter reported no group.
+For an active step, `show` adds
 `observed_turn` from the same offline probe (`ended`, `not ended` or `unknown` with the reason); it is
 read now, never stored, and makes no provider request. Missing reports refuse completion: no root
 fallback, copying or invented report. A report is not proof of passing checks,
@@ -360,7 +367,9 @@ implementing `tink-sdlc-launcher` protocol 1 (one is bundled for Pi, below):
 - Each operation returns exit zero and one JSON object on stdout containing
   `protocol: "tink-sdlc-launcher"`, integer `api_version: 1`, `operation` (launch, resume
   or finished) and the exact `model`. Resume and finished responses include the same `session`;
-  admissions require a nonblank session identity. Diagnostics belong on stderr.
+  admissions require a nonblank session identity. Admissions may add `process_group`, the
+  detached worker's process group, whose leader's command line names the contract path; a stop
+  ends that group. Diagnostics belong on stderr.
   Failed, malformed, unsupported or mismatching offline replies refuse admission.
 - Probe timeouts are 15 seconds; admission timeout is 60 seconds. A crash or failed
   admission leaves `uncertain`, never automatic retry or completion. Inspect the
@@ -389,7 +398,7 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   if the cache lacks a model; the adapter never refreshes it.
 - Launch starts `pi --mode json` detached, with a new `tsdlc-<uuid>` session ID in Pi's
   per-checkout session directory (`PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` respected), and returns once
-  the session file records the pin. Output goes to `runs/<run>/steps/<name>.<op>-<time>.pi.log`.
+  the session file records the pin, replying with Pi's process group. Output goes to `runs/<run>/steps/<name>.<op>-<time>.pi.log`.
 - Resume refuses a session that is missing, archived by session rotation, or whose last
   recorded model (`model_change` or assistant answer on the active branch) differs from
   the pin. It passes the session file path, then waits up to 50 seconds for the first

@@ -4,7 +4,7 @@
 Promises: every launch and resume passes the step pin to Claude Code explicitly as
 --model model-id --effort level, with edits plus a tool allowlist (the run's own check
 commands, from the committed policy and the approved run definition) and no permission
-prompts, in Claude Code's restricted mode: file tools reach only the checkout and the
+prompts, reporting the worker's process group, in Claude Code's restricted mode: file tools reach only the checkout and the
 report folder, never the step contracts or `_system/`, and no user or checkout settings,
 MCP servers or auto memory load, so a builder's edits never add commands it may run (an
 allowed check still runs whatever code the builder edited, unconfined). The child gets a
@@ -412,7 +412,7 @@ def admit(args, operation):
             raise Refusal(f'Claude Code ran on {drifted[0]}, not the pin {model_id}; the run was stopped. Log: {log}')
         asked = any(e.get('type') == 'user' for e in entries(path)[before:]) if path else False
         if model and asked:
-            return session_id
+            return session_id, process.pid
         if process.poll() not in (None, 0):
             raise Refusal(f'Claude Code exited {process.returncode} before admission was confirmed. Log: {log}')
         time.sleep(0.2)
@@ -439,7 +439,7 @@ def main():
             done = finished(retained_session(args, model_id), model_id)
             session = args.session
         else:
-            session = admit(args, operation)
+            session, group = admit(args, operation)
     except Refusal as refusal:
         print(f'claude-launcher: {refusal}', file=sys.stderr)
         return 1
@@ -448,6 +448,8 @@ def main():
         reply['finished'] = done
     if session:
         reply['session'] = session
+    if args.operation in ('launch', 'resume'):
+        reply['process_group'] = group  # the detached worker's group, so a stop can end its children too
     print(json.dumps(reply))
     return 0
 

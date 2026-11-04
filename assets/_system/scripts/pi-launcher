@@ -2,7 +2,7 @@
 """Reviewed tink-sdlc-launcher protocol 1 adapter for headless Pi build steps.
 
 Promises: every launch and resume passes the step pin to Pi explicitly as
---model provider/model-id --thinking level; resolve reads only local files and
+--model provider/model-id --thinking level and reports Pi's process group; resolve reads only local files and
 never starts Pi or opens a connection; resume refuses a session whose recorded
 model differs from the pin, stops a resumed run that answers on another model within
 the admission window, and admits one still thinking once its new prompt is recorded
@@ -326,13 +326,13 @@ def admit(args, operation):
             if model or (operation == 'launch' and asked
                          and any(e.get('type') == 'thinking_level_change' and e.get('thinkingLevel') == thinking
                                  for e in new)):
-                return session_id
+                return session_id, process.pid
         if process.poll() not in (None, 0):
             raise Refusal(f'Pi exited {process.returncode} before admission was confirmed. Log: {log}')
         time.sleep(0.2)
     # A resumed turn can think past the window: its recorded prompt on the pin admits it.
     if operation == 'resume' and prompted and process.poll() is None:
-        return session_id
+        return session_id, process.pid
     raise Refusal(f'Pi admission was not confirmed in {window:g}s; process {process.pid} '
                   f'may still run. Inspect {log} and the session before reconciling.')
 
@@ -356,7 +356,7 @@ def main():
             done = finished(retained_session(args, provider, model_id), f'{provider}/{model_id}')
             session = args.session
         else:
-            session = admit(args, operation)
+            session, group = admit(args, operation)
     except Refusal as refusal:
         print(f'pi-launcher: {refusal}', file=sys.stderr)
         return 1
@@ -365,6 +365,8 @@ def main():
         reply['finished'] = done
     if session:
         reply['session'] = session
+    if args.operation in ('launch', 'resume'):
+        reply['process_group'] = group  # the detached worker's group, so a stop can end its children too
     print(json.dumps(reply))
     return 0
 
