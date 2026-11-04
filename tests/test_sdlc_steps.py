@@ -199,7 +199,8 @@ class StepTests(StageBase):
         before = self.contract.read_bytes()
         command = 'python3 _system/scripts/sdlc.py step r build'
         for env, turn, action in (
-                ({'TEST_UNFINISHED': '1'}, 'not ended', f'The build worker has not ended its turn. Check it with {command} show.'),
+                ({'TEST_UNFINISHED': '1'}, 'not ended', f'The build worker has not ended its turn. Check it with {command} show; if you or its response cap '
+                 f'stopped it, finish it with {command} complete --stopped-by operator (or cap).'),
                 ({}, 'ended', f"The build worker's turn ended: read its report, then run {command} complete."),
                 ({'TEST_NO_FINISHED': '1'}, 'unknown', 'Whether the build worker is running is unknown: ')):
             with self.subTest(turn=turn):
