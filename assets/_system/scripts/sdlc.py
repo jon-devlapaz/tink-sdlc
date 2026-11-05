@@ -611,6 +611,37 @@ def changed_report(before_files, after_files):
     return text
 
 
+def checkout_setup():
+    """The committed `setup` check a new stage checkout runs before any session starts (#161), or None.
+
+    Read from HEAD, the commit the worktree is created at, so an uncommitted edit cannot supply a command."""
+    shown = run_git(ROOT, 'show', 'HEAD:_system/verification.json')
+    if shown.returncode:
+        return None
+    try:
+        setup = json.loads(shown.stdout).get('setup')
+    except (json.JSONDecodeError, AttributeError):
+        raise ValueError('_system/verification.json at HEAD is not a valid JSON object.') from None
+    if setup is not None:
+        validate_check(setup, exact=True)
+    return setup
+
+
+def run_setup(setup, target):
+    """Run the declared setup in the new checkout; return a failure line, or None when it passed."""
+    try:
+        done = subprocess.run(setup['argv'], cwd=target, capture_output=True, text=True, errors='replace',
+                              timeout=setup['timeout_seconds'], stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return f"setup timed out after {setup['timeout_seconds']}s: {shlex.join(setup['argv'])}"
+    except OSError as error:
+        return f'setup could not start: {error}'
+    if done.returncode:
+        last = next((line for line in reversed((done.stderr or done.stdout).splitlines()) if line.strip()), 'no output')
+        return f'setup exited {done.returncode}: {shlex.join(setup["argv"])}: {last.strip()}'
+    return None
+
+
 def checks_config():
     config = read_json(ROOT / '_system/verification.json')
     checks = config.get('checks')
@@ -2243,6 +2274,7 @@ def stage(args):
     if seed_contract:
         confirmer = 'agent' if confirmation['schema_version'] == 3 else 'operator'
         prompt += f' The {confirmer}-confirmed seed contract is at {seed_contract}; it is input, not authorization.'
+    setup = checkout_setup() if make_worktree else None
     warn = stage_dirty(run) if make_worktree else []
     warning = ('warning: not carried into the new checkout: ' + ', '.join(warn[:5]) + (f' (+{len(warn) - 5} more)' if len(warn) > 5 else '')
                if warn else None)
@@ -2274,6 +2306,20 @@ def stage(args):
                 prune_empty_parents(target, first_existing)
                 raise ValueError(f'worktree creation failed: {git_line(created)}'
                                  + (f'\nalready committed {committed[0]}: {committed[1]}' if committed else ''))
+    def abandon(failure, what):
+        """Remove the new checkout so the same command can be rerun; no session starts in a half-made one."""
+        print(failure, file=sys.stderr)
+        print(f'stage not opened: fix the {what} problem above', file=sys.stderr)
+        if make_worktree:
+            removed = run_git(ROOT, 'worktree', 'remove', '--force', str(target))
+            if removed.returncode == 0 and not detached:
+                run_git(ROOT, 'branch', '-D', run)
+            if removed.returncode == 0:
+                prune_empty_parents(target, first_existing)
+            print(f'worktree removed; re-run the same command after fixing it' if removed.returncode == 0
+                  else f'worktree left at {target}: {git_line(removed)}', file=sys.stderr)
+        raise SystemExit(1)
+
     if args.check:
         print(f'Would run: tink use {skillset} --snapshot {snapshot_arg}' if tink else notice)
     elif tink:
@@ -2284,20 +2330,17 @@ def stage(args):
         except (subprocess.TimeoutExpired, OSError) as error:
             failure = f'tink use did not complete: {error}'
         if failure:
-            print(failure, file=sys.stderr)
-            print('stage not opened: fix the skillset problem above', file=sys.stderr)
-            if make_worktree:
-                removed = run_git(ROOT, 'worktree', 'remove', '--force', str(target))
-                if removed.returncode == 0 and not detached:
-                    run_git(ROOT, 'branch', '-D', run)
-                if removed.returncode == 0:
-                    prune_empty_parents(target, first_existing)
-                print(f'worktree removed; re-run the same command after fixing it' if removed.returncode == 0
-                      else f'worktree left at {target}: {git_line(removed)}', file=sys.stderr)
-            raise SystemExit(1)
+            abandon(failure, 'skillset')
         print(f'skills: compiled {skillset} into {target}')
     else:
         print(notice)
+    if setup and args.check:
+        print(f"Would run setup in the new checkout: {shlex.join(setup['argv'])}")
+    elif setup:
+        failure = run_setup(setup, target)
+        if failure:
+            abandon(failure, 'setup')
+        print(f"setup: passed in {target}: {shlex.join(setup['argv'])}")
     if warning:
         print(warning)
     if n in (3, 5) and (undeliverable := delivery_warning(run)):
