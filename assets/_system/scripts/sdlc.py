@@ -1165,8 +1165,6 @@ def writing_here(run):
 def label(args):
     path = run_path(args.run)
     require_run(path)
-    writing_here(args.run)
-    human_review(args, path)
     if os.environ.get('TINK_SDLC_STEP_SESSION') == '1':
         raise ValueError('Labels are the operator\'s; a build step session cannot record them.')
     for flag in ('words', 'reviewer', 'source'):
@@ -1180,7 +1178,12 @@ def label(args):
         if not target.is_relative_to(ROOT) or not target.is_file():
             raise ValueError('--about must name a file in this checkout (checkout-relative), or outside.')
         about = {'about': str(target.relative_to(ROOT)), 'about_sha256': digest(target.read_bytes())}
-    with locked(path / '.writer-lock'):
+    with locked(path.parent / f'.{args.run}.lock'), locked(path / '.writer-lock'):
+        meta = require_run(path)
+        if args.expected_run_id is not None and args.expected_run_id != meta['run_id']:
+            raise ValueError('Run identity changed; reread the run before saving a label.')
+        writing_here(args.run)
+        human_review(args, path)
         if delivery(path)[1] is not None:
             raise ValueError('This run is closed; its labels can no longer change.')
         file = path / 'labels.jsonl'
@@ -2662,6 +2665,7 @@ def main():
     closing.add_argument('--merge', help='full merge commit of a merged PR')
     labelling = commands.add_parser('label', help="append the operator's judgment of a run: a correction, none, accepted or rejected")
     labelling.add_argument('run')
+    labelling.add_argument('--expected-run-id', help='refuse if the run identity differs from the one reviewed')
     labelling.add_argument('--kind', choices=LABEL_KINDS, required=True)
     labelling.add_argument('--words', required=True, help="the operator's words, kept verbatim")
     labelling.add_argument('--reviewer', required=True)

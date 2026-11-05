@@ -543,6 +543,11 @@ and worktree copies preserve it, and recreating a deleted slug creates a new one
 and workspace locate a run; `run_id` identifies its creation. It must be a canonical
 lowercase, hyphenated UUIDv4, or the run is refused. The ID is not approval or tamper protection.
 
+From scaffold 1.53.0, a client saving a label from an earlier reading passes
+`label <run> --expected-run-id <reviewed UUID>` along with the label fields. The runtime
+compares the ID under its run-creation and writer locks before appending; a different
+run refuses without a label. Omitting the option keeps the older name-only behavior.
+
 `status --json` returns `runs`: summaries with `slug`, `run_id`, `profile`, `kind`,
 `seed_contract`, `verification_status`, `next_action`, `has_lock`, and `checklist_summary`
 (`total`, `passed`). An unreadable run instead has `verification_status: "invalid"`,
