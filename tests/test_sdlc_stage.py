@@ -818,6 +818,74 @@ class WorktreeMode(StageBase):
         self.assertEqual(self.tink_calls(), [])
 
 
+class CheckoutSetup(StageBase):
+    """A committed `setup` prepares each new worktree's ignored dependencies before any session (#161)."""
+
+    WRITE = ['python3', '-c', "import pathlib; p = pathlib.Path('deps/ready'); p.parent.mkdir(); p.write_text('TEST')"]
+
+    def declare(self, argv, timeout=20, commit=True):
+        (self.root / '.gitignore').write_text('deps/\n')
+        (self.root / '_system/verification.json').write_text(json.dumps(
+            {'require_tink': False, 'checks': [PASSING], 'setup': {'argv': argv, 'timeout_seconds': timeout}}))
+        if commit:
+            self.git('add', '.gitignore', '_system/verification.json')
+            self.git('commit', '-qm', 'TEST declare setup', env=IDENT)
+
+    def test_setup_prepares_the_new_build_worktree_before_the_launch_prompt(self):
+        self.declare(self.WRITE)
+        self.new_run('r')
+        out = self.stage('r', 3, env=IDENT).stdout
+        worktree = self.wt / 'r'
+        self.assertEqual((worktree / 'deps/ready').read_text(), 'TEST')
+        self.assertFalse((self.root / 'deps').exists())
+        self.assertLess(out.index('setup: passed'), out.index('Launch prompt'))
+        self.assertEqual(self.git('status', '--porcelain', cwd=worktree).stdout, '')
+
+    def test_failed_setup_removes_the_worktree_and_opens_no_stage(self):
+        self.declare(['python3', '-c', 'import sys; print("TEST no lockfile", file=sys.stderr); sys.exit(3)'])
+        self.new_run('r')
+        result = self.stage('r', 3, ok=False, env=IDENT)
+        self.assertIn('setup exited 3', result.stderr)
+        self.assertIn('TEST no lockfile', result.stderr)
+        self.assertIn('worktree removed', result.stderr)
+        self.assertNotIn('Launch prompt', result.stdout)
+        self.assertFalse((self.wt / 'r').exists())
+        self.assertEqual(self.git('branch', '--list', 'r').stdout.strip(), '')
+
+    def test_setup_timeout_fails_the_stage(self):
+        self.declare(['python3', '-c', 'import time; time.sleep(5)'], timeout=1)
+        self.new_run('r')
+        result = self.stage('r', 3, ok=False, env=IDENT)
+        self.assertIn('setup timed out after 1s', result.stderr)
+        self.assertFalse((self.wt / 'r').exists())
+
+    def test_only_the_committed_declaration_runs(self):
+        self.declare(self.WRITE, commit=False)
+        self.new_run('r')
+        out = self.stage('r', 3, env=IDENT).stdout
+        self.assertNotIn('setup', out)
+        self.assertFalse((self.wt / 'r/deps').exists())
+
+    def test_check_names_the_setup_and_runs_nothing(self):
+        self.declare(self.WRITE)
+        self.new_run('r')
+        out = self.stage('r', 3, '--check', env=IDENT).stdout
+        self.assertIn("Would run setup in the new checkout: python3 -c", out)
+        self.assertFalse((self.wt / 'r').exists())
+
+    def test_invalid_setup_refuses_before_any_change(self):
+        self.declare(['python3', '-c', 'pass'], timeout=0)
+        self.new_run('r')
+        self.refuses('r', 3, message='positive timeout_seconds', env=IDENT)
+
+    def test_here_mode_runs_no_setup(self):
+        self.declare(self.WRITE)
+        self.new_run('r')
+        out = self.stage('r', 3, '--here').stdout
+        self.assertNotIn('setup', out)
+        self.assertFalse((self.root / 'deps').exists())
+
+
 class DeliveryWarning(StageBase):
     """Stages 3 and 5 warn, without refusing, when a PR cannot be delivered from this checkout."""
     MARKER = 'warning: PR delivery may not be possible'

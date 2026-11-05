@@ -180,6 +180,8 @@ observations still need rechecking when candidate changes affect them.
 Give each code-writing run its own Git worktree or clone, never just a second branch in one checkout, and keep its artifacts there. Ports, databases and credentials need their own isolation when used.
 
 Configure `_system/verification.json` with nonempty argv arrays and timeouts. A fresh install has no checks and fails verification until real tests, build, lint and other required checks are selected; file-name heuristics are not evidence a command is right, and the runner should reject zero tests, since an exit code alone proves no coverage. Missing configuration, failed checks, timeouts, and required Tink checks without Tink all fail. A failed check's error ends with `(output: runs/<slug>/04-test/output/test-log.md)`.
+Ignored dependencies are not in a new worktree. To prepare them, add one `"setup": {"argv": [...], "timeout_seconds": N}`, for example `{"argv": ["pnpm", "install", "--frozen-lockfile"], "timeout_seconds": 600}`.
+`stage <run> 3` and `stage <run> 5` run it in each new worktree after skills compile and before printing the launch prompt, from the committed file at HEAD. A failure or timeout removes the new worktree and opens no stage; rerun after fixing it. Without `setup`, nothing runs. It is a trusted command, like the checks; its output should be Git-ignored, or verify fingerprints it as source.
 To hold commit authorship, add `"authors": {"since": "<commit>", "allow": ["Claude session_* <noreply@anthropic.com>", "Name <email>"]}`.
 Verify then refuses any commit after `since` whose `Name <email>` author matches no `allow` pattern (shell-style `*`), and names it;
 history up to `since` is never judged. Without `authors`, authorship is not checked.
