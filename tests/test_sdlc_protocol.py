@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from tinkery_fixture import TINKERY, confirmed
 import unittest
@@ -601,15 +602,95 @@ class LabelTests(unittest.TestCase):
 
     WORDS = "Shape's check command can't import tomli as cloned — Ω"
 
-    def label(self, *extra, kind='correction', words=WORDS, reviewer='jondev', ok=True, env=None):
-        argv = ['python3', str(self.root / '_system/scripts/sdlc.py'), 'label', 'example', '--kind', kind,
+    def label_command(self, *extra, kind='correction', words=WORDS, reviewer='jondev'):
+        return [sys.executable, str(self.root / '_system/scripts/sdlc.py'), 'label', 'example', '--kind', kind,
                 '--words', words, '--reviewer', reviewer, '--source', 'retro 2026-11-03', *extra]
+
+    def label(self, *extra, kind='correction', words=WORDS, reviewer='jondev', ok=True, env=None):
+        argv = self.label_command(*extra, kind=kind, words=words, reviewer=reviewer)
         result = subprocess.run(argv, cwd='/', capture_output=True, text=True, env={**os.environ, **(env or {})})
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result.stdout + result.stderr
 
     def lines(self):
         return [json.loads(line) for line in (self.root / 'runs/example/labels.jsonl').read_text().splitlines()]
+
+    def wait_for_run_name_lock(self, process):
+        deadline = time.monotonic() + 3
+        with (self.root / 'runs/.example.lock').open('a+b') as lock:
+            while time.monotonic() < deadline and process.poll() is None:
+                try:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                time.sleep(.01)
+        self.fail('The label command never acquired the run-name lock.')
+
+    def test_label_expected_identity_preserves_words_and_signer(self):
+        self.cli('new', 'example')
+        run_id = self.view()['run_id']
+        words = self.WORDS + '\nKeep this second line. '
+        self.label('--expected-run-id', run_id, kind='accepted', words=words)
+        record, = self.lines()
+        self.assertEqual((record['kind'], record['words'], record['reviewer'], record['source']),
+                         ('accepted', words, 'jondev', 'retro 2026-11-03'))
+
+    def test_label_refuses_a_replacement_with_the_same_name(self):
+        self.cli('new', 'example')
+        run_id = self.view()['run_id']
+        original = self.root / 'runs/example'
+        original.rename(self.root / 'runs/previous')
+        self.cli('new', 'example')
+        self.assertNotEqual(self.view()['run_id'], run_id)
+        output = self.label('--expected-run-id', run_id, ok=False)
+        self.assertIn('Run identity changed; reread the run before saving a label.', output)
+        self.assertFalse((original / 'labels.jsonl').exists())
+
+    def test_label_rechecks_identity_after_waiting_for_the_writer(self):
+        self.cli('new', 'example')
+        run_id = self.view()['run_id']
+        self.cli('new', 'replacement')
+        original = self.root / 'runs/example'
+        with (original / '.writer-lock').open('a+b') as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            process = subprocess.Popen(self.label_command('--expected-run-id', run_id),
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                self.wait_for_run_name_lock(process)
+                original.rename(self.root / 'runs/previous')
+                (self.root / 'runs/replacement').rename(original)
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                stdout, stderr = process.communicate(timeout=10)
+        self.assertNotEqual(process.returncode, 0, stdout + stderr)
+        self.assertIn('Run identity changed; reread the run before saving a label.', stderr)
+        self.assertFalse((original / 'labels.jsonl').exists())
+        self.assertFalse((self.root / 'runs/previous/labels.jsonl').exists())
+
+    def test_label_holds_the_creation_lock_until_its_write_finishes(self):
+        self.cli('new', 'example')
+        run_id = self.view()['run_id']
+        with (self.root / 'runs/example/.writer-lock').open('a+b') as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            process = subprocess.Popen(self.label_command('--expected-run-id', run_id),
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                self.wait_for_run_name_lock(process)
+                with subprocess.Popen([sys.executable, str(self.root / '_system/scripts/sdlc.py'),
+                                       'new', 'example'], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      text=True) as creation:
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        creation.communicate(timeout=.2)
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                    created_out, created_err = creation.communicate(timeout=10)
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                stdout, stderr = process.communicate(timeout=10)
+        self.assertEqual(process.returncode, 0, stdout + stderr)
+        self.assertEqual(len(self.lines()), 1)
+        self.assertNotEqual(creation.returncode, 0, created_out + created_err)
+        self.assertIn('Run already exists; nothing overwritten.', created_err)
 
     def test_labels_keep_words_verbatim_and_count_by_kind(self):
         self.create_ready()
