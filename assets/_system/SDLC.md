@@ -604,7 +604,8 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   (display-only human output). Human and machine status share one calculation.
 - `steps`: each pinned build step by `name`, with its `state` (`prepared`, `active`,
   `uncertain`, `completed`, or `unreadable`) and, when active, `turn` (`ended`, `not-ended`
-  or `unknown`) with the same `observed_turn` words as `step show`. Read `turn`; the words may change. An active step's turn, or else the newest step when it is uncertain, sets `next_action` (after gates and locks), so a run that nothing is building
+  or `unknown`) with the same `observed_turn` words as `step show`. Read `turn`; the words may change.
+  An uncertain step adds `owed`: true while it is the newest step and so still owes reconciliation. An active step's turn, or else the newest step when it is uncertain, sets `next_action` (after gates and locks), so a run that nothing is building
   is never mistaken for running work, and one that may be is never mistaken for idle. Older runtimes omit the field: absence means unknown.
 - `log`: `path` (checkout-relative, regular UTF-8 file), `text` (last 256 KiB,
   decoded with replacement), and `truncated`. The advertised path stays fixed

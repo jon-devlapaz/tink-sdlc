@@ -271,7 +271,7 @@ class StepTests(StageBase):
         result = self.sdlc('status', 'r', '--json')
         self.assertEqual(result.returncode, 0, result.stderr)
         run = json.loads(result.stdout)['run']
-        self.assertEqual(run['steps'], [{'name': 'build', 'state': 'uncertain'}])
+        self.assertEqual(run['steps'], [{'name': 'build', 'state': 'uncertain', 'owed': True}])
         self.assertTrue(run['next_action'].startswith(
             "The build step's launch or resume did not confirm; a worker may still be running. "
             'Inspect it with python3 _system/scripts/sdlc.py step r build show'), run['next_action'])
@@ -281,7 +281,8 @@ class StepTests(StageBase):
         self.assertEqual(prepared.returncode, 0, prepared.stderr)
         result = self.sdlc('status', 'r', '--json')
         run = json.loads(result.stdout)['run']
-        self.assertEqual([s['state'] for s in run['steps']], ['uncertain', 'prepared'])
+        self.assertEqual(run['steps'], [{'name': 'build', 'state': 'uncertain', 'owed': False},
+                                        {'name': 'build2', 'state': 'prepared'}])
         self.assertNotIn('build step', run['next_action'])
 
     def test_status_names_an_uncertain_step_prepared_after_a_completed_one(self):
@@ -299,7 +300,8 @@ class StepTests(StageBase):
         run_step('abuild', 'prepare')
         run_step('abuild', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
         run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
-        self.assertEqual(run['steps'], [{'name': 'abuild', 'state': 'uncertain'}, {'name': 'build', 'state': 'completed'}])
+        self.assertEqual(run['steps'], [{'name': 'abuild', 'state': 'uncertain', 'owed': True},
+                                        {'name': 'build', 'state': 'completed'}])
         self.assertTrue(run['next_action'].startswith("The abuild step's launch or resume did not confirm"),
                         run['next_action'])
         # Order is by preparation, not by name: a newer "zz" outranks the older "abuild",
@@ -308,6 +310,8 @@ class StepTests(StageBase):
         run_step('zz', 'launch', env={'TEST_ADAPTER_FAIL': '1'})
         run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
         self.assertTrue(run['next_action'].startswith("The zz step's"), run['next_action'])
+        self.assertEqual([(s['name'], s.get('owed')) for s in run['steps']],
+                         [('abuild', False), ('build', None), ('zz', True)])
 
     def test_bug_run_status_names_the_review_and_lock_command_after_the_build_step(self):
         # tink-sdlc#150: after the worker wrote the red test, status named no review and no lock-tests command.
