@@ -1364,13 +1364,17 @@ def status_state(path):
             if first_gate and first_gate['stage'] == 3 and departures:
                 gate_reason = definition['question'] + ' Record only the actual human decision.'
     steps = step_facts(path)
+    newest = newest_step(path)
+    for fact in steps:
+        if fact['state'] == 'uncertain':
+            fact['owed'] = fact['name'] == newest
     unavailable = 'A writer already owns this run.' if active else gate_reason
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
     checks = (config['checks'] if config else []) + [i['check'] for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
-    next_action = unavailable or worker_action(path.name, steps, newest_step(path)) or (errors[0] if errors else '') or {
+    next_action = unavailable or worker_action(path.name, steps, newest) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
         'stale': 'The previous pass no longer matches this candidate or its evidence. Run verification again.',
