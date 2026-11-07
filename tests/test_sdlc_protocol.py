@@ -825,6 +825,24 @@ class LabelTests(unittest.TestCase):
         self.there(worktree, 'close', 'example', '--outcome', 'abandoned')
         self.assertTrue((self.root / 'runs/example/closure.json').is_file())
 
+    def test_closing_in_a_worktree_of_a_bare_repository_copies_nothing(self):
+        # A bare repository has no main working tree to keep records in; close works as before.
+        self.create_ready()
+        self.git('add', '-A')
+        self.git('-c', 'user.name=TEST', '-c', 'user.email=test@local', 'commit', '-qm', 'TEST run')
+        parent = Path(tempfile.mkdtemp(prefix='tink-sdlc-TEST-bare-'))
+        self.addCleanup(shutil.rmtree, parent, True)
+        subprocess.run(['git', 'clone', '-q', '--bare', str(self.root), str(parent / 'repo.git')], check=True)
+        worktree = parent / 'checkout'
+        subprocess.run(['git', '-C', str(parent / 'repo.git'), 'worktree', 'add', '-q', '-b', 'example', str(worktree), 'HEAD'],
+                       check=True, capture_output=True)
+        self.there(worktree, 'label', 'example', '--kind', 'none', '--words', 'No corrections',
+                   '--reviewer', 'jondev', '--source', 'retro')
+        out = self.there(worktree, 'close', 'example', '--outcome', 'abandoned')
+        self.assertNotIn('Copied', out)
+        self.assertTrue((worktree / 'runs/example/closure.json').is_file())
+        self.assertFalse((parent / 'repo.git/runs').exists())
+
     def test_close_needs_a_label(self):
         self.create_ready()
         self.assertIn('Label the run before closing it', self.cli('close', 'example', '--outcome', 'abandoned', ok=False))

@@ -1279,12 +1279,16 @@ def close(args):
 
 
 def main_checkout():
-    """This scaffold's root in the repository's main working tree, or None when this checkout is that tree."""
+    """This scaffold's root in the repository's main working tree; None when this checkout is that tree or the
+    repository is bare, so there is no other working tree to keep records in."""
     listed = run_git(ROOT, 'worktree', 'list', '--porcelain')
     top = run_git(ROOT, 'rev-parse', '--show-toplevel')
     if listed.returncode or top.returncode or not listed.stdout.startswith('worktree '):
         return None
-    main = Path(listed.stdout.split('\n', 1)[0].removeprefix('worktree '))
+    first = listed.stdout.split('\n\n', 1)[0].splitlines()
+    if 'bare' in first:
+        return None
+    main = Path(first[0].removeprefix('worktree '))
     if main.resolve() == Path(top.stdout.strip()).resolve():
         return None
     return main / ROOT.resolve().relative_to(Path(top.stdout.strip()).resolve())
@@ -1293,7 +1297,8 @@ def main_checkout():
 def keep_records(path, closure):
     """Closing in a linked worktree copies the run's records, closure included, into the main checkout, so they
     outlive the worktree. Refuses rather than overwrite uncommitted changes there or another run of the same name.
-    Copies before the local closure is written, so a failed copy leaves the run open and close can simply rerun."""
+    Copies before the local closure is written, so a failed copy leaves the run open; files it already copied show
+    as uncommitted there, so restore them before closing again."""
     main = main_checkout()
     if main is None:
         return None
@@ -1304,7 +1309,9 @@ def keep_records(path, closure):
     if held is not None and not (isinstance(held, dict) and held.get('run_id') == require_run(path)['run_id']):
         raise ValueError(f'{target} holds a different run of the same name; the run stays open.')
     dirty = run_git(main, 'status', '--porcelain', '--', f'runs/{path.name}')
-    if dirty.returncode or dirty.stdout.strip():
+    if dirty.returncode:
+        raise ValueError(f'Could not read Git status in {main}: {git_line(dirty)}; the run stays open.')
+    if dirty.stdout.strip():
         raise ValueError(f'{target} has uncommitted changes; commit or restore them, then close again. The run stays open.')
     for file in sorted(path.rglob('*')):
         relative = file.relative_to(path)
