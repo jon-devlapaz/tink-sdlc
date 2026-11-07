@@ -1270,9 +1270,56 @@ def close(args):
                              "--kind none --words 'No corrections' --reviewer NAME --source REF")
         if args.outcome == 'merged' and pr is None:
             raise ValueError(f'Record the PR first: python3 _system/scripts/sdlc.py pr {args.run} <PR URL>')
-        write_json(path / 'closure.json', {'outcome': args.outcome, **({'merge': args.merge} if args.merge else {}),
-                                           'time_ns': time.time_ns()})
+        closure = {'outcome': args.outcome, **({'merge': args.merge} if args.merge else {}), 'time_ns': time.time_ns()}
+        main = keep_records(path, closure)
+        write_json(path / 'closure.json', closure)
     print(f'Closed {args.run}: {args.outcome}.')
+    if main:
+        print(f'Copied its records to {main}; commit them there before removing this worktree.')
+
+
+def main_checkout():
+    """This scaffold's root in the repository's main working tree; None when this checkout is that tree or the
+    repository is bare, so there is no other working tree to keep records in."""
+    listed = run_git(ROOT, 'worktree', 'list', '--porcelain')
+    top = run_git(ROOT, 'rev-parse', '--show-toplevel')
+    if listed.returncode or top.returncode or not listed.stdout.startswith('worktree '):
+        return None
+    first = listed.stdout.split('\n\n', 1)[0].splitlines()
+    if 'bare' in first:
+        return None
+    main = Path(first[0].removeprefix('worktree '))
+    if main.resolve() == Path(top.stdout.strip()).resolve():
+        return None
+    return main / ROOT.resolve().relative_to(Path(top.stdout.strip()).resolve())
+
+
+def keep_records(path, closure):
+    """Closing in a linked worktree copies the run's records, closure included, into the main checkout, so they
+    outlive the worktree. Refuses rather than overwrite uncommitted changes there or another run of the same name.
+    Copies before the local closure is written, so a failed copy leaves the run open; files it already copied show
+    as uncommitted there, so restore them before closing again."""
+    main = main_checkout()
+    if main is None:
+        return None
+    target = main / 'runs' / path.name
+    if target.is_symlink() or (target.exists() and not target.is_dir()):
+        raise ValueError(f'{target} must be a directory, not a symlink; the run stays open.')
+    held = read_json(target / 'run.json') if (target / 'run.json').is_file() else None
+    if held is not None and not (isinstance(held, dict) and held.get('run_id') == require_run(path)['run_id']):
+        raise ValueError(f'{target} holds a different run of the same name; the run stays open.')
+    dirty = run_git(main, 'status', '--porcelain', '--', f'runs/{path.name}')
+    if dirty.returncode:
+        raise ValueError(f'Could not read Git status in {main}: {git_line(dirty)}; the run stays open.')
+    if dirty.stdout.strip():
+        raise ValueError(f'{target} has uncommitted changes; commit or restore them, then close again. The run stays open.')
+    for file in sorted(path.rglob('*')):
+        relative = file.relative_to(path)
+        if any(part.startswith('.') for part in relative.parts) or file.is_symlink() or not file.is_file():
+            continue
+        write_bytes(target / relative, file.read_bytes())
+    write_json(target / 'closure.json', closure)
+    return target
 
 
 def status_state(path):
@@ -1438,7 +1485,10 @@ def status_text(view):
         lines.append(f"Reproduction: failed with exit {repro['exit_code']} when locked ({' '.join(repro['argv'])})" if repro['executed'] else
                      'Reproduction: recorded from review evidence, not run locally; CI must confirm it fails on the unfixed code '
                      '(lock-tests --reproduce runs it at lock time).')
-    if view['verification'] is not None:
+    if view['verification'] is not None and view['closure']:
+        candidate = (view['verification'].get('candidate') or {}).get('head', 'unknown')[:12]
+        lines.append(f"Verification: last {view['verification']['result']} on {candidate}")
+    elif view['verification'] is not None:
         lines.append('Verification: ' + ('current' if view['verification_status'] == 'current' else 'failed, stale, or blocked'))
     else:
         lines.append('Verification: not run (implementation may be pending; a text log is not passing evidence)')

@@ -776,6 +776,73 @@ class LabelTests(unittest.TestCase):
         self.assertIn('builds in', self.cli('pr', 'example', 'https://github.com/TEST/example/pull/1', ok=False))
         self.assertFalse((self.root / 'runs/example/labels.jsonl').exists())
 
+    def build_in_worktree(self):
+        """The run committed in the main checkout, then built in a linked worktree, as stage 3 does."""
+        self.create_ready()
+        self.git('add', '-A')
+        self.git('-c', 'user.name=TEST', '-c', 'user.email=test@local', 'commit', '-qm', 'TEST run')
+        worktree = Path(tempfile.mkdtemp(prefix='tink-sdlc-TEST-build-')) / 'checkout'
+        self.addCleanup(shutil.rmtree, worktree.parent, True)
+        self.git('worktree', 'add', '-q', '-b', 'example', str(worktree), 'HEAD')
+        return worktree
+
+    def there(self, worktree, *args, ok=True):
+        result = subprocess.run([sys.executable, str(worktree / '_system/scripts/sdlc.py'), *args],
+                                cwd='/', capture_output=True, text=True)
+        self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
+        return result.stdout + result.stderr
+
+    def test_closing_in_a_worktree_keeps_the_records_after_it_is_removed(self):
+        # #170: vault-links run 2 read "Verification: not run" with no labels once its worktree was removed.
+        worktree = self.build_in_worktree()
+        self.there(worktree, 'verify', 'example')
+        self.there(worktree, 'label', 'example', '--kind', 'none', '--words', 'No corrections',
+                   '--reviewer', 'jondev', '--source', 'retro')
+        self.there(worktree, 'pr', 'example', 'https://github.com/TEST/example/pull/7')
+        merge = 'b' * 40
+        self.assertIn('Copied its records to', self.there(worktree, 'close', 'example', '--outcome', 'merged', '--merge', merge))
+        self.git('worktree', 'remove', '--force', str(worktree))
+        summary = self.machine('status', 'example')['run']
+        self.assertEqual(summary['closure']['outcome'], 'merged')
+        self.assertEqual(summary['labels']['count'], 1)
+        self.assertEqual(summary['verification']['result'], 'passed')
+        self.assertEqual(summary['next_action'], f'Closed: merged as {merge}.')
+        text = self.cli('status', 'example')
+        self.assertIn('Verification: last passed on', text)
+        self.assertIn('Labels: 1 none', text)
+        self.assertIn(f'Closed: merged as {merge}', text)
+
+    def test_closing_in_a_worktree_refuses_to_overwrite_uncommitted_main_records(self):
+        worktree = self.build_in_worktree()
+        self.there(worktree, 'label', 'example', '--kind', 'none', '--words', 'No corrections',
+                   '--reviewer', 'jondev', '--source', 'retro')
+        notes = self.root / 'runs/example/brief.md'
+        notes.write_text('operator edit, uncommitted')
+        self.assertIn('uncommitted changes', self.there(worktree, 'close', 'example', '--outcome', 'abandoned', ok=False))
+        self.assertFalse((worktree / 'runs/example/closure.json').exists())
+        self.assertEqual(notes.read_text(), 'operator edit, uncommitted')
+        self.git('checkout', '--', 'runs/example/brief.md')
+        self.there(worktree, 'close', 'example', '--outcome', 'abandoned')
+        self.assertTrue((self.root / 'runs/example/closure.json').is_file())
+
+    def test_closing_in_a_worktree_of_a_bare_repository_copies_nothing(self):
+        # A bare repository has no main working tree to keep records in; close works as before.
+        self.create_ready()
+        self.git('add', '-A')
+        self.git('-c', 'user.name=TEST', '-c', 'user.email=test@local', 'commit', '-qm', 'TEST run')
+        parent = Path(tempfile.mkdtemp(prefix='tink-sdlc-TEST-bare-'))
+        self.addCleanup(shutil.rmtree, parent, True)
+        subprocess.run(['git', 'clone', '-q', '--bare', str(self.root), str(parent / 'repo.git')], check=True)
+        worktree = parent / 'checkout'
+        subprocess.run(['git', '-C', str(parent / 'repo.git'), 'worktree', 'add', '-q', '-b', 'example', str(worktree), 'HEAD'],
+                       check=True, capture_output=True)
+        self.there(worktree, 'label', 'example', '--kind', 'none', '--words', 'No corrections',
+                   '--reviewer', 'jondev', '--source', 'retro')
+        out = self.there(worktree, 'close', 'example', '--outcome', 'abandoned')
+        self.assertNotIn('Copied', out)
+        self.assertTrue((worktree / 'runs/example/closure.json').is_file())
+        self.assertFalse((parent / 'repo.git/runs').exists())
+
     def test_close_needs_a_label(self):
         self.create_ready()
         self.assertIn('Label the run before closing it', self.cli('close', 'example', '--outcome', 'abandoned', ok=False))
