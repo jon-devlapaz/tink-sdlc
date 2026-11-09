@@ -995,7 +995,9 @@ class WorkflowTests(unittest.TestCase):
         out = self.cli('verify', 'example', ok=False)
         self.assertIn('Checklist incomplete: alpha, beta', out)
         receipt = self.root / 'runs/example/04-test/output/verification.json'
-        self.assertEqual(json.loads(receipt.read_text())['result'], 'failed')
+        pending = json.loads(receipt.read_text())
+        self.assertEqual(pending['result'], 'awaiting-attestation')
+        self.assertEqual(pending['pending_attestations'], ['alpha', 'beta'])
         self.mark('alpha')
         self.mark('beta', 'failed', evidence='no')
         self.assertIn('Checklist incomplete: beta', self.cli('verify', 'example', ok=False))
