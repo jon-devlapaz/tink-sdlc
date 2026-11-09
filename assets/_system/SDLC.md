@@ -42,6 +42,18 @@ An item may carry `check`: `{"argv":[...],"timeout_seconds":N}`, validated like 
 
 An item without `check` is attested: record it with `sdlc.py mark <run> <item-id> passed|failed --evidence <text>`, which needs a current stage 3 approval and appends a receipt under `marks/`. The latest receipt per item wins, and `verify` requires `passed`. Verification binds a digest of each latest receipt, so any later mark or edit makes it stale: mark first, then verify. Attested marks are self-reported claims for independent review to challenge. Status flags an item marked on an older candidate; re-check it only if the change affects it. The passed receipt records each item as `proven` or `attested`.
 
+If commands pass against stable inputs but attestations remain incomplete, `verify`
+still exits nonzero with `Checklist incomplete` and the mark commands. It records
+`result: awaiting-attestation`, the proven candidate's HEAD and content tree, policy,
+test lock, definition and mark digests, log digest, per-item proof and
+`pending_attestations` ids. Missing attestations are `pending`, never `attested`.
+This is machine proof only, not passing verification or permission to release.
+Status reports `awaiting-attestation` only while those proof inputs and the log
+still match. A later mark or changed proof input retires it; evidence-only commits
+preserve it because HEAD records provenance and content tree determines freshness.
+An item a person marked `failed` awaits nobody, so that verify records `failed` instead.
+After recording the actual observations, rerun `verify` to obtain a pass.
+
 `new` always writes `checklist.json`; if it is deleted, status reads MISSING and verification refuses until it is restored from Git. Local files, deletable receipts and `git update-index --skip-worktree` are not a tamper boundary: trusted CI and forge review are.
 
 ### Locked seed acceptance checks
@@ -583,9 +595,15 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   Human v2 and legacy bindings retain the three-field status shape.
   This is intake evidence, not approval, goal identity or release authority.
 - `verification_status`: `blocked`, `running`, `not-run`, `current`, `stale`,
-  `failed`, or `interrupted`. `verification` is null or a normalized record with
-  `result`, `passed`, `candidate`, `log` (digest), and `error`. Only `passed: true`
-  means current evidence; receipt internals are not a client contract.
+  `failed`, `interrupted`, or `awaiting-attestation`. The last means command proof
+  is fresh but required attestations remain incomplete. It becomes `stale` when
+  proof inputs or the log change; definition gates and active writers still take
+  precedence. `verification` is null or a normalized record with `result`, `passed`,
+  `candidate`, `log` (digest), and `error`. An `awaiting-attestation` result also
+  includes `pending_attestations`, a nonempty list of item ids from that invocation,
+  even after the proof becomes stale. Its `passed` is always false. Only
+  `passed: true` means current passing verification; receipt internals are not a
+  client contract. Older API 1 clients must fail closed on the new status word.
 - `checklist`: normalized items with their definition, `automatic`, `status`
   (`pending`, `passed`, `failed`, or `unknown` for a seed attestation), `proof` (`automated`, `attested`), optional
   observation `mark`, and `needs_recheck`. `checklist_state` distinguishes

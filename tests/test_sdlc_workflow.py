@@ -995,7 +995,9 @@ class WorkflowTests(unittest.TestCase):
         out = self.cli('verify', 'example', ok=False)
         self.assertIn('Checklist incomplete: alpha, beta', out)
         receipt = self.root / 'runs/example/04-test/output/verification.json'
-        self.assertEqual(json.loads(receipt.read_text())['result'], 'failed')
+        pending = json.loads(receipt.read_text())
+        self.assertEqual(pending['result'], 'awaiting-attestation')
+        self.assertEqual(pending['pending_attestations'], ['alpha', 'beta'])
         self.mark('alpha')
         self.mark('beta', 'failed', evidence='no')
         self.assertIn('Checklist incomplete: beta', self.cli('verify', 'example', ok=False))
@@ -1005,6 +1007,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(passed['result'], 'passed')
         self.assertEqual(passed['checklist'], workflow_checklist_digest(self.checklist_path()))
         self.assertIn('Verification: current', self.cli('status', 'example'))
+
+    def test_human_failed_mark_stays_on_the_failed_path(self):
+        self.checklist_ready(('alpha', 'beta'))
+        self.mark('alpha', 'failed', evidence='no')
+        self.assertIn('Checklist incomplete: alpha, beta', self.cli('verify', 'example', ok=False))
+        receipt = json.loads((self.root / 'runs/example/04-test/output/verification.json').read_text())
+        self.assertEqual(receipt['result'], 'failed')
+        self.assertNotIn('pending_attestations', receipt)
+        view = json.loads(self.cli('status', 'example', '--json'))['run']
+        self.assertEqual(view['verification_status'], 'failed')
+        self.assertIsNone(view['verification']['candidate'])
+        self.assertNotIn('pending_attestations', view['verification'])
 
     def test_verify_does_not_require_marks_on_current_tree(self):
         self.checklist_ready()
