@@ -51,6 +51,7 @@ This is machine proof only, not passing verification or permission to release.
 Status reports `awaiting-attestation` only while those proof inputs and the log
 still match. A later mark or changed proof input retires it; evidence-only commits
 preserve it because HEAD records provenance and content tree determines freshness.
+An item a person marked `failed` awaits nobody, so that verify records `failed` instead.
 After recording the actual observations, rerun `verify` to obtain a pass.
 
 `new` always writes `checklist.json`; if it is deleted, status reads MISSING and verification refuses until it is restored from Git. Local files, deletable receipts and `git update-index --skip-worktree` are not a tamper boundary: trusted CI and forge review are.

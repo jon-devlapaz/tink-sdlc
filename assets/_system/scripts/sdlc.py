@@ -900,6 +900,8 @@ def verify(args):
                            or (i in seed_results and seed_results[i] != 'attested')]
                 if missing:
                     incomplete = f"Checklist incomplete: {', '.join(missing)} ({mark_hint(args.run, items, missing)})"
+                    if any(marked.get(i, {}).get('result') == 'failed' for i in missing):
+                        raise ValueError(incomplete)  # A person already judged it; nothing awaits them.
                     proof.update(pending_attestations=missing, error=incomplete)
                 proof['checklist_items'] = {item['id']: 'proven' if 'check' in item else
                                             'pending' if item['id'] in missing else 'attested'
@@ -1443,7 +1445,7 @@ def status_state(path):
     next_action = unavailable or worker_action(path.name, steps, newest) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
-        'awaiting-attestation': record.get('error') or 'Record the pending attestations, then rerun verification.' if record else '',
+        'awaiting-attestation': (record.get('error') or 'Record the pending attestations, then rerun verification.') if record else '',
         'stale': 'The previous proof no longer matches this candidate or its evidence. Run verification again.',
         'interrupted': 'The previous verification did not finish. Inspect the log, then rerun it.',
         'failed': failed_reason(path, record) if record else '',

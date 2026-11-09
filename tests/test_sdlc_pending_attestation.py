@@ -177,6 +177,8 @@ class PendingAttestation(StageBase):
                 self.attest(result)
                 self.assertIn(self.view()['verification_status'], ('stale', 'not-run'))
                 self.assertFalse(self.view()['verification']['passed'])
+                if result == 'failed':
+                    self.attest('unknown')  # A failed mark would put the next verify on the failed path.
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
         self.assertEqual(self.view()['verification_status'], 'current')
 
