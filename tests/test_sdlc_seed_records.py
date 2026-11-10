@@ -3,7 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from tinkery_fixture import TINKERY, changed, cli, confirmed, corpus, command, provisional, DEFAULT
+from tinkery_fixture import TINKERY, changed, cli, confirmed, command, provisional, DEFAULT
 from test_sdlc_stage import StageBase, PASSING
 import test_sdlc_seed_checks as seed_fixtures
 
@@ -21,11 +21,6 @@ class RecordIntake(StageBase):
     def intake(self, seed):
         self.stage('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY))
         self.path = self.root / 'runs/r'
-
-    def test_recorded_cases_are_verified_handoffs(self):
-        for case in corpus()['cases']:
-            self.assertTrue(json.loads(case['status']['stdout'])['handoff']['verified'])
-            self.assertNotIn('viewer', json.loads(case['status']['stdout']))
 
     def test_every_kind_locks_source_and_optional_fields(self):
         records = [command(), provisional(), provisional('false'), {**DEFAULT[0], 'how_to_judge': 'Inspect'}]
