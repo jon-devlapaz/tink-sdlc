@@ -773,7 +773,7 @@ class LabelTests(unittest.TestCase):
         worktree = Path(tempfile.mkdtemp(prefix='tink-sdlc-TEST-build-')) / 'checkout'
         self.addCleanup(shutil.rmtree, worktree.parent)
         self.git('worktree', 'add', '-q', '-b', 'example', str(worktree), 'HEAD')
-        self.assertIn(f'Run example builds in {worktree}; record it there', self.label(ok=False))
+        self.assertIn(f'Run example builds in {worktree.resolve()}; record it there', self.label(ok=False))
         self.assertIn('builds in', self.cli('close', 'example', '--outcome', 'abandoned', ok=False))
         self.assertIn('builds in', self.cli('pr', 'example', 'https://github.com/TEST/example/pull/1', ok=False))
         self.assertFalse((self.root / 'runs/example/labels.jsonl').exists())
