@@ -62,7 +62,7 @@ Scaffold 1.19.0 introduces API 1: `sdlc.py capabilities --json` and
 `sdlc.py status [run] --json`. Human and JSON status share one calculation. Clients
 consume normalized run state, available actions, and declared log references rather
 than parsing prose or receipt internals. The versioning and field contract lives in
-`assets/_system/SDLC.md`; API versions are independent of package versions.
+[references/api-1.md](references/api-1.md); API versions are independent of package versions.
 
 For Tinkery-originated work, see the installed [ownership and handoff guidance](assets/_system/SDLC.md#tinkery-ownership-and-handoff).
 
