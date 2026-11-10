@@ -20,8 +20,6 @@ IDENT = {'GIT_AUTHOR_NAME': 'Launcher', 'GIT_AUTHOR_EMAIL': 'l@local',
          'GIT_COMMITTER_NAME': 'Launcher', 'GIT_COMMITTER_EMAIL': 'l@local'}
 CONFIRMED = 'seed contract — confirmed for intake; not approved for implementation\nidea\n'
 PASSING = {'argv': ['python3', '-c', 'pass'], 'timeout_seconds': 20}
-DIRS = {1: ('plan', '01-plan'), 2: ('design', '02-design'), 3: ('build', '03-build'),
-        5: ('deploy', '05-deploy'), 6: ('maintain', '06-maintain')}
 
 
 def tree_hash(root):

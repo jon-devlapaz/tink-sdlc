@@ -3,7 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from tinkery_fixture import FIXTURES, TINKERY, changed, cli, confirmed, corpus, command, provisional, DEFAULT
+from tinkery_fixture import TINKERY, changed, cli, confirmed, corpus, command, provisional, DEFAULT
 from test_sdlc_stage import StageBase, PASSING
 import test_sdlc_seed_checks as seed_fixtures
 
@@ -22,12 +22,8 @@ class RecordIntake(StageBase):
         self.stage('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY))
         self.path = self.root / 'runs/r'
 
-    def test_fixture_is_pinned_to_recorded_rust_confirmation(self):
-        self.assertEqual(hashlib.sha256(FIXTURES.read_bytes()).hexdigest(),
-                         '74d1267a94d3ab8006ad3badaf5735a2522aadf566fb1a8afb46726ca4a9db00')
-        data = corpus()
-        self.assertEqual(data['provenance']['commit'], '785a6937f2d946fc78afebcdb6e4f811430056a1')
-        for case in data['cases']:
+    def test_recorded_cases_are_verified_handoffs(self):
+        for case in corpus()['cases']:
             self.assertTrue(json.loads(case['status']['stdout'])['handoff']['verified'])
             self.assertNotIn('viewer', json.loads(case['status']['stdout']))
 

@@ -2,7 +2,7 @@
 """Replay literal TEST sessions and command outputs recorded from Tinkery 785a693.
 
 This is a finite command stub, not a seed verifier. Unknown inputs refuse; JSON
-formatting alone is ignored. See fixtures/tinkery-785a693/record.py for provenance.
+formatting alone is ignored. The recorder is in Git history before its removal.
 """
 import json
 from pathlib import Path
