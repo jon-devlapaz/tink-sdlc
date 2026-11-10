@@ -222,7 +222,6 @@ Bundled adapters (their module comments state what each promises and refuses):
 | Adapter | Pin | Notes |
 |---|---|---|
 | `_system/scripts/pi-launcher` | `provider/model-id:thinking`, e.g. `openai-codex/gpt-5.6-luna:low` | The model must be in Pi's local catalog (run `pi update --models` yourself) with a stored credential. Enforces `--max-responses`. |
-| `_system/scripts/claude-launcher` | `anthropic/<model-id>:<effort>`, e.g. `anthropic/claude-sonnet-5-5:low` | Reviewed exact IDs only. Restricted mode: file tools reach the checkout and the report's folder (give it a folder of its own); Bash runs only the run's committed check commands. Refuses caps. Not a sandbox: an allowed check runs whatever code the builder edited, so review the diff. |
 
 Resume pinned steps only through `step … resume`: pi-herdr's resume drops the pin. Another launcher
 must implement the [launcher protocol](https://github.com/jon-devlapaz/tink-sdlc/blob/main/references/launcher-protocol.md)
