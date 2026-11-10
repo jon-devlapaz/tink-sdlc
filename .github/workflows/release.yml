@@ -1,0 +1,32 @@
+name: Release
+
+# Each assets/manifest.json version on main gets one tag, v<version>, and Tinkery hears of it.
+# Tinkery opens its own bump pull request and ignores a version it already has, so a rerun is safe.
+on:
+  push:
+    branches: [main]
+    paths: [assets/manifest.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag the version and signal Tinkery
+        env:
+          GH_TOKEN: ${{ secrets.TINKERY_BUMP_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import json; print(json.load(open('assets/manifest.json'))['version'])")
+          if ! git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            git tag "v$version"
+            git push origin "v$version"
+          fi
+          test -n "$GH_TOKEN" || { echo "::error::Add the TINKERY_BUMP_TOKEN secret to signal Tinkery."; exit 1; }
+          gh api repos/jon-devlapaz/tinkery/dispatches -f event_type=tink-sdlc-release \
+            -f "client_payload[version]=$version"

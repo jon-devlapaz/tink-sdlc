@@ -83,6 +83,9 @@ manifest. Running it without `--version` refreshes hashes at the current version
 use a new version when publishing changed payloads. CI checks Python 3.9, 3.11,
 and 3.14.
 
+Once a new version reaches `main`, the release workflow tags it `v<version>` and asks
+Tinkery to open its bump pull request. That signal needs the `TINKERY_BUMP_TOKEN` secret.
+
 The manifest records payload content hashes, not publisher authenticity. Tests use
 isolated temporary repositories and synthetic review fixtures, never real approvals.
 The package intentionally has one runtime implementation; tests execute that payload.
