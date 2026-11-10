@@ -203,7 +203,6 @@ class PiLauncherTests(StageBase):
         self.new_run('full-run', profile='full')
         run_dir = self.root / 'runs/full-run'
         self.report_full = self.base / 'TEST-notes' / 'full-build.md'
-        contract = run_dir / 'steps' / 'build.json'
         prepared = self.sdlc('step', 'full-run', 'build', 'prepare', '--report', str(self.report_full),
                              '--model', PIN, '--launcher', str(self.adapter))
         self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)

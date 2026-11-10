@@ -1,6 +1,5 @@
 """Pinned build-step contracts, exercised through the installed runtime and a fake adapter."""
 import json
-from pathlib import Path
 import re
 
 from test_sdlc_stage import StageBase, PYTHON, PASSING

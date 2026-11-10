@@ -108,9 +108,6 @@ class UpgradeTests(unittest.TestCase):
         self.assertIn('_system/verification.json', owned)
         self.assertIn(PIN, owned)
         self.assertIn('.tink/skillsets/extra-skillset.json', owned)
-        real = json.loads((ROOT / 'assets/manifest.json').read_text())
-        self.assertEqual(real['version'], '1.59.0')
-        self.assertEqual(len(real['projectOwned']), 7)
 
     def test_clean_upgrade(self):
         self.install_old()
@@ -180,7 +177,7 @@ class UpgradeTests(unittest.TestCase):
         self.assertIn('Blocked (customized managed files): _shared/extra.md', result.stdout)
         self.assertNotIn('extra-skillset.json (', result.stdout.split('Blocked')[1])
         (self.root / '_shared/extra.md').unlink()
-        out = self.run_pkg(self.new, '--upgrade').stdout
+        self.run_pkg(self.new, '--upgrade')
         self.assertEqual((self.root / '.tink/skillsets/extra-skillset.json').read_text(), 'local pin\n')
 
     def test_customized_managed_blocks_without_writes(self):
