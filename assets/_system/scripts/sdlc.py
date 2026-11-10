@@ -25,6 +25,18 @@ ROOT = Path(__file__).resolve().parents[2]
 HOME = ROOT
 API_VERSION = 1
 API_CAPABILITIES = ['status-json', 'verify', 'mark', 'log-file', 'pr', 'close', 'label']
+WORDS = {
+    'verification_status': ('blocked', 'running', 'not-run', 'current', 'stale', 'failed', 'interrupted',
+                            'awaiting-attestation', 'invalid'),
+    'verification.result': ('passed', 'failed', 'running', 'awaiting-attestation'),
+    'gates[].status': ('approved', 'pending', 'stale', 'changes-requested'),
+    'checklist[].status': ('pending', 'passed', 'failed', 'unknown'),
+    'checklist[].proof': ('automated', 'attested'),
+    'steps[].state': ('prepared', 'active', 'uncertain', 'completed', 'stopped', 'unreadable'),
+    'steps[].turn': ('ended', 'not-ended', 'unknown'),
+    'steps[].stopped_by': ('operator', 'cap'),
+}
+MARK_RESULTS = [word for word in WORDS['checklist[].status'] if word != 'pending']
 LABEL_KINDS = ('correction', 'none', 'accepted', 'rejected')
 PR_URL = re.compile(r'https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/[1-9][0-9]{0,9}')
 ITEM_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
@@ -436,7 +448,7 @@ def marks(path, items, include_agents=False):
         try:
             record = read_json(receipt)
             key = (record['time_ns'], receipt.name)
-            if record['item'] in ids and record['result'] in ('passed', 'failed', 'unknown') and isinstance(record['time_ns'], int):
+            if record['item'] in ids and record['result'] in MARK_RESULTS and isinstance(record['time_ns'], int):
                 if record['item'] not in latest_marks or key > latest_marks[record['item']][0]:
                     latest_marks[record['item']] = (key, record)
         except (ValueError, KeyError, TypeError, OSError):
@@ -1344,8 +1356,6 @@ def status_state(path):
     gates, blocked = [], False
     for stage in stages(path):
         state = gate(path, stage)
-        if state not in ('approved', 'pending', 'stale', 'changes-requested'):
-            raise ValueError(f'Unknown gate state: {state}')
         entry = {'stage': stage, 'status': state, 'blocked': blocked}
         recorded = latest(path, stage)
         if recorded and agent_record(recorded):
@@ -1359,7 +1369,7 @@ def status_state(path):
     record_path, _ = verification_files(path)
     record = read_json(record_path) if record_path.exists() else None
     if record is not None:
-        if not isinstance(record, dict) or record.get('result') not in ('passed', 'failed', 'running', 'awaiting-attestation'):
+        if not isinstance(record, dict) or record.get('result') not in WORDS['verification.result']:
             raise ValueError('Unrecognized verification receipt.')
         for key in ('error', 'log'):
             if record.get(key) is not None and not isinstance(record[key], str):
@@ -1464,6 +1474,14 @@ def status_state(path):
                         f' Once the PR is open, record it: python3 _system/scripts/sdlc.py pr {path.name} <PR URL>.')
     if ROOT != HOME:
         next_action = f'In {ROOT}: {next_action}'
+    shown = {'verification_status': [state], 'verification.result': [record['result']] if record else [],
+             'gates[].status': [g['status'] for g in gates],
+             'checklist[].status': [i['status'] for i in checklist['items']],
+             'checklist[].proof': [i['proof'] for i in checklist['items']],
+             **{f'steps[].{key}': [s[key] for s in steps if key in s] for key in ('state', 'turn', 'stopped_by')}}
+    unpublished = sorted(f'{field} {word}' for field, words in shown.items() for word in words if word not in WORDS[field])
+    if unpublished:
+        raise ValueError('Status words missing from capabilities: ' + ', '.join(unpublished))
     bound = meta.get('seed_contract')
     seed_contract = {key: bound[key] for key in ('path', 'sha256', 'source')} if bound is not None else None
     if bound is not None and bound.get('confirmation', {}).get('schema_version') == 3:
@@ -1602,7 +1620,7 @@ def machine_output(value):
 
 def capabilities(args):
     if args.json:
-        machine_output({'capabilities': API_CAPABILITIES})
+        machine_output({'capabilities': API_CAPABILITIES, 'words': WORDS})
     else:
         print(f'tink-sdlc API {API_VERSION}: ' + ', '.join(API_CAPABILITIES))
 
@@ -2494,7 +2512,7 @@ def step_adapter(record, operation, contract, resolve=False):
 
 
 NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, stopped, failed or still running)'
-STEP_STATES = ('prepared', 'active', 'uncertain', 'completed', 'stopped')
+STEP_STATES = [word for word in WORDS['steps[].state'] if word != 'unreadable']
 FINISHED_STEPS = ('completed', 'stopped')
 STOPPED_WORDS = {'operator': 'by the operator', 'cap': 'at its response cap'}
 STOP_GRACE_SECONDS = 5
@@ -2772,7 +2790,7 @@ def main():
     marking = commands.add_parser('mark')
     marking.add_argument('run')
     marking.add_argument('item')
-    marking.add_argument('result', choices=['passed', 'failed', 'unknown'])
+    marking.add_argument('result', choices=MARK_RESULTS)
     marking.add_argument('--evidence', required=True)
     marking.add_argument('--reviewer', help='actual operator attesting a seed check')
     marking.add_argument('--source', help='reference to the operator observation')
@@ -2824,7 +2842,7 @@ def main():
     execution.add_argument('--launcher', metavar='ABSOLUTE_PATH')
     execution.add_argument('--max-responses', type=int, metavar='N',
                            help='at prepare: the launcher stops the worker once its session holds N responses')
-    execution.add_argument('--stopped-by', choices=list(STOPPED_WORDS),
+    execution.add_argument('--stopped-by', choices=WORDS['steps[].stopped_by'],
                            help='complete a worker stopped before its turn ended: ends its process group, records what exists')
     lint = commands.add_parser('walk', help='structural walk lint (read-only)')
     lint.add_argument('--json', action='store_true')

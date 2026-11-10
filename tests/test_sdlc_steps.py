@@ -1,6 +1,7 @@
 """Pinned build-step contracts, exercised through the installed runtime and a fake adapter."""
 import json
 from pathlib import Path
+import re
 
 from test_sdlc_stage import StageBase, PYTHON, PASSING
 
@@ -213,6 +214,35 @@ class StepTests(StageBase):
         self.assertEqual(self.requests(), ['launch ' + self.model])
         self.contract.write_text('not JSON')
         self.assertEqual(status()['steps'], [{'name': 'build', 'state': 'unreadable'}])
+
+    def test_capabilities_words_are_the_step_words_status_produces_and_step_accepts(self):
+        words = json.loads(self.sdlc('capabilities', '--json').stdout)['words']
+        seen = {field: set() for field in words if field.startswith('steps')}
+
+        def look(env=None):
+            for step in json.loads(self.sdlc('status', 'r', '--json', env=env).stdout)['run']['steps']:
+                for key in ('state', 'turn', 'stopped_by'):
+                    seen[f'steps[].{key}'].update([step[key]] if key in step else [])
+
+        def step(name, action, *args, env=None, ok=True):
+            result = self.sdlc('step', 'r', name, action, *args, env=env)
+            self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
+        for name, ending in (('stop', ('--stopped-by', 'operator')), ('cap', ('--stopped-by', 'cap')), ('done', ()),
+                             ('fail', None)):
+            step(name, 'prepare', '--report', str(self.report.with_name(name + '.md')), '--model', self.model,
+                 '--launcher', str(self.launcher))
+            look()
+            step(name, 'launch', env={'TEST_ADAPTER_FAIL' if ending is None else 'TEST_WRITE_REPORT': '1'}, ok=ending is not None)
+            for env in ({'TEST_UNFINISHED': '1'}, {}, {'TEST_NO_FINISHED': '1'}):
+                look(env)
+            if ending is not None:
+                step(name, 'complete', *ending)
+        (self.root / 'runs/r/steps/unread.json').write_text('not JSON')
+        look()
+        self.assertEqual({field: sorted(found) for field, found in seen.items()},
+                         {field: sorted(words[field]) for field in seen})
+        accepted = re.search(r'--stopped-by \{([a-z,-]+)\}', self.sdlc('step', '--help').stdout).group(1).split(',')
+        self.assertEqual(sorted(accepted), sorted(words['steps[].stopped_by']))
 
     def test_symlink_or_empty_report_cannot_complete(self):
         self.prepare()

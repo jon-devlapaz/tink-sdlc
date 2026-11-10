@@ -1,5 +1,7 @@
+import fcntl
 import hashlib
 import json
+import re
 
 from test_sdlc_stage import StageBase, IDENT
 from tinkery_fixture import TINKERY, confirmed, command, DEFAULT
@@ -41,6 +43,51 @@ class PendingAttestation(StageBase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Checklist incomplete: seed-2', result.stderr)
         return result
+
+    def test_capabilities_words_are_the_words_status_produces_and_mark_accepts(self):
+        words = json.loads(self.sdlc('capabilities', '--json').stdout)['words']
+        seen = {field: set() for field in words if not field.startswith('steps')}
+
+        def look(run='r'):
+            result = self.sdlc('status', run, '--json')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            view = json.loads(result.stdout)['run']
+            seen['verification_status'].add(view['verification_status'])
+            seen['verification.result'].update([view['verification']['result']] if view['verification'] else [])
+            seen['gates[].status'].update(gate['status'] for gate in view['gates'])
+            seen['checklist[].status'].update(item['status'] for item in view['checklist'])
+            seen['checklist[].proof'].update(item['proof'] for item in view['checklist'])
+        look()
+        self.pending()
+        look()
+        self.attest('unknown')
+        look()
+        self.attest('failed')
+        self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
+        look()
+        self.attest('passed')
+        self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
+        look()
+        with (self.path / '.writer-lock').open('a') as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            look()
+        (self.output / 'verification.json').write_text(json.dumps({'result': 'running'}))
+        look()
+        decided = self.sdlc('decide', 'r', '3', 'changes-requested', '--reviewer', 'h', '--source', 's', '--reason', 'r')
+        self.assertEqual(decided.returncode, 0, decided.stderr)
+        look()
+        self.decide('r', 3)
+        (self.path / 'checklist.json').write_text(json.dumps({'schema': 1, 'items': []}))
+        look()
+        self.new_run('fresh', approve=False)
+        look('fresh')
+        (self.root / 'runs/fresh/run.json').write_text('{')
+        seen['verification_status'].update(run['verification_status'] for run in
+                                           json.loads(self.sdlc('status', '--json').stdout)['runs'])
+        self.assertEqual({field: sorted(found) for field, found in seen.items()},
+                         {field: sorted(words[field]) for field in seen})
+        accepted = re.search(r'\{([a-z,-]+)\}', self.sdlc('mark', '--help').stdout).group(1).split(',')
+        self.assertEqual(sorted(['pending', *accepted]), sorted(words['checklist[].status']))
 
     def test_commands_run_and_log_before_nonzero_attestation_error(self):
         self.pending()
