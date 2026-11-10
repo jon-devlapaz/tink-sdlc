@@ -546,8 +546,11 @@ python3 _system/scripts/sdlc.py status example --json
 These read-only commands emit one JSON object on stdout. Every response carries
 `protocol: "tink-sdlc"`, integer `api_version: 1`, and `workspace` (the canonical
 absolute checkout path). The API version is independent of the scaffold release.
-`capabilities` lists `status-json`, `verify`, `mark`, `log-file`, `pr`, `close`, and `label`. Clients must
-check the identity, version, and capabilities before enabling actions. Extra fields
+`capabilities` lists `status-json`, `verify`, `mark`, `log-file`, `pr`, `close`, and `label`, and
+from scaffold 1.58.0 `words`: every word the runtime can put in `verification_status`, `verification.result`,
+`gates[].status`, `checklist[].status`, `checklist[].proof`, `steps[].state`, `steps[].turn` and
+`steps[].stopped_by`, keyed by those names. Clients must check the identity, version, and
+capabilities before enabling actions. Extra fields
 and capabilities are additive; removing fields or changing their meaning requires
 a new API major. Unknown critical states, malformed responses, and unsupported
 majors must fail closed, never fall back to parsing the human CLI.
