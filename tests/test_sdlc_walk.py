@@ -17,7 +17,6 @@ INIT = ROOT / 'scripts/init.py'
 STAGES = ['01-plan', '02-design', '03-build', '04-test', '05-deploy', '06-maintain']
 BEGIN = '<!-- tink:rules begin skillset=planning-skillset hash=abc123 -->'
 END = '<!-- tink:rules end -->'
-ROUTER_BEGIN = '<!-- AI-Native SDLC Router -->'
 ROUTER_END = '<!-- End AI-Native SDLC Router -->'
 
 
