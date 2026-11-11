@@ -336,6 +336,18 @@ class SeedTimeout(StageBase):
         self.configure(seed_timeout_seconds=600)
         self.assertEqual(self.budget(), default + 480)
 
+    def test_dry_run_of_seed_commands_needs_no_configured_checks(self):
+        self.bind([command()], profile='full')
+        for config in [{'require_tink': False, 'checks': []}, None]:
+            with self.subTest(config=config):
+                target = self.root / '_system/verification.json'
+                if config is None:
+                    target.unlink()
+                else:
+                    target.write_text(json.dumps(config))
+                dry = self.sdlc('dry-run', 'r')
+                self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+
     def test_invalid_project_timeout_is_refused(self):
         self.bind([command()])
         self.approve_all()
