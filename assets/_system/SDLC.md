@@ -207,7 +207,7 @@ python3 _system/scripts/sdlc.py step <run> build complete --stopped-by operator 
 - `--max-responses N` caps responses; an adapter that cannot enforce it refuses, so a cap is never ignored.
 - `launch` and `resume` recheck every definition gate and resolve the exact model offline first. The
   prompt names the approved inputs, `stages/03-build/CONTEXT.md` and the report path; limits writes to
-  the checkout and report; and forbids `sdlc.py step`, `stage` and `decide`. Inside the session
+  the checkout and report; tells the worker to commit before ending each turn; and forbids `sdlc.py step`, `stage` and `decide`. Inside the session
   `TINK_SDLC_STEP_SESSION=1` makes `step` refuse everything but `show`. Resume keeps the same session.
 - `complete` needs a nonempty report at the exact path and the adapter's offline confirmation that the
   agent's latest turn ended on the pin. A paused, failed or running agent leaves the step `active`.
