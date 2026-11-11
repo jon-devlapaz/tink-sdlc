@@ -341,6 +341,10 @@ def seed_check_items(path):
     if (not isinstance(value, dict) or set(value) != {'schema', 'items'}
             or type(value['schema']) is not int or value['schema'] != 1 or not isinstance(value['items'], list)):
         raise ValueError('Invalid locked seed checks.')
+    config = ROOT / '_system/verification.json'
+    timeout = (read_json(config) if config.is_file() else {}).get('seed_timeout_seconds', 120)
+    if type(timeout) is not int or timeout <= 0:
+        raise ValueError('verification.json seed_timeout_seconds must be a positive whole number of seconds.')
     seed_baseline(path)
     result = []
     seen = set()
@@ -389,7 +393,7 @@ def seed_check_items(path):
         command = activation or item
         relative_check_cwd(command['cwd'])
         result.append({**base, 'check': {'argv': ['bash', '-c', command['cmd']],
-                                        'timeout_seconds': 120, 'cwd': command['cwd']}})
+                                        'timeout_seconds': timeout, 'cwd': command['cwd']}})
     return result
 
 

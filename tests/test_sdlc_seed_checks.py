@@ -1,7 +1,10 @@
 """Operator-confirmed seed checks are independent acceptance evidence (#194)."""
 import json
+import os
 import re
 import shlex
+import threading
+import time
 from tinkery_fixture import TINKERY, confirmed, command, provisional, DEFAULT
 
 from test_sdlc_stage import StageBase, PASSING
@@ -270,3 +273,67 @@ class SeedChecks(StageBase):
         seed.write_text('## Acceptance criteria\nCommand: true\n')
         self.refuses('r', 1, '--seed-contract', str(seed), '--tinkery', str(TINKERY),
                      message='Tinkery')
+
+
+class SeedTimeout(StageBase):
+    """A project sets how long its seed commands may run (#183)."""
+    bind = SeedChecks.bind
+    approve_all = SeedChecks.approve_all
+    SLOW = command('cat proof | grep "exact output"', 'sub')
+
+    def configure(self, **extra):
+        (self.root / '_system/verification.json').write_text(
+            json.dumps({'require_tink': False, 'checks': [PASSING], **extra}))
+
+    def budget(self):
+        return json.loads(self.sdlc('status', 'r', '--json').stdout)['run']['actions']['verify']['timeout_seconds']
+
+    def verify_with_late_output(self):
+        """Verify while the seed command waits on a FIFO that gets its output 2 s in."""
+        def write_late():
+            time.sleep(2)
+            for _ in range(30):  # a reader that was already stopped never comes back
+                try:
+                    fifo = os.open(self.root / 'sub/proof', os.O_WRONLY | os.O_NONBLOCK)
+                except OSError:
+                    time.sleep(0.1)
+                    continue
+                os.write(fifo, b'exact output\n')
+                os.close(fifo)
+                return
+        writer = threading.Thread(target=write_late)
+        writer.start()
+        result = self.sdlc('verify', 'r')
+        writer.join()
+        return result
+
+    def test_project_timeout_replaces_the_default_for_seed_commands(self):
+        self.bind([self.SLOW])
+        self.approve_all()
+        (self.root / 'sub').mkdir()
+        (self.root / '.gitignore').write_text('sub/proof\n')
+        os.mkfifo(self.root / 'sub/proof')
+        self.configure(seed_timeout_seconds=1)
+        cut = self.verify_with_late_output()
+        self.assertNotEqual(cut.returncode, 0)
+        self.assertIn('Seed check failed: seed-1', cut.stderr)
+        self.configure(seed_timeout_seconds=30)
+        passed = self.verify_with_late_output()
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+
+    def test_the_project_timeout_sets_the_verify_budget_and_120_stays_the_default(self):
+        self.bind([command()])
+        self.approve_all()
+        default = self.budget()
+        self.configure(seed_timeout_seconds=600)
+        self.assertEqual(self.budget(), default + 480)
+
+    def test_invalid_project_timeout_is_refused(self):
+        self.bind([command()])
+        self.approve_all()
+        for value in [0, -5, True, 1.5, '600']:
+            with self.subTest(value=value):
+                self.configure(seed_timeout_seconds=value)
+                refused = self.sdlc('verify', 'r')
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn('seed_timeout_seconds must be a positive whole number', refused.stderr)
