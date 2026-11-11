@@ -235,6 +235,8 @@ def prompt(args, operation, checkout):
             f'report instead of building around it. '
             f'Send no requests to production or live endpoints unless the approved inputs allow them; '
             f'stop any local server or background process you start before ending your turn. '
+            f'Commit your work in {checkout} before ending your turn, even when a check still fails, '
+            f'and name any failure in the report: verify runs only committed work. '
             f'Never run sdlc.py step, stage or decide. Do not change the model or thinking level.'
             f'{activation}')
 
