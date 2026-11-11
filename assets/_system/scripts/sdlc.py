@@ -341,10 +341,6 @@ def seed_check_items(path):
     if (not isinstance(value, dict) or set(value) != {'schema', 'items'}
             or type(value['schema']) is not int or value['schema'] != 1 or not isinstance(value['items'], list)):
         raise ValueError('Invalid locked seed checks.')
-    config = ROOT / '_system/verification.json'
-    timeout = (read_json(config) if config.is_file() else {}).get('seed_timeout_seconds', 120)
-    if type(timeout) is not int or timeout <= 0:
-        raise ValueError('verification.json seed_timeout_seconds must be a positive whole number of seconds.')
     seed_baseline(path)
     result = []
     seen = set()
@@ -393,7 +389,7 @@ def seed_check_items(path):
         command = activation or item
         relative_check_cwd(command['cwd'])
         result.append({**base, 'check': {'argv': ['bash', '-c', command['cmd']],
-                                        'timeout_seconds': timeout, 'cwd': command['cwd']}})
+                                        'timeout_seconds': 120, 'cwd': command['cwd']}})
     return result
 
 
@@ -665,7 +661,15 @@ def checks_config():
         raise ValueError('Verification requires an explicit Tink policy and a nonempty check list.')
     for check in checks:
         validate_check(check)
+    timeout = config.setdefault('seed_timeout_seconds', 120)
+    if type(timeout) is not int or timeout <= 0:
+        raise ValueError('verification.json seed_timeout_seconds must be a positive whole number of seconds.')
     return config
+
+
+def configured(item, config):
+    """A seed command runs for the project's seed_timeout_seconds; other checks keep their own timeout."""
+    return {**item['check'], 'timeout_seconds': config['seed_timeout_seconds']} if is_seed_check(item) else item['check']
 
 
 def unlisted_authors(config):
@@ -802,11 +806,13 @@ def dry_run(args):
             raise ValueError('Define checklist items before a dry run.')
         log_path = path / 'checklist-dry-run.log'
         problems = []
+        # Seed commands need the project's timeout; a run without them needs no verification.json yet.
+        config = checks_config() if any(is_seed_check(i) and 'check' in i for i in items) else None
         with log_path.open('w') as log:
             for item in items:
                 if 'check' not in item:
                     continue
-                check = item['check']
+                check = configured(item, config) if config else item['check']
                 log.write(f"\n# checklist item {item['id']}\n$ {json.dumps(check['argv'])}\n")
                 log.flush()
                 try:
@@ -879,7 +885,7 @@ def verify(args):
                 for item in items or []:
                     if 'check' not in item:
                         continue
-                    check = item['check']
+                    check = configured(item, config)
                     seed = is_seed_check(item)
                     label = 'seed check' if seed else 'checklist item'
                     failure = 'Seed check failed' if seed else 'Checklist check failed'
@@ -1454,7 +1460,7 @@ def status_state(path):
     verify_reason = unavailable or (errors[0] if errors else '')
     manual = any(not item['automatic'] for item in checklist['items'])
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
-    checks = (config['checks'] if config else []) + [i['check'] for i in checklist['items'] if i['automatic']]
+    checks = (config['checks'] if config else []) + [configured(i, config or {'seed_timeout_seconds': 120}) for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
     next_action = unavailable or worker_action(path.name, steps, newest) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'

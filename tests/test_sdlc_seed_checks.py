@@ -290,8 +290,16 @@ class SeedTimeout(StageBase):
 
     def verify_with_late_output(self):
         """Verify while the seed command waits on a FIFO that gets its output 2 s in."""
+        log = self.path / '04-test/output/test-log.md'
+        log.unlink(missing_ok=True)
+
         def write_late():
-            time.sleep(2)
+            deadline = time.monotonic() + 60
+            while '# seed check seed-1' not in (log.read_text() if log.exists() else ''):
+                if time.monotonic() > deadline:
+                    return
+                time.sleep(0.05)
+            time.sleep(2)  # the seed command has now waited 2 s
             for _ in range(30):  # a reader that was already stopped never comes back
                 try:
                     fifo = os.open(self.root / 'sub/proof', os.O_WRONLY | os.O_NONBLOCK)
@@ -337,3 +345,5 @@ class SeedTimeout(StageBase):
                 refused = self.sdlc('verify', 'r')
                 self.assertNotEqual(refused.returncode, 0)
                 self.assertIn('seed_timeout_seconds must be a positive whole number', refused.stderr)
+                status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+                self.assertIn('seed_timeout_seconds must be a positive whole number', status['actions']['verify']['reason'])
