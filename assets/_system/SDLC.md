@@ -66,7 +66,7 @@ Any departure blocks automatic passage. Status lists each changed field, removed
 
 Seed record kinds:
 
-- **`cmd`** runs verbatim through `bash -c` with a 120-second timeout; `cwd` is relative to the checkout (absolute paths, traversal, backslashes, drive letters, NUL and CR/LF refused). Failures and timeouts fail `verify` even when all worker checks pass. **Passing output proves a `cmd` or activated proposal entirely; no `seed-N-expect` mark is owed.** `expect` is descriptive context, not a matcher.
+- **`cmd`** runs verbatim through `bash -c` with a 120-second timeout, or `seed_timeout_seconds` from `_system/verification.json`; `cwd` is relative to the checkout (absolute paths, traversal, backslashes, drive letters, NUL and CR/LF refused). Failures and timeouts fail `verify` even when all worker checks pass. **Passing output proves a `cmd` or activated proposal entirely; no `seed-N-expect` mark is owed.** `expect` is descriptive context, not a matcher.
 - **`judge`** (prose or taste) needs a manual human attestation, judged by `how_to_judge` or else the statement, never an automated pass. Record only the actual operator's observation:
 
   ```sh
@@ -93,6 +93,7 @@ Give each code-writing run its own Git worktree or clone, never just a second br
 Configure `_system/verification.json` with nonempty argv arrays and timeouts. A fresh install has no checks and fails until real tests, build and lint are selected; the runner should reject zero tests, since an exit code alone proves no coverage. Optional keys:
 
 - `"setup": {"argv": [...], "timeout_seconds": N}` prepares ignored dependencies, such as `["pnpm", "install", "--frozen-lockfile"]`. `stage <run> 3` and `5` run it from the committed file in each new worktree; a failure removes the worktree and opens no stage. Keep its output Git-ignored.
+- `"seed_timeout_seconds": N` gives each seed `cmd` check, and each activated proposal, N seconds instead of 120. It must be a positive integer.
 - `"authors": {"since": "<commit>", "allow": ["Name <email>", "Claude session_* <noreply@anthropic.com>"]}` makes verify refuse any later commit whose author matches no pattern.
 
 ```sh
