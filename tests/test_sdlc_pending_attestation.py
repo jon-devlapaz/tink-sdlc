@@ -1,3 +1,8 @@
+from pathlib import Path
+import tempfile
+import sys
+import subprocess
+import os
 import fcntl
 import hashlib
 import json
@@ -228,6 +233,43 @@ class PendingAttestation(StageBase):
                     self.attest('unknown')  # A failed mark would put the next verify on the failed path.
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
         self.assertEqual(self.view()['verification_status'], 'current')
+
+    def test_an_agent_relays_the_operators_typed_words_for_mark_and_decide(self):
+        self.pending()
+        with tempfile.TemporaryDirectory(prefix='tink-sdlc-TEST-relay-') as outside:
+            relay = Path(outside) / 'relay.json'
+            relay.write_text(json.dumps({'words': 'Accept. The shown digest matches.', 'where': 'TEST thread message 7'}))
+            agent = ('--reviewer', 'operator, relayed', '--source', 'TEST thread', '--actor', '{"by":"agent"}')
+            mark = ('mark', 'r', 'seed-2', 'passed', '--evidence', 'The operator saw the digest match.', *agent)
+            decide = ('decide', 'r', '3', 'approved', '--reason', 'The operator accepted the definition.', *agent)
+            before = {p: p.read_bytes() for folder in ('marks', 'decisions') for p in (self.path / folder).glob('*.json')}
+            # Without the words an agent is still refused; a broken relay and a build step session record nothing.
+            bad = Path(outside) / 'bad.json'
+            bad.write_text(json.dumps({'words': ' ', 'where': 'TEST'}))
+            for args, why in [((*mark,), 'human-only'), ((*mark, '--relayed', str(bad)), '--relayed must name'),
+                              ((*mark, '--relayed', str(Path(outside) / 'missing.json')), '--relayed must name'),
+                              ((*decide,), 'human-only')]:
+                refused = self.sdlc(*args)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn(why, refused.stderr)
+            step = subprocess.run([sys.executable, str(self.root / '_system/scripts/sdlc.py'), *mark, '--relayed', str(relay)],
+                                  cwd=self.root, capture_output=True, text=True, env={**os.environ, 'TINK_SDLC_STEP_SESSION': '1'})
+            self.assertIn('step session cannot relay', step.stderr)
+            self.assertEqual({p: p.read_bytes() for folder in ('marks', 'decisions')
+                              for p in (self.path / folder).glob('*.json')}, before)
+            for args in (mark, decide):
+                recorded = self.sdlc(*args, '--relayed', str(relay))
+                self.assertEqual(recorded.returncode, 0, recorded.stderr)
+            expected = {'words': 'Accept. The shown digest matches.', 'where': 'TEST thread message 7',
+                        'sha256': hashlib.sha256(relay.read_bytes()).hexdigest()}
+        view = self.view()
+        self.assertEqual(view['decisions'][-1]['relay'], expected)
+        self.assertEqual(view['decisions'][-1]['attribution'], 'relayed')
+        item = next(item for item in view['checklist'] if item['id'] == 'seed-2')
+        self.assertEqual((item['status'], item['mark']['relay']), ('passed', expected))
+        self.assertNotIn('attribution', item)
+        self.assertIn('Stage 3: approved (relayed operator words; origin unverified)', self.sdlc('status', 'r').stdout)
+        self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
 
     def test_mark_and_decide_still_refuse_agent_recorded_human_decisions(self):
         self.pending()

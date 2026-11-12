@@ -749,6 +749,28 @@ class LabelTests(unittest.TestCase):
         file.write_text(original)
         self.assertEqual(self.view()['labels']['count'], 2)
 
+    def test_an_agent_relays_the_operators_verdict_in_their_own_words(self):
+        self.create_ready()
+        words = 'Accept. It does what the issue asked.'
+        relay = self.root.parent / f'{self.root.name}-TEST-relay.json'
+        self.addCleanup(relay.unlink)
+        relay.write_text(json.dumps({'words': words, 'where': 'TEST thread message 9'}))
+        agent = ('--actor', '{"by":"agent"}')
+        self.assertIn('human-only', self.label(*agent, kind='accepted', words=words, ok=False))
+        relayed = (*agent, '--relayed', str(relay))
+        # The record cannot disagree with the words: other words, or a verdict the words do not start with, refuse.
+        self.assertIn("keeps the operator's words", self.label(*relayed, kind='accepted', words='Accept.', ok=False))
+        self.assertIn("keeps the operator's words", self.label(*relayed, kind='rejected', words=words, ok=False))
+        self.assertIn('step session', self.label(*relayed, kind='accepted', words=words, ok=False,
+                                                 env={'TINK_SDLC_STEP_SESSION': '1'}))
+        self.assertFalse((self.root / 'runs/example/labels.jsonl').exists())
+        self.label(*relayed, kind='accepted', words=words)
+        self.assertEqual(self.lines()[-1]['relay'], {'words': words, 'where': 'TEST thread message 9',
+                                                    'sha256': hashlib.sha256(relay.read_bytes()).hexdigest()})
+        summary = self.machine('status')['runs'][0]
+        self.assertNotEqual(summary['verification_status'], 'invalid')
+        self.assertEqual(self.view()['labels']['kinds']['accepted'], 1)
+
     def test_an_agent_attributed_label_line_invalidates_the_run(self):
         self.create_ready()
         file = self.root / 'runs/example/labels.jsonl'

@@ -41,7 +41,7 @@ python3 _system/scripts/sdlc.py decide fix-example 3 approved \
 
 Light runs have ONE definition gate, recorded as stage 3: `brief.md` + `checklist.json` are the intent, design and plan. Full runs record stages 1, 2 and 3 in order. `changes-requested` records rejection with the same command. Decisions bind their artifacts and contract inputs; edits stale them.
 
-`decide` and seed-judge `mark` are human-only: they refuse a reviewer starting with `Agent`, containing `not human`, or an agent actor (`--actor`, or run metadata). Older agent records stay readable, labelled `agent-recorded`, and never count as human acceptance.
+`decide` and seed-judge `mark` are human-only: they refuse a reviewer starting with `Agent`, containing `not human`, or an agent actor (`--actor`, or run metadata). The one exception is the operator's own typed words, relayed: with `--relayed FILE`, where FILE is JSON `{"words": the operator's exact words, "where": where they typed them}`, an agent may record the operator's `decide`, seed-judge `mark` or `label`. The receipt keeps the words, the place and the file's hash under `relay`, and `status` shows `relayed operator words; origin unverified`: never verified human approval, never the agent's own decision. A relayed `label` must repeat those words in `--words`, and an accepted or rejected label must start with Accept or Reject. A build step session can never relay. Older agent records stay readable, labelled `agent-recorded`, and never count as human acceptance.
 
 ## Checklist
 
