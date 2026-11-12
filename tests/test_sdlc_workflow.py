@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import shlex
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -751,6 +752,53 @@ class WorkflowTests(unittest.TestCase):
                 self.cli('new', 'example', '--profile', profile)
                 self.assertEqual(json.loads(self.checklist_path().read_text()), {'schema': 1, 'items': []})
                 self.assertIn('Checklist: no items defined', self.cli('status', 'example'))
+
+    def issue_cli(self, issue, *args, ok=True):
+        """`new --issue` with a fake `gh` on PATH that prints `issue`, or exits 1 when it is None."""
+        tools = self.root / 'TEST-tools'
+        tools.mkdir(exist_ok=True)
+        (tools / 'gh').write_text('#!/bin/sh\n' + ('exit 1\n' if issue is None else f"cat <<'TEST_EOF'\n{json.dumps(issue)}\nTEST_EOF\n"))
+        (tools / 'gh').chmod(0o755)
+        result = subprocess.run(['python3', str(self.root / '_system/scripts/sdlc.py'), 'new', 'example', *args], cwd='/',
+                                capture_output=True, text=True, env={**os.environ, 'PATH': f"{tools}{os.pathsep}{os.environ['PATH']}"})
+        self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
+        return result.stdout + result.stderr
+
+    def test_an_approved_issue_becomes_the_brief_and_the_checklist_unchanged(self):
+        url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
+        body = ('### Goal\n\nShow the digest.\n\n### Done when\n\n- [ ] The screen shows the full SHA-256, for human and agent starts.\n'
+                '- [ ] `python3 scripts/full-check.py` passes.\n\n### Context\n\n- Not a check.\n')
+        issue = {'title': 'TEST show the digest', 'body': body, 'state': 'OPEN', 'labels': [{'name': 'approved'}]}
+        self.assertIn('from the approved issue', self.issue_cli(issue, '--issue', url))
+        brief = (self.root / 'runs/example/brief.md').read_text()
+        self.assertIn(body, brief)
+        self.assertIn(f'Source: {url}\nIssue body sha256: {hashlib.sha256(body.encode()).hexdigest()}\nTitle: TEST show the digest\n', brief)
+        self.assertEqual([(item['id'], item['description']) for item in json.loads(self.checklist_path().read_text())['items']],
+                         [('done-1', 'The screen shows the full SHA-256, for human and agent starts.'),
+                          ('done-2', '`python3 scripts/full-check.py` passes.')])
+        self.assertEqual(json.loads((self.root / 'runs/example/run.json').read_text())['issue'],
+                         {'url': url, 'title': 'TEST show the digest', 'sha256': hashlib.sha256(body.encode()).hexdigest()})
+        # The issue fills the definition; it records no decision.
+        self.assertFalse((self.root / 'runs/example/decisions').exists())
+        self.assertIn('Stage 3: pending\nNext: revise/review stage 3; record the human decision.', self.cli('status', 'example'))
+
+    def test_an_issue_that_is_not_an_approved_contract_creates_no_run(self):
+        url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
+        good = {'title': 'TEST', 'body': '### Done when\n\n- [ ] It works.\n', 'state': 'OPEN', 'labels': [{'name': 'approved'}]}
+        for why, issue, args in [
+                ('not open', {**good, 'state': 'CLOSED'}, ('--issue', url)),
+                ('no `approved` label', {**good, 'labels': [{'name': 'needs-approval'}]}, ('--issue', url)),
+                ('no Done-when lines', {**good, 'body': '### Goal\n\n- It works.\n'}, ('--issue', url)),
+                ('`gh issue view` failed', None, ('--issue', url)),
+                ('full GitHub URL', good, ('--issue', 'https://github.com/TEST-owner/TEST-repo/pull/7')),
+                ('creates a light run', good, ('--issue', url, '--profile', 'full'))]:
+            with self.subTest(why=why):
+                self.assertIn(why, self.issue_cli(issue, *args, ok=False))
+                self.assertFalse((self.root / 'runs/example').exists())
+        missing = subprocess.run([sys.executable, str(self.root / '_system/scripts/sdlc.py'), 'new', 'example', '--issue', url], cwd='/',
+                                 capture_output=True, text=True, env={**os.environ, 'PATH': str(self.root / 'TEST-empty')})
+        self.assertIn('Could not read the issue with `gh`', missing.stdout + missing.stderr)
+        self.assertFalse((self.root / 'runs/example').exists())
 
     def test_approval_requires_nonempty_valid_checklist(self):
         self.cli('new', 'example')
