@@ -38,6 +38,7 @@ WORDS = {
 }
 MARK_RESULTS = [word for word in WORDS['checklist[].status'] if word != 'pending']
 LABEL_KINDS = ('correction', 'none', 'accepted', 'rejected')
+ISSUE_URL = re.compile(r'https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/issues/[1-9][0-9]{0,9}')
 PR_URL = re.compile(r'https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/[1-9][0-9]{0,9}')
 ITEM_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
 ITEM_KEYS = {'id', 'description', 'verify'}
@@ -728,8 +729,61 @@ def evidence_inputs(path):
                if checklist_digest(path) is not None or seed_check_items(path) else {})}
 
 
+def approved_issue(url):
+    """The approved issue as a run definition: its words unchanged, read once from the forge.
+    Refuses anything that is not an open GitHub issue labeled `approved` with Done-when lines."""
+    if not ISSUE_URL.fullmatch(url):
+        raise ValueError('--issue must be a full GitHub URL: https://github.com/OWNER/REPO/issues/NUMBER')
+    try:
+        read = subprocess.run(['gh', 'issue', 'view', url, '--json', 'title,body,state,labels'], stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=DELIVERY_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError(f'Could not read the issue with `gh` ({type(error).__name__}); no run was created.') from error
+    if read.returncode:
+        raise ValueError(f'`gh issue view` failed (exit {read.returncode}); check `gh auth status`. No run was created.')
+    try:
+        issue = json.loads(read.stdout)
+    except ValueError:
+        issue = None
+    # One shape check where the answer comes in; everything below just uses it.
+    if (not isinstance(issue, dict) or not all(isinstance(issue.get(key), str) for key in ('title', 'body', 'state'))
+            or not isinstance(issue.get('labels'), list)
+            or not all(isinstance(label, dict) and isinstance(label.get('name'), str) for label in issue['labels'])):
+        raise ValueError('`gh` returned an unexpected answer; no run was created.')
+    if issue['state'] != 'OPEN':
+        raise ValueError('The issue is not open; no run was created.')
+    if not any(label['name'] == 'approved' for label in issue['labels']):
+        raise ValueError('The issue has no `approved` label; no run was created.')
+    # The section is read strictly, so no approved word is dropped or cut: only top-level bullets, one line each.
+    body = issue['body'].replace('\r\n', '\n').split('\n')
+    heading = re.compile(r'#{1,6}[ \t]')
+    first = next((index for index, line in enumerate(body) if re.fullmatch(r'#{1,6}[ \t]*Done when[ \t]*', line, re.I)), None)
+    section = [] if first is None else body[first + 1:]
+    section = section[:next((index for index, line in enumerate(section) if heading.match(line)), len(section))]
+    lines = []
+    for line in filter(str.strip, section):
+        bullet = re.fullmatch(r'[-*][ \t]+(?:\[[ xX]\][ \t]+)?(\S.*)', line)
+        if not bullet or re.fullmatch(r'\[[ xX]\]', bullet.group(1).strip()):
+            raise ValueError('The issue\'s Done-when section must hold only top-level `- ` lines, one line each '
+                             f'(found: {line.strip()[:60]!r}); no run was created.')
+        lines.append(bullet.group(1).strip())
+    if not lines:
+        raise ValueError('The issue has no Done-when lines (a `Done when` heading with one `- ` line each); no run was created.')
+    binding = {'url': url, 'title': issue['title'], 'sha256': digest(issue['body'].encode())}
+    brief = (f"# Change brief\n\nSource: {url}\nIssue body sha256: {binding['sha256']}\nTitle: {issue['title']}\n\n"
+             'The approved issue below is this run\'s brief, unchanged. '
+             'Each Done-when line is one item in `checklist.json`.\n\n---\n\n' + issue['body'] + '\n')
+    items = [{'id': f'done-{number}', 'description': line,
+              'verify': 'Show evidence on the pull request that this Done-when line holds.'}
+             for number, line in enumerate(lines, 1)]
+    return binding, brief, items
+
+
 def create(args):
     path = run_path(args.run)
+    if args.issue is not None and args.profile != 'light':
+        raise ValueError('--issue creates a light run; a full run defines intent, spec and plan itself.')
+    issue = approved_issue(args.issue) if args.issue is not None else None
     path.parent.mkdir(exist_ok=True)
     with locked(path.parent / f'.{args.run}.lock'):
         if path.exists():
@@ -737,9 +791,11 @@ def create(args):
         temporary = Path(tempfile.mkdtemp(prefix=f'.{args.run}-', dir=path.parent))
         try:
             write_json(temporary / 'run.json', {'profile': args.profile, 'kind': args.kind, 'schema': 1,
-                                              'run_id': str(uuid.uuid4())})
-            write_json(temporary / 'checklist.json', {'schema': 1, 'items': []})
-            if args.profile == 'light':
+                                              'run_id': str(uuid.uuid4()), **({'issue': issue[0]} if issue else {})})
+            write_json(temporary / 'checklist.json', {'schema': 1, 'items': issue[2] if issue else []})
+            if issue:
+                (temporary / 'brief.md').write_text(issue[1])
+            elif args.profile == 'light':
                 shutil.copyfile(ROOT / '_shared/brief-template.md', temporary / 'brief.md')
             else:
                 for target, template in zip(ARTIFACTS, ['intent', 'spec', 'plan']):
@@ -750,7 +806,8 @@ def create(args):
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary)
-    print(f'Created {path}. Next: define the change and obtain a human review.')
+    print(f'Created {path} from the approved issue; brief.md and checklist.json hold its words. Next: record the human decision.'
+          if issue else f'Created {path}. Next: define the change and obtain a human review.')
 
 
 def decide(args):
@@ -2788,6 +2845,7 @@ def main():
     new.add_argument('run')
     new.add_argument('--profile', choices=['light', 'full'], default='light')
     new.add_argument('--kind', choices=['feature', 'bug'], default='feature')
+    new.add_argument('--issue', metavar='URL', help='an open GitHub issue labeled approved; its words become the brief and checklist')
     state = commands.add_parser('status')
     state.add_argument('run', nargs='?')
     state.add_argument('--json', action='store_true', help='read-only versioned machine interface')
