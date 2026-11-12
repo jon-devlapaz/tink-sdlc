@@ -766,11 +766,12 @@ class WorkflowTests(unittest.TestCase):
 
     def test_an_approved_issue_becomes_the_brief_and_the_checklist_unchanged(self):
         url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
-        body = ('### Goal\n\nShow the digest.\n\n### Done when\n\n- [ ] The screen shows the full SHA-256, for human and agent starts.\n'
-                '- [ ] `python3 scripts/full-check.py` passes.\n\n### Context\n\n- Not a check.\n')
+        # CRLF, as the GitHub web form stores it.
+        body = ('### Goal\r\n\r\nShow the digest.\r\n\r\n### Done when\r\n\r\n- [ ] The screen shows the full SHA-256, for human and agent starts.\r\n'
+                '- [ ] `python3 scripts/full-check.py` passes.\r\n\r\n### Context\r\n\r\n- Not a check.\r\n')
         issue = {'title': 'TEST show the digest', 'body': body, 'state': 'OPEN', 'labels': [{'name': 'approved'}]}
         self.assertIn('from the approved issue', self.issue_cli(issue, '--issue', url))
-        brief = (self.root / 'runs/example/brief.md').read_text()
+        brief = (self.root / 'runs/example/brief.md').read_bytes().decode()
         self.assertIn(body, brief)
         self.assertIn(f'Source: {url}\nIssue body sha256: {hashlib.sha256(body.encode()).hexdigest()}\nTitle: TEST show the digest\n', brief)
         self.assertEqual([(item['id'], item['description']) for item in json.loads(self.checklist_path().read_text())['items']],
@@ -789,6 +790,14 @@ class WorkflowTests(unittest.TestCase):
                 ('not open', {**good, 'state': 'CLOSED'}, ('--issue', url)),
                 ('no `approved` label', {**good, 'labels': [{'name': 'needs-approval'}]}, ('--issue', url)),
                 ('no Done-when lines', {**good, 'body': '### Goal\n\n- It works.\n'}, ('--issue', url)),
+                # A line the checklist would cut or drop refuses the whole issue.
+                ("found: 'continues here'", {**good, 'body': '### Done when\n\n- It works\n  continues here\n'}, ('--issue', url)),
+                ("found: '- nested'", {**good, 'body': '### Done when\n\n- It works.\n  - nested\n'}, ('--issue', url)),
+                ("found: '```'", {**good, 'body': '### Done when\n\n- It works.\n```\n- fenced\n```\n'}, ('--issue', url)),
+                ("found: '- [ ]'", {**good, 'body': '### Done when\n\n- [ ] \n'}, ('--issue', url)),
+                ('unexpected answer', {'title': None, 'body': None}, ('--issue', url)),
+                ('unexpected answer', [], ('--issue', url)),
+                ('full GitHub URL', good, ('--issue', '')),
                 ('`gh issue view` failed', None, ('--issue', url)),
                 ('full GitHub URL', good, ('--issue', 'https://github.com/TEST-owner/TEST-repo/pull/7')),
                 ('creates a light run', good, ('--issue', url, '--profile', 'full'))]:

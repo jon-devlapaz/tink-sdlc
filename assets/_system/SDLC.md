@@ -21,7 +21,7 @@ To build an approved GitHub issue, let the issue be the definition:
 python3 _system/scripts/sdlc.py new fix-example --issue https://github.com/OWNER/REPO/issues/NUMBER
 ```
 
-It reads the issue once with `gh` and calls no model. `brief.md` holds the issue's title, address, body hash and body unchanged; `checklist.json` holds one attested item for each line under the issue's `Done when` heading, unchanged. It refuses a closed issue, an issue without the `approved` label and an issue with no Done-when lines, and then creates no run. It records no decision: stage 3 still needs the human decision.
+It reads the issue once with `gh` and calls no model. `brief.md` holds the issue's title, address, body hash and body unchanged; `checklist.json` holds one attested item for each line under the issue's `Done when` heading, unchanged. The `Done when` section must hold only top-level `-` or `*` lines, one line each, so no approved word is cut or dropped. It refuses a closed issue, an issue without the `approved` label, a Done-when section with no lines or any other content, an unreadable issue and `--profile full`, and then creates no run. `run.json` keeps the issue's address and body hash as a record. It records no decision: stage 3 still needs the human decision.
 
 Without a confirmed seed, review the checklist commands and offer a dry run before definition approval (seed-bound runs use the [seed definition comparison](#seed-definition-comparison)):
 
