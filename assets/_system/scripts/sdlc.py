@@ -232,10 +232,18 @@ def relative_check_cwd(cwd):
         raise ValueError('Seed check cwd must be checkout-relative, without traversal or backslashes.')
 
 
+def relayed(record):
+    """Whether a receipt carries the operator's relayed words in the one shape `human_review` writes."""
+    relay = record.get('relay')
+    return (isinstance(relay, dict) and set(relay) == {'words', 'where', 'sha256'}
+            and all(isinstance(relay[key], str) and relay[key].strip() for key in ('words', 'where'))
+            and isinstance(relay['sha256'], str) and re.fullmatch(r'[0-9a-f]{64}', relay['sha256']) is not None)
+
+
 def agent_record(record):
     reviewer = record.get('reviewer', '')
     actor = record.get('actor')
-    if isinstance(record.get('relay'), dict):
+    if relayed(record):
         return False
     return ((isinstance(reviewer, str) and
              (reviewer.casefold().startswith('agent') or 'not human' in reviewer.casefold()))
@@ -256,7 +264,7 @@ def human_review(args, path):
         try:
             raw = Path(args.relayed).read_bytes()
             value = json.loads(raw)
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
             value = None
         if (not isinstance(value, dict) or set(value) != {'words', 'where'}
                 or not all(isinstance(value[key], str) and value[key].strip() for key in ('words', 'where'))):
@@ -1105,6 +1113,8 @@ def mark(args):
             raise ValueError('Provisional seed check is pending; activate it with prerequisite evidence and renew definition approval.')
         if item.get('operator_attestation'):
             human_review(args, path)
+        elif args.relayed is not None:
+            raise ValueError('--relayed is for a seed check that needs the operator; this item takes a plain mark. Nothing was recorded.')
         if item.get('operator_attestation') and not (args.reviewer and args.reviewer.strip() and args.source and args.source.strip()):
             raise ValueError('Seed checks require an operator attestation: --reviewer and --source of the actual operator observation.')
         if any(item['id'] == args.item and 'check' in item for item in items):
@@ -1152,7 +1162,8 @@ def checklist_view(path, verified=False):
         agent = bool(record and item.get('operator_attestation') and agent_record(record))
         state = ('passed' if verified else 'pending') if automatic else (record['result'] if record and not agent else 'pending')
         result.append({**item, 'status': state, 'automatic': automatic,
-                       **({'attribution': 'agent-recorded'} if agent else {}),
+                       **({'attribution': 'agent-recorded'} if agent else
+                          {'attribution': 'relayed'} if record and item.get('operator_attestation') and relayed(record) else {}),
                        'proof': 'automated' if automatic else 'attested',
                        'mark': {key: record.get(key) for key in ('item', 'result', 'evidence', 'candidate', 'time_ns', 'covers_all', 'reviewer', 'actor', 'relay')} if record else None,
                        'needs_recheck': bool(not automatic and record and state == 'passed'
@@ -1189,6 +1200,8 @@ def checklist_text(view):
             lines.append(f"  - {item['id']}: {item['status']}{suffix}")
         elif item['needs_recheck']:
             lines.append(f"  - {item['id']}: attested before the latest changes; re-check it only if the change affects it")
+        elif item.get('attribution') == 'relayed':
+            lines.append(f"  - {item['id']}: passed (relayed operator words; origin unverified)")
         elif item['mark'] and item['mark'].get('covers_all'):
             lines.append(f"  - {item['id']}: passed; the operator's evidence covers several expectations")
     return '\n'.join(lines)
@@ -1296,7 +1309,8 @@ def labels(path):
             record = None
         if not (isinstance(record, dict) and record.get('kind') in LABEL_KINDS and record.get('prev') == before.hexdigest()
                 and all(isinstance(record.get(key), str) and record[key].strip() for key in ('words', 'reviewer', 'source'))
-                and record.get('consent') in ('local', 'shareable') and not agent_record(record) and line.endswith(b'\n')):
+                and record.get('consent') in ('local', 'shareable') and not agent_record(record)
+                and not (relayed(record) and record['relay']['words'] != record['words']) and line.endswith(b'\n')):
             raise ValueError(f'runs/{path.name}/labels.jsonl line {number} was changed or is not an operator label; '
                              'labels are append-only, so restore the file from Git.')
         records.append(record)
@@ -1306,7 +1320,7 @@ def labels(path):
 
 def label_summary(records):
     return {'count': len(records), 'kinds': {kind: sum(r['kind'] == kind for r in records) for kind in LABEL_KINDS},
-            'outside': sum(r.get('about') == 'outside' for r in records)}
+            'outside': sum(r.get('about') == 'outside' for r in records), 'relayed': sum(relayed(r) for r in records)}
 
 
 def writing_here(run):
@@ -1337,11 +1351,13 @@ def label(args):
             raise ValueError('Run identity changed; reread the run before saving a label.')
         writing_here(args.run)
         human_review(args, path)
-        if args.relay and (args.words != args.relay['words']
-                           or (args.kind in ('accepted', 'rejected')
-                               and not args.words.strip().casefold().startswith(args.kind[:6]))):
-            raise ValueError('A relayed label keeps the operator\'s words: --words must equal the relayed words, and an '
-                             'accepted or rejected label must start with Accept or Reject. Nothing was recorded.')
+        if args.relay:
+            first = re.match(r'\s*(accept|reject)(?:ed)?\b', args.words, re.I)
+            verdict = first.group(1).casefold() + 'ed' if first else None
+            if args.words != args.relay['words'] or (verdict or args.kind in ('accepted', 'rejected')) and args.kind != verdict:
+                raise ValueError('A relayed label keeps the operator\'s words: --words must equal the relayed words, and the '
+                                 'kind is accepted or rejected exactly when their first word is Accept or Reject. '
+                                 'Nothing was recorded.')
         if delivery(path)[1] is not None:
             raise ValueError('This run is closed; its labels can no longer change.')
         file = path / 'labels.jsonl'
@@ -1461,7 +1477,7 @@ def status_state(path):
         state = gate(path, stage)
         entry = {'stage': stage, 'status': state, 'blocked': blocked}
         recorded = latest(path, stage)
-        if recorded and isinstance(recorded.get('relay'), dict):
+        if recorded and relayed(recorded):
             entry['attribution'] = 'relayed'
         elif recorded and agent_record(recorded):
             entry['attribution'] = 'agent-recorded'
@@ -1648,7 +1664,8 @@ def status_text(view):
         lines.append(f"PR: {view['pr']['url']}")
     if view['labels']['count']:
         kinds = ', '.join(f'{n} {kind}' for kind, n in view['labels']['kinds'].items() if n)
-        lines.append(f"Labels: {kinds}" + (f"; {view['labels']['outside']} outside the run" if view['labels']['outside'] else ''))
+        lines.append(f"Labels: {kinds}" + (f"; {view['labels']['outside']} outside the run" if view['labels']['outside'] else '')
+                     + (f"; {view['labels']['relayed']} relayed operator words, origin unverified" if view['labels']['relayed'] else ''))
     if view['closure']:
         lines.append(f"Closed: {view['closure']['outcome']}" + (f" as {view['closure']['merge']}" if view['closure'].get('merge') else ''))
     lines.append('Deployment: not inferred from local review files; consult the deployment system.')
@@ -1696,7 +1713,7 @@ def checkout_run_view(slug):
         decisions.append({'id': file.stem, 'stage': int(identity[1]), 'timestamp_ns': int(identity[2]),
                           **{key: record.get(key) for key in ('decision', 'reviewer', 'source', 'reason')},
                           **({'attribution': 'agent-recorded'} if agent_record(record) else {}),
-                          **({'attribution': 'relayed'} if isinstance(record.get('relay'), dict) else {}),
+                          **({'attribution': 'relayed'} if relayed(record) else {}),
                           **({key: record[key] for key in ('actor', 'relay', 'basis', 'seed_evidence', 'departures') if key in record})})
     view['decisions'] = decisions
     agent_marks = []

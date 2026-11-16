@@ -271,7 +271,7 @@ python3 _system/scripts/sdlc.py label <run> --kind correction|none|accepted|reje
 python3 _system/scripts/sdlc.py close <run> --outcome merged --merge <full commit>   # or --outcome abandoned
 ```
 
-Put `Tink-Run: <run_id>` in the PR description. Labels are human-only (refused inside a build step session), keep the words verbatim, and chain to each other by digest; `none` records no corrections and `outside` a correction outside the run's records. `close` needs a label (and, when merged, the recorded PR); a run closes once. While the run builds in another checkout, these refuse and name it. Closing in a linked worktree copies the run's records into the main checkout's `runs/<run>/` (refusing if that folder has uncommitted changes or another run); commit them there.
+Put `Tink-Run: <run_id>` in the PR description. Labels are the operator's (typed, or relayed with `--relayed`; refused inside a build step session), keep the words verbatim, and chain to each other by digest; `none` records no corrections and `outside` a correction outside the run's records. `close` needs a label (and, when merged, the recorded PR); a run closes once. While the run builds in another checkout, these refuse and name it. Closing in a linked worktree copies the run's records into the main checkout's `runs/<run>/` (refusing if that folder has uncommitted changes or another run); commit them there.
 
 Maintenance is optional intake. Enable it only with metric thresholds, deduplication, cooldowns and run limits; alerts create drafts for triage, never approvals.
 

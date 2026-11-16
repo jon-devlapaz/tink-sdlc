@@ -267,9 +267,15 @@ class PendingAttestation(StageBase):
         self.assertEqual(view['decisions'][-1]['attribution'], 'relayed')
         item = next(item for item in view['checklist'] if item['id'] == 'seed-2')
         self.assertEqual((item['status'], item['mark']['relay']), ('passed', expected))
-        self.assertNotIn('attribution', item)
-        self.assertIn('Stage 3: approved (relayed operator words; origin unverified)', self.sdlc('status', 'r').stdout)
+        self.assertEqual(item['attribution'], 'relayed')
+        shown = self.sdlc('status', 'r').stdout
+        self.assertIn('Stage 3: approved (relayed operator words; origin unverified)', shown)
+        self.assertIn('seed-2: passed (relayed operator words; origin unverified)', shown)
         self.assertEqual(self.sdlc('verify', 'r').returncode, 0)
+        # A receipt whose relay is not the recorded shape is still the agent's own, and satisfies nothing.
+        receipt = max((self.path / 'decisions').glob('*.json'))
+        receipt.write_text(json.dumps({**json.loads(receipt.read_text()), 'relay': {}}))
+        self.assertIn('agent-recorded; not human approval', self.sdlc('status', 'r').stdout)
 
     def test_mark_and_decide_still_refuse_agent_recorded_human_decisions(self):
         self.pending()
