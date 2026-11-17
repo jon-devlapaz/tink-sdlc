@@ -47,7 +47,9 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
 
 - `slug`, `run_id`, `meta` (`profile`, `kind`), and `gates` (`stage`, `status`, `blocked`).
   Gate states are `approved`, `pending`, `stale`, or `changes-requested`. Optional
-  `attribution: agent-recorded` discloses an invalid human receipt; optional `evidence`
+  `attribution: agent-recorded` discloses an invalid human receipt and `attribution: relayed`
+  an agent's relay of the operator's typed words (origin unverified; the receipt's `relay` holds
+  `words`, `where`, `sha256`, also on `decisions[]` and `checklist[].mark`, and `labels.relayed` counts them); optional `evidence`
   names an independent confirmed-seed match. Seed-bound views add `definition` with
   `departures`, `question` (null for equality or current accepted departures), and `evidence`.
 - `pr`: the recorded PR (`url`, `candidate`, `time_ns`) or null; `closure`: `outcome` (`merged` or

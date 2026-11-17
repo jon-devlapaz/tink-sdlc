@@ -41,7 +41,7 @@ python3 _system/scripts/sdlc.py decide fix-example 3 approved \
 
 Light runs have ONE definition gate, recorded as stage 3: `brief.md` + `checklist.json` are the intent, design and plan. Full runs record stages 1, 2 and 3 in order. `changes-requested` records rejection with the same command. Decisions bind their artifacts and contract inputs; edits stale them.
 
-`decide` and seed-judge `mark` are human-only: they refuse a reviewer starting with `Agent`, containing `not human`, or an agent actor (`--actor`, or run metadata). Older agent records stay readable, labelled `agent-recorded`, and never count as human acceptance.
+`decide` and seed-judge `mark` are human-only: they refuse a reviewer starting with `Agent`, containing `not human`, or an agent actor (`--actor`, or run metadata). The one exception is the operator's own typed words, relayed: with `--relayed FILE`, where FILE is JSON `{"words": the operator's exact words, "where": where they typed them}`, an agent may record the operator's `decide`, seed-judge `mark` or `label`. The receipt keeps the words, the place and the file's hash under `relay`, and `status` shows `relayed operator words; origin unverified`: never verified human approval, never the agent's own decision. A relayed `label` must repeat those words in `--words`, and an accepted or rejected label must start with Accept or Reject. A build step session can never relay. Older agent records stay readable, labelled `agent-recorded`, and never count as human acceptance.
 
 ## Checklist
 
@@ -271,7 +271,7 @@ python3 _system/scripts/sdlc.py label <run> --kind correction|none|accepted|reje
 python3 _system/scripts/sdlc.py close <run> --outcome merged --merge <full commit>   # or --outcome abandoned
 ```
 
-Put `Tink-Run: <run_id>` in the PR description. Labels are human-only (refused inside a build step session), keep the words verbatim, and chain to each other by digest; `none` records no corrections and `outside` a correction outside the run's records. `close` needs a label (and, when merged, the recorded PR); a run closes once. While the run builds in another checkout, these refuse and name it. Closing in a linked worktree copies the run's records into the main checkout's `runs/<run>/` (refusing if that folder has uncommitted changes or another run); commit them there.
+Put `Tink-Run: <run_id>` in the PR description. Labels are the operator's (typed, or relayed with `--relayed`; refused inside a build step session), keep the words verbatim, and chain to each other by digest; `none` records no corrections and `outside` a correction outside the run's records. `close` needs a label (and, when merged, the recorded PR); a run closes once. While the run builds in another checkout, these refuse and name it. Closing in a linked worktree copies the run's records into the main checkout's `runs/<run>/` (refusing if that folder has uncommitted changes or another run); commit them there.
 
 Maintenance is optional intake. Enable it only with metric thresholds, deduplication, cooldowns and run limits; alerts create drafts for triage, never approvals.
 
