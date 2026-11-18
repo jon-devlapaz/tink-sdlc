@@ -351,6 +351,23 @@ class PiLauncherTests(StageBase):
             self.assertEqual(argv[argv.index('--session-dir') + 1], str(self.sessions))
         self.assertFalse((self.agent / 'sessions').exists())
 
+    def test_a_session_launched_with_a_session_dir_override_is_found_without_it(self):
+        self.sessions = self.base / 'TEST-sessions'
+        self.prepare()
+        self.step('build', 'launch', env={'PI_CODING_AGENT_SESSION_DIR': str(self.sessions)})
+        for _ in range(50):
+            if '"assistant"' in self.session_file().read_text():
+                break
+            time.sleep(0.1)
+        shown = json.loads(self.step('build', 'show').stdout)
+        self.assertNotIn('missing', json.dumps(shown))
+        self.report.with_name('build.md').write_text('TEST handoff')
+        self.step('build', 'complete')
+        self.assertEqual(self.contract()['state'], 'completed')
+        session = self.contract()['session']
+        self.session_file().unlink()
+        self.assertIn('missing', self.resolve(operation='resume', session=session).stderr)
+
     def test_resume_refuses_a_session_that_drifted_off_the_pin_without_starting_pi(self):
         self.prepare()
         self.launch()

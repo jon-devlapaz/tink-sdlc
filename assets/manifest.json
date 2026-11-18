@@ -1,5 +1,5 @@
 {
-  "version": "1.66.0",
+  "version": "1.67.0",
   "files": {
     ".tink/skillsets/build-skillset.json": "8e4b6397b31e9d830a7baa6d887891505d1b3354a3482ef2c9a876dbdb291445",
     ".tink/skillsets/deployment-skillset.json": "9a89b7593f86f593afe3d81878d97b14ee0143d734eeb4fd0adca6ef8f7a6732",
@@ -13,7 +13,7 @@
     "_shared/plan-template.md": "fe93363211dcc70b73843b0fa7827f8f9ca7b26e185db7a6b6e9d2adf5a42c00",
     "_shared/spec-template.md": "1d2ed67fa0611f0bb7fc2eac110346cc3a7d4184443324fded0eb8324b6eac28",
     "_system/SDLC.md": "599500a54dbd5bc16965f1a4c7d8b1e04eefba1a170aebd511f875be26e0e01a",
-    "_system/scripts/pi-launcher": "d0c05547c00cf7882c0fef3d8e89d786fdd2a488b76413aa9159cd61183a6763",
+    "_system/scripts/pi-launcher": "45f2b688d7e1fa9f243125de72817e9529926bbed7dd9ce563fb7bdcf0f32856",
     "_system/scripts/sdlc.py": "5b3da0fb4720c56ff6c6a092910a13130fb0e872d5f57bc2fd3d0e8a65bc7371",
     "_system/verification.json": "1308d67c7c43c1a8f5c90cde99a69e217a7fa7c553cece572ecf3228b50fa937",
     "stages/01-plan/CONTEXT.md": "a2bb0ea20740f8d2debf7d7c3b4e09107fa49e50f7b06e86c0383a24a485540c",
