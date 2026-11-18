@@ -1176,6 +1176,46 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('checklist item gate', log)
         self.assertIn('proof.txt', log)
 
+    def verify_with(self, ok, **extra):
+        env = {k: v for k, v in os.environ.items() if k not in workflow.RUNNER_ENV}
+        result = subprocess.run(['python3', str(self.root / '_system/scripts/sdlc.py'), 'verify', 'example'],
+                                cwd='/', capture_output=True, text=True, env={**env, **extra})
+        self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
+        return result.stdout + result.stderr
+
+    def test_verify_refuses_runner_options_from_the_caller(self):
+        # #197: the Split worker made a broken check pass with NODE_OPTIONS on the verify command line.
+        self.config([{'argv': ['python3', '-c', 'import os, sys; sys.exit(os.environ.get("NODE_OPTIONS") != "--x")'],
+                      'timeout_seconds': 5}])
+        self.git('add', '.')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'check')
+        self.create_ready()
+        out = self.verify_with(False, NODE_OPTIONS='--x', PYTHONPATH='src')
+        self.assertIn('the caller set NODE_OPTIONS, PYTHONPATH', out)
+        self.assertIn('declare them in _system/verification.json "env"', out)
+        self.assertEqual(self.receipt()['result'], 'failed')
+        self.assertFalse((self.root / 'runs/example/04-test/output/test-log.md').exists())  # No check ran.
+
+    def test_verify_applies_runner_options_declared_in_verification_json(self):
+        config = {'require_tink': False, 'env': {'NODE_OPTIONS': '--x'},
+                  'checks': [{'argv': ['python3', '-c', 'import os, sys; sys.exit(os.environ["NODE_OPTIONS"] != "--x")'],
+                              'timeout_seconds': 5}]}
+        (self.root / '_system/verification.json').write_text(json.dumps(config))
+        self.git('add', '.')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'declare env')
+        self.create_ready()
+        self.assertIn('Configured checks passed', self.verify_with(True))
+        self.assertEqual(self.receipt()['result'], 'passed')
+
+    def test_verification_env_must_map_names_to_strings(self):
+        for env in (['NODE_OPTIONS'], {'NODE_OPTIONS': 1}, {'A=B': 'x'}):
+            with self.subTest(env=env):
+                (self.root / '_system/verification.json').write_text(json.dumps(
+                    {'require_tink': False, 'env': env, 'checks': [{'argv': ['true'], 'timeout_seconds': 5}]}))
+                with self.assertRaisesRegex(ValueError, 'env must map variable names to string values'):
+                    with patch.object(workflow, 'ROOT', self.root):
+                        workflow.checks_config()
+
     def test_dogfood_attack_marks_cannot_pass_a_failing_check(self):
         self.checked_ready(code='raise SystemExit(1)')
         self.assertIn('has an executable check', self.mark('gate', ok=False))
