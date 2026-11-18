@@ -1206,6 +1206,7 @@ class WorkflowTests(unittest.TestCase):
         self.create_ready()
         self.assertIn('Configured checks passed', self.verify_with(True))
         self.assertEqual(self.receipt()['result'], 'passed')
+        self.assertIn('Configured checks passed', self.verify_with(True, NODE_OPTIONS='--caller'))  # Declared wins.
 
     def test_verification_env_must_map_names_to_strings(self):
         for env in (['NODE_OPTIONS'], {'NODE_OPTIONS': 1}, {'A=B': 'x'}):

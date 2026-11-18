@@ -44,7 +44,8 @@ ITEM_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
 ITEM_KEYS = {'id', 'description', 'verify'}
 CHECK_KEYS = {'argv', 'timeout_seconds'}
 # Variables that change what a test runner runs or reports (#197). Verify takes them only from the committed
-# verification.json `env`, so a caller cannot make a broken check pass without a reviewed change.
+# verification.json `env`, so a runner option shows in review. This is a guard against workarounds, not a sandbox:
+# PATH and other variables still pass through.
 RUNNER_ENV = frozenset({'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONSTARTUP', 'PYTEST_ADDOPTS', 'RUSTFLAGS',
                         'RUSTDOCFLAGS', 'CARGO_BUILD_RUSTFLAGS', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'GOFLAGS',
                         'RUBYOPT', 'PERL5OPT', 'BASH_ENV', 'ENV', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES'})
@@ -964,7 +965,7 @@ def verify(args):
             if missing:
                 raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
             config = checks_config()
-            inherited = sorted(RUNNER_ENV & os.environ.keys())
+            inherited = sorted((RUNNER_ENV & os.environ.keys()) - config['env'].keys())  # Declared values win.
             if inherited:
                 raise ValueError('Runner options come only from verification.json env, but the caller set '
                                  + ', '.join(inherited) + '. Unset them, or declare them in _system/verification.json'
