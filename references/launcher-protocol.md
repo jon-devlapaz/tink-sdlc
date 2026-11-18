@@ -54,6 +54,8 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
 - Launch starts `pi --mode json` detached, with a new `tsdlc-<uuid>` session ID in Pi's
   per-checkout session directory (`PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` respected), and returns once
   the session file records the pin, replying with Pi's process group. Output goes to `runs/<run>/steps/<name>.<op>-<time>.pi.log`.
+  Launch writes that session directory to `runs/<run>/steps/<name>.session-dir`; resume and finished read it from there,
+  so a later reader's environment cannot hide the session.
 - Resume refuses a session that is missing, archived by session rotation, or whose last
   recorded model (`model_change` or assistant answer on the active branch) differs from
   the pin. It passes the session file path, then waits up to 50 seconds for the first

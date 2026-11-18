@@ -12,6 +12,8 @@ the builder prompt states its write and network
 boundaries and names pending provisional seed checks from sdlc status;
 finished reads only local files and reports true only when the newest turn ended
 normally on the pin.
+Launch records Pi's session folder beside the step contract; resume and finished read it
+from there, so a reader's PI_CODING_AGENT_SESSION_DIR cannot hide the session.
 Refuses: pins without an explicit thinking level, models absent from Pi's local
 catalog cache, providers without stored credentials, missing or archived sessions.
 It is not a Herdr adapter and does not use pi-herdr routing or Pi session restore.
@@ -88,11 +90,15 @@ def check_auth(provider):
         raise Refusal(f'Provider {provider} has no stored Pi credential; environment keys are not trusted here.')
 
 
-def session_dir(checkout):
-    # Pi's directory for this checkout, passed explicitly so lookup never depends on settings.
+def session_dir(contract, checkout):
+    """Pi's directory for this step, passed explicitly so lookup never depends on settings. Launch records it
+    beside the contract, so later readers find the session whatever their environment says."""
+    recorded = Path(contract).with_suffix('.session-dir')
+    if recorded.is_file():
+        return Path(recorded.read_text())
     configured = os.environ.get('PI_CODING_AGENT_SESSION_DIR')
     if configured:
-        return Path(configured).expanduser()
+        return Path(configured).expanduser().absolute()
     safe = str(checkout).lstrip('/\\').replace('/', '-').replace('\\', '-').replace(':', '-')
     return agent_dir() / 'sessions' / f'--{safe}--'
 
@@ -172,7 +178,7 @@ def checkout_of(contract):
 def retained_session(args, provider, model_id):
     if not args.session:
         raise Refusal('Resume needs the retained session identity.')
-    directory = session_dir(checkout_of(args.contract))
+    directory = session_dir(args.contract, checkout_of(args.contract))
     path = find_session(directory, args.session)
     if path is None:
         archived = agent_dir() / 'sessions-archive'
@@ -350,9 +356,10 @@ def admit(args, operation):
     provider, model_id, thinking, retained = resolve(args, operation)  # recheck right before any request
     pin = f'{provider}/{model_id}'
     checkout = checkout_of(args.contract)
-    directory = session_dir(checkout)
+    directory = session_dir(args.contract, checkout)
     directory.mkdir(parents=True, exist_ok=True)
     if operation == 'launch':
+        Path(args.contract).with_suffix('.session-dir').write_text(str(directory))
         session_id = 'tsdlc-' + uuid.uuid4().hex
         target = ['--session-id', session_id]
         before = 0
