@@ -102,6 +102,7 @@ Configure `_system/verification.json` with nonempty argv arrays and timeouts. A 
 
 - `"setup": {"argv": [...], "timeout_seconds": N}` prepares ignored dependencies, such as `["pnpm", "install", "--frozen-lockfile"]`. `stage <run> 3` and `5` run it from the committed file in each new worktree; a failure removes the worktree and opens no stage. Keep its output Git-ignored.
 - `"seed_timeout_seconds": N` gives each seed `cmd` check, and each activated proposal, N seconds instead of 120. It must be a positive integer.
+- `"env": {"NAME": "value"}` sets runner options, such as `NODE_OPTIONS` or `PYTHONPATH`, for every check `verify` runs. `verify` refuses those variables from the caller's shell unless `env` declares them, and then uses the declared value. This stops workarounds; it is not a sandbox.
 - `"authors": {"since": "<commit>", "allow": ["Name <email>", "Claude session_* <noreply@anthropic.com>"]}` makes verify refuse any later commit whose author matches no pattern.
 
 ```sh

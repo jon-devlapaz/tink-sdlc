@@ -43,6 +43,12 @@ PR_URL = re.compile(r'https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/[1-
 ITEM_ID = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
 ITEM_KEYS = {'id', 'description', 'verify'}
 CHECK_KEYS = {'argv', 'timeout_seconds'}
+# Variables that change what a test runner runs or reports (#197). Verify takes them only from the committed
+# verification.json `env`, so a runner option shows in review. This is a guard against workarounds, not a sandbox:
+# PATH and other variables still pass through.
+RUNNER_ENV = frozenset({'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONSTARTUP', 'PYTEST_ADDOPTS', 'RUSTFLAGS',
+                        'RUSTDOCFLAGS', 'CARGO_BUILD_RUSTFLAGS', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'GOFLAGS',
+                        'RUBYOPT', 'PERL5OPT', 'BASH_ENV', 'ENV', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES'})
 ARTIFACTS = ['01-plan/output/intent.md', '02-design/output/spec.md', '03-build/output/plan.md']
 
 
@@ -695,6 +701,11 @@ def checks_config():
     for check in checks:
         validate_check(check)
     config['seed_timeout_seconds'] = seed_timeout(config)
+    env = config.get('env', {})
+    if not isinstance(env, dict) or not all(isinstance(k, str) and k and '=' not in k and isinstance(v, str)
+                                            for k, v in env.items()):
+        raise ValueError('verification.json env must map variable names to string values.')
+    config['env'] = env
     return config
 
 
@@ -877,9 +888,9 @@ def decide(args):
     print('Recorded local review receipt. Release approval must be independently authenticated by the forge.')
 
 
-def run_check(check, log):
+def run_check(check, log, env=None):
     with subprocess.Popen(check['argv'], cwd=ROOT / check.get('cwd', '.'), stdout=log, stderr=subprocess.STDOUT,
-                          start_new_session=True) as process:
+                          start_new_session=True, env=env) as process:
         try:
             returncode = process.wait(timeout=check['timeout_seconds'])
         finally:
@@ -954,6 +965,12 @@ def verify(args):
             if missing:
                 raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
             config = checks_config()
+            inherited = sorted((RUNNER_ENV & os.environ.keys()) - config['env'].keys())  # Declared values win.
+            if inherited:
+                raise ValueError('Runner options come only from verification.json env, but the caller set '
+                                 + ', '.join(inherited) + '. Unset them, or declare them in _system/verification.json'
+                                 ' "env" and commit that change.')
+            check_env = {**os.environ, **config['env']}
             unlisted = unlisted_authors(config)
             if unlisted:
                 raise ValueError('Commits by authors verification.json does not allow: ' + '; '.join(unlisted)
@@ -971,7 +988,7 @@ def verify(args):
                     log.write(f"\n$ {json.dumps(check['argv'])}\n")
                     log.flush()
                     try:
-                        result = run_check(check, log)
+                        result = run_check(check, log, check_env)
                     except (subprocess.TimeoutExpired, OSError) as error:
                         log.write(f'{type(error).__name__}: {error}\n')
                         error.sdlc_hint = log_hint
@@ -992,7 +1009,7 @@ def verify(args):
                         log.write(f"cwd: {check['cwd']}\nexpect (operator confirms): {item['verify']}\n")
                     log.flush()
                     try:
-                        result = run_check(check, log)
+                        result = run_check(check, log, check_env)
                     except (subprocess.TimeoutExpired, OSError) as error:
                         log.write(f'{type(error).__name__}: {error}\n')
                         raise ValueError(f"{failure}: {item['id']}{log_hint}") from error
