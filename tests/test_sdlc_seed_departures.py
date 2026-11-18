@@ -135,7 +135,9 @@ class SeedDepartures(StageBase):
 
     def test_activated_command_is_output_proven_but_activation_needs_human(self):
         self.bind([provisional('./future')])
-        self.change(lambda items: items[0].update(activation={'cmd': 'true', 'cwd': '.', 'evidence': 'TEST ready'}))
+        (self.root / 'future').write_text('test -f feature\n')  # Red at the base commit, green here (#199).
+        (self.root / 'feature').write_text('TEST feature\n')
+        self.change(lambda items: items[0].update(activation={'cmd': 'sh future', 'cwd': '.', 'evidence': 'TEST ready'}))
         self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
         self.decide('r', 3)
         passed = self.sdlc('verify', 'r')
@@ -157,8 +159,9 @@ class SeedDepartures(StageBase):
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn('Seed check failed: seed-1', failed.stderr)
         future = self.root / 'future'
-        future.write_text('#!/bin/sh\nexit 0\n')
+        future.write_text('#!/bin/sh\ntest -f feature\n')  # Red at the base commit, green here (#199).
         future.chmod(0o755)
+        (self.root / 'feature').write_text('TEST feature\n')
         passed = self.sdlc('verify', 'r')
         self.assertEqual(passed.returncode, 0, passed.stderr)
         receipt = json.loads((self.path / '04-test/output/verification.json').read_text())

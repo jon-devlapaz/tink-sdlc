@@ -7,7 +7,7 @@ import threading
 import time
 from tinkery_fixture import TINKERY, confirmed, command, provisional, DEFAULT
 
-from test_sdlc_stage import StageBase, PASSING
+from test_sdlc_stage import StageBase, PASSING, IDENT
 
 
 class SeedChecks(StageBase):
@@ -205,7 +205,9 @@ class SeedChecks(StageBase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Seed check failed: seed-1', result.stderr)
         # A changed activation needs definition approval, then command output is sufficient.
-        value['items'][0]['activation']['cmd'] = 'true'
+        value['items'][0]['activation']['cmd'] = 'sh future'
+        (self.root / 'future').write_text('test -f feature\n')  # Red at the base commit, green here (#199).
+        (self.root / 'feature').write_text('TEST feature\n')
         self.save(value)
         self.assertNotEqual(self.sdlc('verify', 'r').returncode, 0)
         self.approve_all()
@@ -215,8 +217,10 @@ class SeedChecks(StageBase):
         # Shape of the Stacker run's seed-3 and seed-4 evidence (tink-arcade ca64bd9), whose log was absent (#76).
         self.bind([provisional('./future')])
         value = self.definitions()
+        (self.root / 'future').write_text('test -f feature\n')  # Red at the base commit, green here (#199).
+        (self.root / 'feature').write_text('TEST feature\n')
         value['items'][0]['activation'] = {
-            'cmd': 'true', 'cwd': '.',
+            'cmd': 'sh future', 'cwd': '.',
             'evidence': 'Runs green in 03-build/output/stability-{1,2}.log and 03-build/output/red-probes/; '
                         'the command now ships (see 03-build/output/rules-command.log, tests/test_rules.py).'}
         self.save(value)
@@ -359,3 +363,89 @@ class SeedTimeout(StageBase):
                 self.assertIn('seed_timeout_seconds must be a positive whole number', refused.stderr)
                 status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
                 self.assertIn('seed_timeout_seconds must be a positive whole number', status['actions']['verify']['reason'])
+
+
+class RedAtBase(StageBase):
+    """An activated seed test must fail at the run's base commit (#199)."""
+    bind = SeedChecks.bind
+    approve_all = SeedChecks.approve_all
+    definitions = SeedChecks.definitions
+    save = SeedChecks.save
+
+    def build(self, script, feature_at_base=False, script_at_base=False):
+        """Open the build like `stage r 3` does, then commit the candidate after that base."""
+        self.bind([provisional('./future')])
+        value = self.definitions()
+        value['items'][0]['activation'] = {'cmd': './future', 'cwd': '.', 'evidence': 'TEST future exists'}
+        future = self.root / 'future'
+        if feature_at_base:
+            (self.root / 'feature').write_text('TEST feature\n')
+        if script_at_base:
+            future.write_text(script)
+            future.chmod(0o755)
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'stage 3 open: r (approved artifacts and receipts)', env=IDENT)
+        self.base_commit = self.git('rev-parse', 'HEAD').stdout.strip()
+        (self.root / 'feature').write_text('TEST feature\n')
+        future.write_text(script)
+        future.chmod(0o755)
+        self.save(value)
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'TEST candidate', env=IDENT)
+        self.approve_all()
+        self.temporary = self.base / 'TEST-tmp'
+        self.temporary.mkdir()
+
+    def checkout(self):
+        files = {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*')
+                 if path.is_file() and not {'.git', 'runs'} & set(path.relative_to(self.root).parts)}
+        return files, self.git('status', '--porcelain', '--', ':!runs').stdout, self.git('worktree', 'list').stdout
+
+    def verify(self, **extra):
+        before = self.checkout()
+        result = self.sdlc('verify', 'r', env={'TMPDIR': str(self.temporary)})
+        self.assertEqual(self.checkout(), before)
+        self.assertEqual(list(self.temporary.iterdir()), [])  # The base export is gone.
+        receipt = json.loads((self.path / '04-test/output/verification.json').read_text())
+        return result, receipt
+
+    def test_a_test_that_passes_at_base_fails_its_seed(self):
+        self.build('#!/bin/sh\ntest -f feature\n', feature_at_base=True)
+        result, receipt = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Seed check failed: seed-1: the test does not depend on the change because it passes at base '
+                      + self.base_commit[:12], result.stderr)
+        self.assertEqual(receipt['result'], 'failed')
+        self.assertEqual(receipt['seed_checks'], {'seed-1': 'failed'})
+        self.assertNotIn('red_at_base', receipt)
+
+    def test_a_test_already_at_base_names_no_new_file_and_fails(self):
+        self.build('#!/bin/sh\ntest -f feature\n', script_at_base=True)
+        result, receipt = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('the test does not depend on the change because it names no file that is new since base '
+                      + self.base_commit[:12], result.stderr)
+        self.assertEqual(receipt['result'], 'failed')
+
+    def test_a_test_red_at_base_and_green_at_candidate_passes(self):
+        self.build('#!/bin/sh\ntest -f feature\n')
+        result, receipt = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f'Base {self.base_commit[:12]}: seed-1 red at base, green at candidate.', result.stdout)
+        self.assertEqual(receipt['result'], 'passed')
+        self.assertEqual(receipt['seed_checks'], {'seed-1': 'proven'})
+        self.assertEqual(receipt['red_at_base'], {'base': self.base_commit,
+                                                  'seeds': ['seed-1 red at base, green at candidate']})
+        log = (self.path / '04-test/output/test-log.md').read_text()
+        self.assertIn(f'# seed-1 at base {self.base_commit}, with future from the candidate', log)
+
+    def test_a_timeout_at_base_fails_the_seed_and_removes_the_export(self):
+        self.build('#!/bin/sh\ntest -f feature || exec sleep 30\n')
+        (self.root / '_system/verification.json').write_text(
+            json.dumps({'require_tink': False, 'checks': [PASSING], 'seed_timeout_seconds': 1}))
+        self.git('commit', '-qam', 'TEST timeout', env=IDENT)
+        result, receipt = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f'Seed check failed: seed-1: it did not exit nonzero at base {self.base_commit[:12]} '
+                      '(TimeoutExpired)', result.stderr)
+        self.assertEqual(receipt['result'], 'failed')

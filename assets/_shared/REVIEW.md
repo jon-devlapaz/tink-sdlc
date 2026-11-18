@@ -8,6 +8,7 @@ remaining uncertainty in the review findings.
 Compare the candidate with the approved run's `brief.md` for light runs, or its
 `02-design/output/spec.md` and `03-build/output/plan.md` for full runs. Resolve all
 Important findings and refresh verification after implementation changes.
+Compare each activated seed test with its `expect`: red at base proves dependence, not full coverage.
 For Tinkery-originated work, follow [Tinkery ownership and handoff](../_system/SDLC.md#tinkery-ownership-and-handoff):
 technical review supplies evidence for Taste, not the operator's usefulness verdict.
 
