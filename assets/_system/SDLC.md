@@ -74,7 +74,7 @@ Any departure blocks automatic passage. Status lists each changed field, removed
 
 Seed record kinds:
 
-- **`cmd`** runs verbatim through `bash -c` with a 120-second timeout, or `seed_timeout_seconds` from `_system/verification.json`; `cwd` is relative to the checkout (absolute paths, traversal, backslashes, drive letters, NUL and CR/LF refused). Failures and timeouts fail `verify` even when all worker checks pass. **Passing output proves a `cmd` or activated proposal entirely; no `seed-N-expect` mark is owed.** `expect` is descriptive context, not a matcher.
+- **`cmd`** runs verbatim through `bash -c` with a 120-second timeout, or `seed_timeout_seconds` from `_system/verification.json`; `cwd` is relative to the checkout (absolute paths, traversal, backslashes, drive letters, NUL and CR/LF refused). Failures and timeouts fail `verify` even when all worker checks pass. **Passing output proves a `cmd` entirely, and an activated proposal once it is also red at base (below); no `seed-N-expect` mark is owed.** `expect` is descriptive context, not a matcher.
 - **`judge`** (prose or taste) needs a manual human attestation, judged by `how_to_judge` or else the statement, never an automated pass. Record only the actual operator's observation:
 
   ```sh
@@ -90,7 +90,7 @@ Seed record kinds:
   {"activation": {"cmd": "./real-command", "cwd": ".", "evidence": "Prerequisite exists at <path>; observed <evidence>"}}
   ```
 
-  Activating the proposed `cmd` in its `cwd` matches the confirmed seed (evidence adds ``seed-N activated as confirmed: runs `<cmd>` ``) and still must run green; any other command is a departure for the operator. Verify refuses evidence citing a relative file or `dir/` that exists in neither the run nor the checkout, so save cited logs first. A prose prerequisite is not machine-detected: surface it when it becomes true.
+  Activating the proposed `cmd` in its `cwd` matches the confirmed seed (evidence adds ``seed-N activated as confirmed: runs `<cmd>` ``) and still must run green; any other command is a departure for the operator. An activated test must also be red at base. `verify` runs the same command in a temporary export of the run's base commit (its `stage 3 open` commit, or `HEAD` when none exists), with only the files the command names that are new since base copied from the candidate. The command must exit nonzero there; the receipt then records `seed-N red at base, green at candidate` under `red_at_base`. If it passes at base, times out there, or names no new file, `seed-N` fails because the test does not depend on the change; fix the test. The export is outside the checkout and is always removed. Red at base proves dependence, not coverage. Verify refuses evidence citing a relative file or `dir/` that exists in neither the run nor the checkout, so save cited logs first. A prose prerequisite is not machine-detected: surface it when it becomes true.
 
 Receipts report `seed_checks` (`proven`, `attested`, `pending`, or `not-run` on failure) separately from `checklist_items`. A passing verify's `next_action` still names each pending proposal.
 

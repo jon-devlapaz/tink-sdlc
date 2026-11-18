@@ -50,6 +50,8 @@ RUNNER_ENV = frozenset({'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONSTARTU
                         'RUSTDOCFLAGS', 'CARGO_BUILD_RUSTFLAGS', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'GOFLAGS',
                         'RUBYOPT', 'PERL5OPT', 'BASH_ENV', 'ENV', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES'})
 ARTIFACTS = ['01-plan/output/intent.md', '02-design/output/spec.md', '03-build/output/plan.md']
+# The commit a worktree launch makes; for stage 3 it is the base an activated seed test must fail at (#199).
+OPENED = 'stage {n} open: {run} (approved artifacts and receipts)'
 
 
 def digest(value):
@@ -980,6 +982,13 @@ def verify(args):
             items = load_checklist(path)
             seed_results = {item['id']: 'pending' if 'check' not in item else 'not-run'
                             for item in items or [] if is_seed_check(item)}
+            activated = ({entry['id'] for entry in read_json(path / 'seed-checks.json')['items'] if 'activation' in entry}
+                         if require_run(path).get('seed_contract') else set())
+            base = None
+            if activated:  # The stage 3 open commit, or HEAD when the build opened in place.
+                base = (git('log', '-n1', '--format=%H', '--fixed-strings', '--grep', OPENED.format(n=3, run=args.run),
+                            'HEAD').decode().strip() or git('rev-parse', 'HEAD').decode().strip())
+            red = []
             checks = list(config['checks'])
             if config['require_tink']:
                 checks.insert(0, {'argv': ['tink', 'skill', 'check'], 'timeout_seconds': 120})
@@ -1015,6 +1024,36 @@ def verify(args):
                         raise ValueError(f"{failure}: {item['id']}{log_hint}") from error
                     if result.returncode:
                         raise ValueError(f"{failure}: {item['id']}{log_hint}")
+                    if seed and item['id'] in activated:
+                        # The same command in an export of the base, plus only the files it names that the
+                        # candidate added, must fail; the export never touches this checkout.
+                        unrelated = f"{failure}: {item['id']}: the test does not depend on the change because it "
+                        with tempfile.TemporaryDirectory(prefix='sdlc-base-') as export:
+                            subprocess.run(['tar', '-x', '-C', export], input=git('archive', base), check=True)
+                            copied = []
+                            with contextlib.suppress(ValueError):
+                                for word in shlex.split(check['argv'][2]):
+                                    name = os.path.normpath(os.path.join(check['cwd'], word))
+                                    if (not os.path.isabs(word) and name != '.' and not name.startswith('..')
+                                            and (ROOT / name).is_file() and not os.path.lexists(Path(export) / name)):
+                                        (Path(export) / name).parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(ROOT / name, Path(export) / name)
+                                        copied.append(name)
+                            if not copied:
+                                raise ValueError(f'{unrelated}names no file that is new since base {base[:12]}{log_hint}')
+                            (Path(export) / check['cwd']).mkdir(parents=True, exist_ok=True)
+                            log.write(f"\n# {item['id']} at base {base}, with {', '.join(copied)} from the candidate\n")
+                            log.flush()
+                            try:
+                                result = run_check({**check, 'cwd': str(Path(export) / check['cwd'])}, log, check_env)
+                            except (subprocess.TimeoutExpired, OSError) as error:
+                                log.write(f'{type(error).__name__}: {error}\n')
+                                raise ValueError(f"{failure}: {item['id']}: it did not exit nonzero at base "
+                                                 f"{base[:12]} ({type(error).__name__}){log_hint}") from error
+                            log.write(f'\nexit {result.returncode} at base\n')
+                            if not result.returncode:
+                                raise ValueError(f'{unrelated}passes at base {base[:12]}{log_hint}')
+                        red.append(f"{item['id']} red at base, green at candidate")
                     if seed:
                         seed_results[item['id']] = 'proven'
             if before != evidence_inputs(path):
@@ -1043,6 +1082,8 @@ def verify(args):
                                             for item in items if not is_seed_check(item)}
                 if seed_results:
                     proof['seed_checks'] = seed_results
+            if red:
+                proof['red_at_base'] = {'base': base, 'seeds': red}
             write_json(receipt, {'result': 'awaiting-attestation' if incomplete else 'passed',
                                  **before, **proof, 'log': digest(log_path.read_bytes())})
         except Exception as error:
@@ -1057,6 +1098,8 @@ def verify(args):
     if seed_results:
         confirmer = 'agent' if any(item.get('origin') == 'agent-confirmed-seed' for item in items) else 'operator'
         print(f'Seed checks ({confirmer}-confirmed): ' + ', '.join(f'{name}: {state}' for name, state in seed_results.items()))
+        if red:
+            print(f'Base {base[:12]}: ' + '; '.join(red) + '.')
         print('Worker-written checks: passed (supporting evidence only).')
         if unproven := unproven_goal(items):
             print(unproven)
@@ -2528,7 +2571,7 @@ def stage(args):
     else:
         committed = None
         if pending:
-            message = f'stage {n} open: {run} (approved artifacts and receipts)'
+            message = OPENED.format(n=n, run=run)
             added = run_git(ROOT, 'add', '-A', '--', f'runs/{run}')
             if added.returncode:
                 raise ValueError(f'git add failed: {git_line(added)}')
