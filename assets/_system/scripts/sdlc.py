@@ -952,8 +952,8 @@ def dry_run(args):
 
 
 def probe(args):
-    """Run one runnable seed check on a throwaway export of HEAD with the reviewer's fault patch applied.
-    The check must fail: a pass means it cannot tell the fault from the fix. The patch may not touch
+    """Run one runnable seed check on a throwaway export of HEAD, first clean, then with the reviewer's fault
+    patch. The clean run must pass and the patched run must fail: only then is the fault `caught`. The patch may not touch
     the files the check names, and a build step session cannot probe its own work. Never touches the checkout."""
     if os.environ.get('TINK_SDLC_STEP_SESSION') == '1':
         raise ValueError('A build step session cannot probe its own checks; the reviewer writes the fault.')
@@ -978,21 +978,42 @@ def probe(args):
                     if entry['id'] == args.check).get('failure_case')
         log_path = path / '04-test/output/probe-log.md'
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='sdlc-probe-') as export, log_path.open('a') as log:
-            subprocess.run(['tar', '-x', '-C', export], input=git('archive', commit), check=True)
+        def run_in(export, log, label):
+            (Path(export) / check['cwd']).mkdir(parents=True, exist_ok=True)
+            log.write(f"\n# probe {args.check} at {commit}, {label}\n$ {json.dumps(check['argv'])}\n")
+            log.flush()
+            try:
+                code = run_check({**check, 'cwd': str(Path(export) / check['cwd'])}, log, env).returncode
+            except (subprocess.TimeoutExpired, OSError) as error:
+                raise ValueError(f'{args.check}: the check {label} did not finish ({type(error).__name__}); '
+                                 'a probe must end in a clear result.') from error
+            log.write(f'\nexit {code} {label}\n')
+            return code
+
+        def receipt(result, files):
+            with (path / '04-test/output/probes.jsonl').open('a') as record:
+                record.write(json.dumps({'check': args.check, 'commit': commit, 'patch_sha256': digest(patch),
+                                         'files': files, 'failure_case': case, 'result': result}) + '\n')
+
+        # The patch is checked in its own export first; then the control, the same check on an unpatched
+        # export, must pass, or a failure with the fault says nothing about the fault.
+        with tempfile.TemporaryDirectory(prefix='sdlc-probe-') as faulted, \
+                tempfile.TemporaryDirectory(prefix='sdlc-probe-') as clean, log_path.open('a') as log:
+            for export in (faulted, clean):
+                subprocess.run(['tar', '-x', '-C', export], input=git('archive', commit), check=True)
 
             def contents():  # Every file at or under a path the check names, so renames and folders count.
-                return {str(file.relative_to(export)): (file.stat().st_mode, file.read_bytes())
-                        for name in named for root in [Path(export) / name]
+                return {str(file.relative_to(faulted)): (file.stat().st_mode, file.read_bytes())
+                        for name in named for root in [Path(faulted) / name]
                         for file in ([root] if root.is_file() else root.rglob('*') if root.is_dir() else [])
                         if file.is_file()}
 
             before = contents()
-            touched = subprocess.run(['git', 'apply', '--numstat', '-'], input=patch, cwd=export, capture_output=True)
+            touched = subprocess.run(['git', 'apply', '--numstat', '-'], input=patch, cwd=faulted, capture_output=True)
             files = {line.split('\t', 2)[2] for line in touched.stdout.decode().splitlines()}
             if touched.returncode or not files:
                 raise ValueError('The fault patch is empty or unreadable; write a unified diff against HEAD.')
-            applied = subprocess.run(['git', 'apply', '-'], input=patch, cwd=export, capture_output=True)
+            applied = subprocess.run(['git', 'apply', '-'], input=patch, cwd=faulted, capture_output=True)
             if applied.returncode:
                 raise ValueError('The fault patch does not apply to HEAD: ' + applied.stderr.decode().strip())
             after = contents()
@@ -1000,20 +1021,14 @@ def probe(args):
             if changed:
                 raise ValueError('The fault patch must change the code under test, not the files the check names: '
                                  + ', '.join(changed))
-            (Path(export) / check['cwd']).mkdir(parents=True, exist_ok=True)
-            log.write(f"\n# probe {args.check} at {commit}, fault in {', '.join(sorted(files))}\n"
-                      f"$ {json.dumps(check['argv'])}\n")
-            log.flush()
-            try:
-                returncode = run_check({**check, 'cwd': str(Path(export) / check['cwd'])}, log, env).returncode
-            except (subprocess.TimeoutExpired, OSError) as error:
-                raise ValueError(f'{args.check}: the probe did not finish ({type(error).__name__}); '
-                                 'a probe must end in a clear failure.') from error
-            log.write(f'\nexit {returncode} with the fault\n')
-        with (path / '04-test/output/probes.jsonl').open('a') as record:
-            record.write(json.dumps({'check': args.check, 'commit': commit, 'patch_sha256': digest(patch),
-                                     'files': sorted(files), 'failure_case': case,
-                                     'result': 'caught' if returncode else 'missed'}) + '\n')
+            control = run_in(clean, log, 'without the fault')
+            if control:
+                receipt('inconclusive', sorted(files))
+                raise ValueError(f'Probe inconclusive: {args.check} already fails on a clean export of {commit[:12]} '
+                                 f'(exit {control}), so a failure with the fault proves nothing. Make the check pass '
+                                 f'from a clean checkout first (output: {log_path.relative_to(ROOT)}).')
+            returncode = run_in(faulted, log, f"with the fault in {', '.join(sorted(files))}")
+        receipt('caught' if returncode else 'missed', sorted(files))
         if not returncode:
             raise ValueError(f'Probe missed: {args.check} passes with the fault applied, so it cannot reject '
                              f'that fault (output: {log_path.relative_to(ROOT)}).')

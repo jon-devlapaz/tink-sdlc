@@ -511,6 +511,27 @@ class Probe(StageBase):
         self.assertIn('must change the code under test, not the files the check names: future', result.stderr)
         self.assertEqual(self.records(), [])
 
+    def test_a_check_that_already_fails_clean_is_inconclusive_not_caught(self):
+        # #208: a generated file in the working tree let the check pass; a clean export lacks it.
+        self.git('rm', '-q', 'feature')
+        self.git('commit', '-qm', 'TEST feature only in the working tree', env=IDENT)
+        (self.root / 'feature').write_text('TEST generated\n')
+        result = self.probe(self.patch('TEST-fault.diff', '--- /dev/null\n+++ b/unrelated\n@@ -0,0 +1 @@\n+TEST\n'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Probe inconclusive: seed-1 already fails on a clean export', result.stderr)
+        log = (self.path / '04-test/output/probe-log.md').read_text()
+        self.assertIn('without the fault', log)
+        self.assertNotIn('with the fault in', log)  # The patched run never starts.
+        self.assertEqual([r['result'] for r in self.records()], ['inconclusive'])
+
+    def test_a_refused_patch_is_refused_before_the_control_runs(self):
+        self.git('rm', '-q', 'feature')
+        self.git('commit', '-qm', 'TEST failing control', env=IDENT)
+        result = self.probe(self.patch('TEST-fault.diff', 'diff --git a/future b/future\nold mode 100755\nnew mode 100644\n'))
+        self.assertIn('not the files the check names: future', result.stderr)
+        self.assertEqual(self.records(), [])
+        self.assertFalse((self.path / '04-test/output/probe-log.md').read_text().count('without the fault'))
+
     def test_a_rename_of_a_file_the_check_names_is_refused(self):
         result = self.probe(self.patch('TEST-fault.diff', 'diff --git a/future b/moved\nsimilarity index 100%\n'
                                        'rename from future\nrename to moved\n'))
