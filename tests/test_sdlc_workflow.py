@@ -380,6 +380,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('stale', self.cli('status', 'example'))
 
     def test_untracked_python_cache_does_not_fail_passing_suite(self):
+        # The suite must write a cache for this test, whatever the caller exported.
+        patcher = patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop('PYTHONDONTWRITEBYTECODE', None)
         self.create_ready()
         (self.root / 'tests').mkdir()
         (self.root / 'tests/test_real.py').write_text('import unittest\nclass Check(unittest.TestCase):\n def test_ok(self): self.assertEqual(2 + 2, 4)\n')
