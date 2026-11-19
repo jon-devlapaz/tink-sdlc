@@ -985,8 +985,8 @@ def probe(args):
             try:
                 code = run_check({**check, 'cwd': str(Path(export) / check['cwd'])}, log, env).returncode
             except (subprocess.TimeoutExpired, OSError) as error:
-                raise ValueError(f'{args.check}: the probe did not finish ({type(error).__name__}); '
-                                 'a probe must end in a clear failure.') from error
+                raise ValueError(f'{args.check}: the check {label} did not finish ({type(error).__name__}); '
+                                 'a probe must end in a clear result.') from error
             log.write(f'\nexit {code} {label}\n')
             return code
 
@@ -995,30 +995,25 @@ def probe(args):
                 record.write(json.dumps({'check': args.check, 'commit': commit, 'patch_sha256': digest(patch),
                                          'files': files, 'failure_case': case, 'result': result}) + '\n')
 
-        # The control: the same check on an unpatched export must pass, or a failure says nothing of the fault.
-        with tempfile.TemporaryDirectory(prefix='sdlc-probe-') as export, log_path.open('a') as log:
-            subprocess.run(['tar', '-x', '-C', export], input=git('archive', commit), check=True)
-            control = run_in(export, log, 'without the fault')
-        if control:
-            receipt('inconclusive', [])
-            raise ValueError(f'Probe inconclusive: {args.check} already fails on a clean export of {commit[:12]} '
-                             f'(exit {control}), so a failure with the fault proves nothing. Make the check pass '
-                             f'from a clean checkout first (output: {log_path.relative_to(ROOT)}).')
-        with tempfile.TemporaryDirectory(prefix='sdlc-probe-') as export, log_path.open('a') as log:
-            subprocess.run(['tar', '-x', '-C', export], input=git('archive', commit), check=True)
+        # The patch is checked in its own export first; then the control, the same check on an unpatched
+        # export, must pass, or a failure with the fault says nothing about the fault.
+        with tempfile.TemporaryDirectory(prefix='sdlc-probe-') as faulted, \
+                tempfile.TemporaryDirectory(prefix='sdlc-probe-') as clean, log_path.open('a') as log:
+            for export in (faulted, clean):
+                subprocess.run(['tar', '-x', '-C', export], input=git('archive', commit), check=True)
 
             def contents():  # Every file at or under a path the check names, so renames and folders count.
-                return {str(file.relative_to(export)): (file.stat().st_mode, file.read_bytes())
-                        for name in named for root in [Path(export) / name]
+                return {str(file.relative_to(faulted)): (file.stat().st_mode, file.read_bytes())
+                        for name in named for root in [Path(faulted) / name]
                         for file in ([root] if root.is_file() else root.rglob('*') if root.is_dir() else [])
                         if file.is_file()}
 
             before = contents()
-            touched = subprocess.run(['git', 'apply', '--numstat', '-'], input=patch, cwd=export, capture_output=True)
+            touched = subprocess.run(['git', 'apply', '--numstat', '-'], input=patch, cwd=faulted, capture_output=True)
             files = {line.split('\t', 2)[2] for line in touched.stdout.decode().splitlines()}
             if touched.returncode or not files:
                 raise ValueError('The fault patch is empty or unreadable; write a unified diff against HEAD.')
-            applied = subprocess.run(['git', 'apply', '-'], input=patch, cwd=export, capture_output=True)
+            applied = subprocess.run(['git', 'apply', '-'], input=patch, cwd=faulted, capture_output=True)
             if applied.returncode:
                 raise ValueError('The fault patch does not apply to HEAD: ' + applied.stderr.decode().strip())
             after = contents()
@@ -1026,7 +1021,13 @@ def probe(args):
             if changed:
                 raise ValueError('The fault patch must change the code under test, not the files the check names: '
                                  + ', '.join(changed))
-            returncode = run_in(export, log, f"with the fault in {', '.join(sorted(files))}")
+            control = run_in(clean, log, 'without the fault')
+            if control:
+                receipt('inconclusive', sorted(files))
+                raise ValueError(f'Probe inconclusive: {args.check} already fails on a clean export of {commit[:12]} '
+                                 f'(exit {control}), so a failure with the fault proves nothing. Make the check pass '
+                                 f'from a clean checkout first (output: {log_path.relative_to(ROOT)}).')
+            returncode = run_in(faulted, log, f"with the fault in {', '.join(sorted(files))}")
         receipt('caught' if returncode else 'missed', sorted(files))
         if not returncode:
             raise ValueError(f'Probe missed: {args.check} passes with the fault applied, so it cannot reject '
