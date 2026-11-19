@@ -511,6 +511,13 @@ class Probe(StageBase):
         self.assertIn('must change the code under test, not the files the check names: future', result.stderr)
         self.assertEqual(self.records(), [])
 
+    def test_a_rename_of_a_file_the_check_names_is_refused(self):
+        result = self.probe(self.patch('TEST-fault.diff', 'diff --git a/future b/moved\nsimilarity index 100%\n'
+                                       'rename from future\nrename to moved\n'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('not the files the check names: future', result.stderr)
+        self.assertEqual(self.records(), [])
+
     def test_a_build_step_session_cannot_probe(self):
         result = self.probe(self.patch('TEST-fault.diff', '--- a/feature\n+++ /dev/null\n@@ -1 +0,0 @@\n-TEST feature\n'),
                             env={'TINK_SDLC_STEP_SESSION': '1'})

@@ -711,6 +711,16 @@ def checks_config():
     return config
 
 
+def runner_env(config):
+    """The environment checks run in: the caller's, except runner options, which only verification.json declares."""
+    inherited = sorted((RUNNER_ENV & os.environ.keys()) - config['env'].keys())  # Declared values win.
+    if inherited:
+        raise ValueError('Runner options come only from verification.json env, but the caller set '
+                         + ', '.join(inherited) + '. Unset them, or declare them in _system/verification.json'
+                         ' "env" and commit that change.')
+    return {**os.environ, **config['env']}
+
+
 def seed_timeout(config):
     """The project's limit for each seed command: seed_timeout_seconds, else 120. Refuses any other value."""
     timeout = config.get('seed_timeout_seconds', 120) if isinstance(config, dict) else 120
@@ -956,14 +966,13 @@ def probe(args):
         if item is None or 'check' not in item:
             raise ValueError(f'{args.check} is not a runnable seed check in this run.')
         config = checks_config()
-        inherited = sorted((RUNNER_ENV & os.environ.keys()) - config['env'].keys())
-        if inherited:
-            raise ValueError('Runner options come only from verification.json env, but the caller set '
-                             + ', '.join(inherited) + '.')
+        env = runner_env(config)
         check = configured(item, config['seed_timeout_seconds'])
         named = set()
         with contextlib.suppress(ValueError):
-            named = {os.path.normpath(os.path.join(check['cwd'], word)) for word in shlex.split(check['argv'][2])}
+            named = {name for word in shlex.split(check['argv'][2])
+                     if not os.path.isabs(name := os.path.normpath(os.path.join(check['cwd'], word)))
+                     and name != '.' and not name.startswith('..')}
         commit = git('rev-parse', 'HEAD').decode().strip()
         case = next(entry for entry in read_json(path / 'seed-checks.json')['items']
                     if entry['id'] == args.check).get('failure_case')
@@ -971,22 +980,32 @@ def probe(args):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='sdlc-probe-') as export, log_path.open('a') as log:
             subprocess.run(['tar', '-x', '-C', export], input=git('archive', commit), check=True)
+
+            def contents():  # Every file at or under a path the check names, so renames and folders count.
+                return {str(file.relative_to(export)): file.read_bytes()
+                        for name in named for root in [Path(export) / name]
+                        for file in ([root] if root.is_file() else root.rglob('*') if root.is_dir() else [])
+                        if file.is_file()}
+
+            before = contents()
             touched = subprocess.run(['git', 'apply', '--numstat', '-'], input=patch, cwd=export, capture_output=True)
             files = {line.split('\t', 2)[2] for line in touched.stdout.decode().splitlines()}
             if touched.returncode or not files:
                 raise ValueError('The fault patch is empty or unreadable; write a unified diff against HEAD.')
-            if files & named:
-                raise ValueError('The fault patch must change the code under test, not the files the check names: '
-                                 + ', '.join(sorted(files & named)))
             applied = subprocess.run(['git', 'apply', '-'], input=patch, cwd=export, capture_output=True)
             if applied.returncode:
                 raise ValueError('The fault patch does not apply to HEAD: ' + applied.stderr.decode().strip())
+            after = contents()
+            changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
+            if changed:
+                raise ValueError('The fault patch must change the code under test, not the files the check names: '
+                                 + ', '.join(changed))
+            (Path(export) / check['cwd']).mkdir(parents=True, exist_ok=True)
             log.write(f"\n# probe {args.check} at {commit}, fault in {', '.join(sorted(files))}\n"
                       f"$ {json.dumps(check['argv'])}\n")
             log.flush()
             try:
-                returncode = run_check({**check, 'cwd': str(Path(export) / check['cwd'])}, log,
-                                       {**os.environ, **config['env']}).returncode
+                returncode = run_check({**check, 'cwd': str(Path(export) / check['cwd'])}, log, env).returncode
             except (subprocess.TimeoutExpired, OSError) as error:
                 raise ValueError(f'{args.check}: the probe did not finish ({type(error).__name__}); '
                                  'a probe must end in a clear failure.') from error
@@ -1027,12 +1046,7 @@ def verify(args):
             if missing:
                 raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
             config = checks_config()
-            inherited = sorted((RUNNER_ENV & os.environ.keys()) - config['env'].keys())  # Declared values win.
-            if inherited:
-                raise ValueError('Runner options come only from verification.json env, but the caller set '
-                                 + ', '.join(inherited) + '. Unset them, or declare them in _system/verification.json'
-                                 ' "env" and commit that change.')
-            check_env = {**os.environ, **config['env']}
+            check_env = runner_env(config)
             unlisted = unlisted_authors(config)
             if unlisted:
                 raise ValueError('Commits by authors verification.json does not allow: ' + '; '.join(unlisted)
