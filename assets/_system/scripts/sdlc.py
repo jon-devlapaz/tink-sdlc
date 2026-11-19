@@ -982,7 +982,7 @@ def probe(args):
             subprocess.run(['tar', '-x', '-C', export], input=git('archive', commit), check=True)
 
             def contents():  # Every file at or under a path the check names, so renames and folders count.
-                return {str(file.relative_to(export)): file.read_bytes()
+                return {str(file.relative_to(export)): (file.stat().st_mode, file.read_bytes())
                         for name in named for root in [Path(export) / name]
                         for file in ([root] if root.is_file() else root.rglob('*') if root.is_dir() else [])
                         if file.is_file()}

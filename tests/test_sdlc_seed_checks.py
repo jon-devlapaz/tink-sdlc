@@ -518,6 +518,12 @@ class Probe(StageBase):
         self.assertIn('not the files the check names: future', result.stderr)
         self.assertEqual(self.records(), [])
 
+    def test_a_mode_change_to_a_file_the_check_names_is_refused(self):
+        result = self.probe(self.patch('TEST-fault.diff', 'diff --git a/future b/future\nold mode 100755\nnew mode 100644\n'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('not the files the check names: future', result.stderr)
+        self.assertEqual(self.records(), [])
+
     def test_a_build_step_session_cannot_probe(self):
         result = self.probe(self.patch('TEST-fault.diff', '--- a/feature\n+++ /dev/null\n@@ -1 +0,0 @@\n-TEST feature\n'),
                             env={'TINK_SDLC_STEP_SESSION': '1'})
