@@ -449,3 +449,71 @@ class RedAtBase(StageBase):
         self.assertIn(f'Seed check failed: seed-1: it did not exit nonzero at base {self.base_commit[:12]} '
                       '(TimeoutExpired)', result.stderr)
         self.assertEqual(receipt['result'], 'failed')
+
+
+class Probe(StageBase):
+    """A reviewer's fault patch must make a runnable seed check fail (#206)."""
+    bind = SeedChecks.bind
+    approve_all = SeedChecks.approve_all
+    definitions = SeedChecks.definitions
+    save = SeedChecks.save
+    build = RedAtBase.build
+    checkout = RedAtBase.checkout
+
+    def setUp(self):
+        super().setUp()
+        self.build('#!/bin/sh\ntest -f feature\n')
+        value = self.definitions()
+        value['items'][0]['failure_case'] = 'TEST a missing feature must not pass'
+        self.save(value)
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'TEST failure case', env=IDENT)
+        self.approve_all()
+
+    def patch(self, name, text):
+        path = self.base / name
+        path.write_text(text)
+        return str(path)
+
+    def probe(self, patch, env=None):
+        before = self.checkout()
+        result = self.sdlc('probe', 'r', 'seed-1', patch, env={'TMPDIR': str(self.temporary), **(env or {})})
+        self.assertEqual(self.checkout(), before)
+        self.assertEqual(list(self.temporary.iterdir()), [])
+        return result
+
+    def records(self):
+        path = self.path / '04-test/output/probes.jsonl'
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.is_file() else []
+
+    def test_a_failure_case_is_accepted_and_verify_still_passes(self):
+        result = self.sdlc('verify', 'r', env={'TMPDIR': str(self.temporary)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_check_that_fails_on_the_fault_catches_it(self):
+        result = self.probe(self.patch('TEST-fault.diff', '--- a/feature\n+++ /dev/null\n@@ -1 +0,0 @@\n-TEST feature\n'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('seed-1 caught the fault', result.stdout)
+        [record] = self.records()
+        self.assertEqual((record['result'], record['files'], record['failure_case']),
+                         ('caught', ['feature'], 'TEST a missing feature must not pass'))
+
+    def test_a_check_that_passes_on_the_fault_misses_it_and_fails(self):
+        result = self.probe(self.patch('TEST-fault.diff', '--- /dev/null\n+++ b/unrelated\n@@ -0,0 +1 @@\n+TEST\n'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Probe missed: seed-1 passes with the fault applied', result.stderr)
+        self.assertEqual([r['result'] for r in self.records()], ['missed'])
+
+    def test_a_patch_to_the_files_the_check_names_is_refused(self):
+        result = self.probe(self.patch('TEST-fault.diff',
+                                       '--- a/future\n+++ b/future\n@@ -1,2 +1,2 @@\n #!/bin/sh\n-test -f feature\n+false\n'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('must change the code under test, not the files the check names: future', result.stderr)
+        self.assertEqual(self.records(), [])
+
+    def test_a_build_step_session_cannot_probe(self):
+        result = self.probe(self.patch('TEST-fault.diff', '--- a/feature\n+++ /dev/null\n@@ -1 +0,0 @@\n-TEST feature\n'),
+                            env={'TINK_SDLC_STEP_SESSION': '1'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('A build step session cannot probe its own checks', result.stderr)
+        self.assertEqual(self.records(), [])

@@ -8,7 +8,9 @@ remaining uncertainty in the review findings.
 Compare the candidate with the approved run's `brief.md` for light runs, or its
 `02-design/output/spec.md` and `03-build/output/plan.md` for full runs. Resolve all
 Important findings and refresh verification after implementation changes.
-Compare each activated seed test with its `expect`: red at base proves dependence, not full coverage.
+Red at base proves dependence, not coverage. For each runnable seed check with a `failure_case`,
+write a fault patch that commits that case in the code under test, then run
+`python3 _system/scripts/sdlc.py probe <slug> seed-N <patch>`. A missed probe is an Important finding.
 For Tinkery-originated work, follow [Tinkery ownership and handoff](../_system/SDLC.md#tinkery-ownership-and-handoff):
 technical review supplies evidence for Taste, not the operator's usefulness verdict.
 
