@@ -511,6 +511,17 @@ class Probe(StageBase):
         self.assertIn('must change the code under test, not the files the check names: future', result.stderr)
         self.assertEqual(self.records(), [])
 
+    def test_a_check_that_already_fails_clean_is_inconclusive_not_caught(self):
+        # #208: a generated file in the working tree let the check pass; a clean export lacks it.
+        self.git('rm', '-q', 'feature')
+        self.git('commit', '-qm', 'TEST feature only in the working tree', env=IDENT)
+        (self.root / 'feature').write_text('TEST generated\n')
+        result = self.probe(self.patch('TEST-fault.diff', '--- /dev/null\n+++ b/unrelated\n@@ -0,0 +1 @@\n+TEST\n'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Probe inconclusive: seed-1 already fails on a clean export', result.stderr)
+        self.assertNotIn('caught', result.stdout)
+        self.assertEqual([r['result'] for r in self.records()], ['inconclusive'])
+
     def test_a_rename_of_a_file_the_check_names_is_refused(self):
         result = self.probe(self.patch('TEST-fault.diff', 'diff --git a/future b/moved\nsimilarity index 100%\n'
                                        'rename from future\nrename to moved\n'))
