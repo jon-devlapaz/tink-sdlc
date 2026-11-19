@@ -396,14 +396,14 @@ def seed_check_items(path):
         seen.add(item['id'])
         fields = {'statement', 'kind', 'source', 'id', 'description', 'origin', 'locked'}
         required = set()
-        optional = set()
+        optional = {'failure_case'}  # What must not pass the check: the fault a reviewer probes.
         if item['kind'] == 'cmd':
             required = {'cmd', 'cwd', 'expect'}
         elif item['kind'] == 'provisional':
             required = {'missing', 'cwd', 'expect'}
-            optional = {'cmd', 'activation'}
+            optional |= {'cmd', 'activation'}
         else:
-            optional = {'how_to_judge'}
+            optional |= {'how_to_judge'}
         if (not fields | required <= set(item) <= fields | required | optional
                 or any(not isinstance(item.get(key), str) or not item[key].strip() for key in required)
                 or any(not isinstance(item[key], str) or not item[key].strip()
@@ -711,6 +711,16 @@ def checks_config():
     return config
 
 
+def runner_env(config):
+    """The environment checks run in: the caller's, except runner options, which only verification.json declares."""
+    inherited = sorted((RUNNER_ENV & os.environ.keys()) - config['env'].keys())  # Declared values win.
+    if inherited:
+        raise ValueError('Runner options come only from verification.json env, but the caller set '
+                         + ', '.join(inherited) + '. Unset them, or declare them in _system/verification.json'
+                         ' "env" and commit that change.')
+    return {**os.environ, **config['env']}
+
+
 def seed_timeout(config):
     """The project's limit for each seed command: seed_timeout_seconds, else 120. Refuses any other value."""
     timeout = config.get('seed_timeout_seconds', 120) if isinstance(config, dict) else 120
@@ -941,6 +951,75 @@ def dry_run(args):
             raise ValueError(f"Dry-run checks need review: {', '.join(problems)} (output: {log_path.relative_to(ROOT)})")
 
 
+def probe(args):
+    """Run one runnable seed check on a throwaway export of HEAD with the reviewer's fault patch applied.
+    The check must fail: a pass means it cannot tell the fault from the fix. The patch may not touch
+    the files the check names, and a build step session cannot probe its own work. Never touches the checkout."""
+    if os.environ.get('TINK_SDLC_STEP_SESSION') == '1':
+        raise ValueError('A build step session cannot probe its own checks; the reviewer writes the fault.')
+    path = run_path(args.run)
+    require_run(path)
+    patch = Path(args.patch).read_bytes()
+    with locked(path / '.writer-lock'):
+        item = next((entry for entry in load_checklist(path) or []
+                     if entry['id'] == args.check and is_seed_check(entry)), None)
+        if item is None or 'check' not in item:
+            raise ValueError(f'{args.check} is not a runnable seed check in this run.')
+        config = checks_config()
+        env = runner_env(config)
+        check = configured(item, config['seed_timeout_seconds'])
+        named = set()
+        with contextlib.suppress(ValueError):
+            named = {name for word in shlex.split(check['argv'][2])
+                     if not os.path.isabs(name := os.path.normpath(os.path.join(check['cwd'], word)))
+                     and name != '.' and not name.startswith('..')}
+        commit = git('rev-parse', 'HEAD').decode().strip()
+        case = next(entry for entry in read_json(path / 'seed-checks.json')['items']
+                    if entry['id'] == args.check).get('failure_case')
+        log_path = path / '04-test/output/probe-log.md'
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='sdlc-probe-') as export, log_path.open('a') as log:
+            subprocess.run(['tar', '-x', '-C', export], input=git('archive', commit), check=True)
+
+            def contents():  # Every file at or under a path the check names, so renames and folders count.
+                return {str(file.relative_to(export)): (file.stat().st_mode, file.read_bytes())
+                        for name in named for root in [Path(export) / name]
+                        for file in ([root] if root.is_file() else root.rglob('*') if root.is_dir() else [])
+                        if file.is_file()}
+
+            before = contents()
+            touched = subprocess.run(['git', 'apply', '--numstat', '-'], input=patch, cwd=export, capture_output=True)
+            files = {line.split('\t', 2)[2] for line in touched.stdout.decode().splitlines()}
+            if touched.returncode or not files:
+                raise ValueError('The fault patch is empty or unreadable; write a unified diff against HEAD.')
+            applied = subprocess.run(['git', 'apply', '-'], input=patch, cwd=export, capture_output=True)
+            if applied.returncode:
+                raise ValueError('The fault patch does not apply to HEAD: ' + applied.stderr.decode().strip())
+            after = contents()
+            changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
+            if changed:
+                raise ValueError('The fault patch must change the code under test, not the files the check names: '
+                                 + ', '.join(changed))
+            (Path(export) / check['cwd']).mkdir(parents=True, exist_ok=True)
+            log.write(f"\n# probe {args.check} at {commit}, fault in {', '.join(sorted(files))}\n"
+                      f"$ {json.dumps(check['argv'])}\n")
+            log.flush()
+            try:
+                returncode = run_check({**check, 'cwd': str(Path(export) / check['cwd'])}, log, env).returncode
+            except (subprocess.TimeoutExpired, OSError) as error:
+                raise ValueError(f'{args.check}: the probe did not finish ({type(error).__name__}); '
+                                 'a probe must end in a clear failure.') from error
+            log.write(f'\nexit {returncode} with the fault\n')
+        with (path / '04-test/output/probes.jsonl').open('a') as record:
+            record.write(json.dumps({'check': args.check, 'commit': commit, 'patch_sha256': digest(patch),
+                                     'files': sorted(files), 'failure_case': case,
+                                     'result': 'caught' if returncode else 'missed'}) + '\n')
+        if not returncode:
+            raise ValueError(f'Probe missed: {args.check} passes with the fault applied, so it cannot reject '
+                             f'that fault (output: {log_path.relative_to(ROOT)}).')
+        print(f'{args.check} caught the fault (exit {returncode}).')
+
+
 def describe(error):
     """Error text plus any pointer to the check output attached where the check ran."""
     return f"{error}{getattr(error, 'sdlc_hint', '')}"
@@ -967,12 +1046,7 @@ def verify(args):
             if missing:
                 raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
             config = checks_config()
-            inherited = sorted((RUNNER_ENV & os.environ.keys()) - config['env'].keys())  # Declared values win.
-            if inherited:
-                raise ValueError('Runner options come only from verification.json env, but the caller set '
-                                 + ', '.join(inherited) + '. Unset them, or declare them in _system/verification.json'
-                                 ' "env" and commit that change.')
-            check_env = {**os.environ, **config['env']}
+            check_env = runner_env(config)
             unlisted = unlisted_authors(config)
             if unlisted:
                 raise ValueError('Commits by authors verification.json does not allow: ' + '; '.join(unlisted)
@@ -2973,6 +3047,10 @@ def main():
     preflight.add_argument('run')
     verification = commands.add_parser('verify')
     verification.add_argument('run')
+    probing = commands.add_parser('probe', help="run a seed check with the reviewer's fault patch; it must fail")
+    probing.add_argument('run')
+    probing.add_argument('check', help='a runnable seed check id, such as seed-1')
+    probing.add_argument('patch', help='a unified diff against HEAD that commits the failure case')
     marking = commands.add_parser('mark')
     marking.add_argument('run')
     marking.add_argument('item')
@@ -3036,7 +3114,7 @@ def main():
     lint.add_argument('--json', action='store_true')
     args = parser.parse_args()
     try:
-        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'mark': mark, 'pr': record_pr, 'close': close, 'label': label, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'step': step, 'walk': walk}[args.command](args)
+        {'new': create, 'status': status, 'capabilities': capabilities, 'decide': decide, 'dry-run': dry_run, 'verify': verify, 'probe': probe, 'mark': mark, 'pr': record_pr, 'close': close, 'label': label, 'lock-tests': lock_tests, 'skills': skills, 'stage': stage, 'step': step, 'walk': walk}[args.command](args)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
         if args.command in ('status', 'capabilities') and args.json:
             machine_output({'error': {'code': 'not-found' if isinstance(error, FileNotFoundError) else 'invalid-state',
