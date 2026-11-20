@@ -2243,6 +2243,20 @@ def run_git(cwd, *args):
     return subprocess.run(['git', '-C', str(cwd), *args], capture_output=True, text=True)
 
 
+def open_commit(run, message):
+    """A commit of HEAD plus runs/<run>, made in a private index; this checkout's branch and index do not move."""
+    with tempfile.TemporaryDirectory(prefix='sdlc-open-') as scratch:
+        env = {**os.environ, 'GIT_INDEX_FILE': str(Path(scratch) / 'index')}
+        def git(*args):
+            result = subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True, text=True, env=env)
+            if result.returncode:
+                raise ValueError(f'git {args[0]} failed: {git_line(result)}')
+            return result.stdout.strip()
+        git('read-tree', 'HEAD')
+        git('add', '-A', '--', f'runs/{run}')
+        return git('commit-tree', git('write-tree'), '-p', 'HEAD', '-m', message)
+
+
 def git_line(result):
     lines = [line for line in (result.stderr + result.stdout).splitlines() if line.strip()]
     return lines[0] if lines else f'git exited {result.returncode}'
@@ -2659,7 +2673,11 @@ def stage(args):
         print(f'Would create worktree: {target} ({how})' if make_worktree else 'Would create worktree: none')
     else:
         committed = None
-        if pending:
+        start = 'HEAD'
+        if pending and not detached:
+            # The open commit goes only on the new run branch: this checkout's branch, index and files stay as they were (#201).
+            start = open_commit(run, OPENED.format(n=n, run=run))
+        elif pending:
             message = OPENED.format(n=n, run=run)
             added = run_git(ROOT, 'add', '-A', '--', f'runs/{run}')
             if added.returncode:
@@ -2669,7 +2687,7 @@ def stage(args):
                 raise ValueError(f'git commit failed: {git_line(done)}')
             committed = (run_git(ROOT, 'rev-parse', '--short', 'HEAD').stdout.strip(), message)
         if make_worktree:
-            command = ['worktree', 'add', '--detach', str(target), 'HEAD'] if detached else ['worktree', 'add', '-b', run, str(target), 'HEAD']
+            command = ['worktree', 'add', '--detach', str(target), 'HEAD'] if detached else ['worktree', 'add', '-b', run, str(target), start]
             created = run_git(ROOT, *command)
             if created.returncode:
                 if not detached:

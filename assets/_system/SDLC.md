@@ -184,6 +184,7 @@ proposals grant no implementation authority.
   `python3 _system/scripts/sdlc.py stage <run> <n>` (`--check` previews; `--worktree PATH` or `--here`
   picks the checkout; stage 1 takes `--seed-contract PATH --tinkery PATH`). Only a worktree
   launch (stages 3 and 5 unless `--here`) commits `runs/<run>`; other launches commit nothing.
+  Stage 3 makes that commit only on the new branch `<run>`, so the launching checkout's branch does not move.
   It creates the worktree under `~/dev/worktrees/<repo>/` (stage 3: branch `<run>`; stage 5: detached
   `review-<run>`), runs `tink use <skillset> --snapshot runs/<run>/<stage-dir>` there, and prints the
   prompt for a NEW session. It refuses unless entry gates are approved and current (stage 5 also needs
