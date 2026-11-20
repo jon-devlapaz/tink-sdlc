@@ -435,9 +435,41 @@ class RedAtBase(StageBase):
         result, receipt = self.verify()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(receipt['red_at_base'], {'base': self.base_commit,
-                                                  'seeds': ['seed-1 red at base, green at candidate']})
+                                                  'seeds': ['seed-1 red at base, green at candidate'],
+                                                  'copied': {'seed-1': ['future']}})
         log = (self.path / '04-test/output/test-log.md').read_text()
         self.assertIn(f'# seed-1 at base {self.base_commit}, with future from the candidate', log)
+
+    def test_a_separate_listed_test_is_copied_and_named_in_the_receipt(self):
+        # The Socratink case: the command runs a script that reads a changed test file.
+        (self.root / 'check.sh').write_text('true\n')
+        self.build('#!/bin/sh\n. ./check.sh\n', script_at_base=True, tests=['check.sh'])
+        (self.root / 'check.sh').write_text('test -f feature\n')
+        self.git('commit', '-qam', 'TEST changed check', env=IDENT)
+        self.approve_all()
+        result, receipt = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(receipt['red_at_base']['copied'], {'seed-1': ['check.sh']})
+
+    def test_a_listed_test_that_is_missing_or_a_symlink_fails(self):
+        outside = self.base / 'TEST-outside.sh'
+        outside.write_text('true\n')
+        (self.root / 'link.sh').symlink_to(outside)
+        for listed, refusal in [('missing.sh', 'activation test missing.sh is not a file in this checkout'),
+                                ('link.sh', 'activation test link.sh passes through a symlink')]:
+            with self.subTest(listed=listed):
+                if not hasattr(self, 'base_commit'):
+                    self.build('#!/bin/sh\ntest -f feature\n', tests=[listed])
+                else:
+                    value = self.definitions()
+                    value['items'][0]['activation']['tests'] = [listed]
+                    self.save(value)
+                    self.git('add', '-A')
+                    self.git('commit', '-qm', 'TEST relist', env=IDENT)
+                    self.approve_all()
+                result = self.sdlc('verify', 'r', env={'TMPDIR': str(self.temporary)})
+                self.assertIn(refusal, result.stderr)
+                self.assertEqual(outside.read_text(), 'true\n')
 
     def test_a_changed_test_not_listed_still_names_no_new_file(self):
         self.build('#!/bin/sh\ntest -f feature\n', script_at_base='#!/bin/sh\nexit 0\n')
@@ -475,7 +507,8 @@ class RedAtBase(StageBase):
         self.assertEqual(receipt['result'], 'passed')
         self.assertEqual(receipt['seed_checks'], {'seed-1': 'proven'})
         self.assertEqual(receipt['red_at_base'], {'base': self.base_commit,
-                                                  'seeds': ['seed-1 red at base, green at candidate']})
+                                                  'seeds': ['seed-1 red at base, green at candidate'],
+                                                  'copied': {'seed-1': ['future']}})
         log = (self.path / '04-test/output/test-log.md').read_text()
         self.assertIn(f'# seed-1 at base {self.base_commit}, with future from the candidate', log)
 

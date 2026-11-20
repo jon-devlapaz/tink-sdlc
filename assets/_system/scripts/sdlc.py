@@ -1087,7 +1087,7 @@ def verify(args):
             if activated:  # The stage 3 open commit, or HEAD when the build opened in place.
                 base = (git('log', '-n1', '--format=%H', '--fixed-strings', '--grep', OPENED.format(n=3, run=args.run),
                             'HEAD').decode().strip() or git('rev-parse', 'HEAD').decode().strip())
-            red = []
+            red, copied_from = [], {}
             checks = list(config['checks'])
             if config['require_tink']:
                 checks.insert(0, {'argv': ['tink', 'skill', 'check'], 'timeout_seconds': 120})
@@ -1141,6 +1141,12 @@ def verify(args):
                                         copied.append(name)
                             for test in activated[item['id']]:
                                 name = os.path.normpath(test)
+                                linked = [p for p in (Path(export) / name, *(Path(export) / name).parents,
+                                                      ROOT / name, *(ROOT / name).parents)
+                                          if p.is_symlink()]
+                                if linked:  # A copy must never write through a link out of the export.
+                                    raise ValueError(f"{failure}: {item['id']}: activation test {test} passes "
+                                                     f"through a symlink{log_hint}")
                                 if not (ROOT / name).is_file():
                                     raise ValueError(f"{failure}: {item['id']}: activation test {test} is not a file "
                                                      f"in this checkout{log_hint}")
@@ -1168,6 +1174,7 @@ def verify(args):
                             if not result.returncode:
                                 raise ValueError(f'{unrelated}passes at base {base[:12]}{log_hint}')
                         red.append(f"{item['id']} red at base, green at candidate")
+                        copied_from[item['id']] = copied
                     if seed:
                         seed_results[item['id']] = 'proven'
             if before != evidence_inputs(path):
@@ -1197,7 +1204,7 @@ def verify(args):
                 if seed_results:
                     proof['seed_checks'] = seed_results
             if red:
-                proof['red_at_base'] = {'base': base, 'seeds': red}
+                proof['red_at_base'] = {'base': base, 'seeds': red, 'copied': copied_from}
             write_json(receipt, {'result': 'awaiting-attestation' if incomplete else 'passed',
                                  **before, **proof, 'log': digest(log_path.read_bytes())})
         except Exception as error:
