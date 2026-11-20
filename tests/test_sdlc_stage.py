@@ -447,9 +447,11 @@ class WorktreeMode(StageBase):
         worktree = self.wt / 'r'
         self.assertTrue(worktree.is_dir())
         self.assertEqual(sorted(p.name for p in self.root.parent.iterdir()), ['proj'])  # nothing lands beside the checkout
-        # tink-sdlc#201: the canonical checkout's branch, HEAD and status do not move
+        # tink-sdlc#201: the canonical checkout's branch and HEAD do not move, and the run's records move to its branch
+        self.assertEqual(status, '?? runs/\n')
         self.assertEqual(self.git('branch', '--show-current').stdout.strip(), 'main')
-        self.assertEqual((self.git('rev-parse', 'HEAD').stdout, self.git('status', '--porcelain').stdout), (head, status))
+        self.assertEqual((self.git('rev-parse', 'HEAD').stdout, self.git('status', '--porcelain', '--untracked-files=all').stdout),
+                         (head, ''))
         # one new commit on the run branch, touching only runs/r
         self.assertEqual(self.git('rev-parse', 'r~1').stdout, head)
         self.assertEqual(self.git('log', '-1', '--format=%s', 'r').stdout.strip(), 'stage 3 open: r (approved artifacts and receipts)')
@@ -796,7 +798,7 @@ class WorktreeMode(StageBase):
         retry = self.stage('r', 3, env=IDENT)
         self.assertIn('Launch prompt', retry.stdout)
         self.assertTrue(worktree.is_dir())
-        self.assertEqual(json.loads((self.root / 'runs/r/run.json').read_text())['run_id'], run_id)
+        self.assertFalse((self.root / 'runs/r').exists())
         self.assertEqual(json.loads((worktree / 'runs/r/run.json').read_text())['run_id'], run_id)
 
     def test_tink_failure_removes_a_detached_review_worktree(self):

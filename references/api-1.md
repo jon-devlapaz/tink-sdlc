@@ -53,7 +53,8 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   names an independent confirmed-seed match. Seed-bound views add `definition` with
   `departures`, `question` (null for equality or current accepted departures), and `evidence`.
 - `pr`: the recorded PR (`url`, `candidate`, `time_ns`) or null; `closure`: `outcome` (`merged` or
-  `abandoned`), `merge` for merged runs, and `time_ns`, or null. Both appear in run summaries too.
+  `abandoned`), `merge` for merged runs, and `time_ns`, or null. A merged closure can be derived from Git: the
+  default-branch commit that brought `pr.json`, with that commit's time. Both appear in run summaries too.
   Malformed records invalidate the run. `labels`: `count`, `kinds` (count per kind) and `outside`
   (labels about work outside the run), also in run summaries.
 - `seed_contract`: `path`, `sha256`, and `source` from run.json, or null

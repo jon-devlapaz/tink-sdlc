@@ -619,7 +619,11 @@ class LabelTests(unittest.TestCase):
 
     def wait_for_run_name_lock(self, process):
         deadline = time.monotonic() + 3
-        with (self.root / 'runs/.example.lock').open('a+b') as lock:
+        common = subprocess.run(['git', '-C', str(self.root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                capture_output=True, text=True).stdout.strip()
+        key = hashlib.sha256(common.encode()).hexdigest()[:12]
+        # The run-name lock lives outside every working tree (#196).
+        with (Path(tempfile.gettempdir()) / f'sdlc-run-{os.getuid()}-{key}-example.lock').open('a+b') as lock:
             while time.monotonic() < deadline and process.poll() is None:
                 try:
                     fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -823,38 +827,58 @@ class LabelTests(unittest.TestCase):
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result.stdout + result.stderr
 
-    def test_closing_in_a_worktree_keeps_the_records_after_it_is_removed(self):
-        # #170: vault-links run 2 read "Verification: not run" with no labels once its worktree was removed.
-        worktree = self.build_in_worktree()
+    def build_on_its_branch(self):
+        """The run's records only on its branch, in its own linked worktree, as stage 3 leaves them (#201)."""
+        self.create_ready()
+        worktree = Path(tempfile.mkdtemp(prefix='tink-sdlc-TEST-build-')) / 'checkout'
+        self.addCleanup(shutil.rmtree, worktree.parent, True)
+        self.git('worktree', 'add', '-q', '-b', 'example', str(worktree), 'HEAD')
+        shutil.move(self.root / 'runs/example', worktree / 'runs/example')
+        self.commit_in(worktree, 'TEST run')
+        return worktree
+
+    def read_git(self, *args):
+        return subprocess.run(['git', '-C', str(self.root), *args], check=True, capture_output=True, text=True).stdout
+
+    def commit_in(self, checkout, message):
+        subprocess.run(['git', '-C', str(checkout), 'add', '-A', 'runs'], check=True)
+        subprocess.run(['git', '-C', str(checkout), '-c', 'user.name=TEST', '-c', 'user.email=test@local',
+                        'commit', '-qm', message], check=True)
+
+    def test_a_merged_run_closes_when_its_pr_reaches_main_with_no_closing_commit(self):
+        # #170 and #196: the records outlive the worktree, and closing a merged run needs no commit after the merge.
+        worktree = self.build_on_its_branch()
         self.there(worktree, 'verify', 'example')
         self.there(worktree, 'label', 'example', '--kind', 'none', '--words', 'No corrections',
                    '--reviewer', 'jondev', '--source', 'retro')
         self.there(worktree, 'pr', 'example', 'https://github.com/TEST/example/pull/7')
-        merge = 'b' * 40
-        self.assertIn('Copied its records to', self.there(worktree, 'close', 'example', '--outcome', 'merged', '--merge', merge))
+        self.commit_in(worktree, 'TEST delivery records')
+        self.assertEqual(self.read_git('status', '--porcelain', '--untracked-files=all'), '')
+        self.assertEqual([run['slug'] for run in self.machine('status')['runs']], ['example'])
+        self.assertIsNone(self.machine('status', 'example')['run']['closure'])
+        self.git('-c', 'user.name=TEST', '-c', 'user.email=test@local', 'merge', '-q', '--no-ff', '-m', 'TEST merge', 'example')
         self.git('worktree', 'remove', '--force', str(worktree))
+        merge = self.read_git('rev-parse', 'HEAD').strip()
         summary = self.machine('status', 'example')['run']
-        self.assertEqual(summary['closure']['outcome'], 'merged')
+        self.assertEqual((summary['closure']['outcome'], summary['closure']['merge']), ('merged', merge))
         self.assertEqual(summary['labels']['count'], 1)
         self.assertEqual(summary['verification']['result'], 'passed')
         self.assertEqual(summary['next_action'], f'Closed: merged as {merge}.')
-        text = self.cli('status', 'example')
-        self.assertIn('Verification: last passed on', text)
-        self.assertIn('Labels: 1 none', text)
-        self.assertIn(f'Closed: merged as {merge}', text)
+        self.assertIn(f'Closed: merged as {merge}', self.cli('status', 'example'))
+        self.assertIn('already closed as merged', self.cli('close', 'example', '--outcome', 'merged', '--merge', 'b' * 40, ok=False))
+        self.assertEqual(self.read_git('status', '--porcelain', '--untracked-files=all'), '')
 
-    def test_closing_in_a_worktree_refuses_to_overwrite_uncommitted_main_records(self):
-        worktree = self.build_in_worktree()
+    def test_closing_in_a_worktree_writes_nothing_in_the_main_checkout(self):
+        worktree = self.build_on_its_branch()
         self.there(worktree, 'label', 'example', '--kind', 'none', '--words', 'No corrections',
                    '--reviewer', 'jondev', '--source', 'retro')
-        notes = self.root / 'runs/example/brief.md'
-        notes.write_text('operator edit, uncommitted')
-        self.assertIn('uncommitted changes', self.there(worktree, 'close', 'example', '--outcome', 'abandoned', ok=False))
-        self.assertFalse((worktree / 'runs/example/closure.json').exists())
-        self.assertEqual(notes.read_text(), 'operator edit, uncommitted')
-        self.git('checkout', '--', 'runs/example/brief.md')
+        before = self.read_git('status', '--porcelain', '--untracked-files=all')
         self.there(worktree, 'close', 'example', '--outcome', 'abandoned')
-        self.assertTrue((self.root / 'runs/example/closure.json').is_file())
+        self.assertEqual(self.read_git('status', '--porcelain', '--untracked-files=all'), before)
+        self.assertFalse((self.root / 'runs/example').exists())
+        self.assertTrue((worktree / 'runs/example/closure.json').is_file())
+        self.assertNotIn('.example.lock', self.read_git('-C', str(worktree), 'status', '--porcelain', '--untracked-files=all'))
+        self.assertEqual(self.machine('status', 'example')['run']['closure']['outcome'], 'abandoned')
 
     def test_closing_in_a_worktree_of_a_bare_repository_copies_nothing(self):
         # A bare repository has no main working tree to keep records in; close works as before.

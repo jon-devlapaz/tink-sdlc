@@ -1492,9 +1492,12 @@ def merged_here(path):
         result = run_git(path, *args)
         return result.stdout.strip() if result.returncode == 0 else ''
     branch = git('symbolic-ref', '--short', 'HEAD')
-    default = git('symbolic-ref', '--short', 'refs/remotes/origin/HEAD').removeprefix('origin/') or 'main'
+    # The forge's default branch, else the branch of the repository's main working tree.
+    first = git('worktree', 'list', '--porcelain').split('\n\n', 1)[0]
+    default = (git('symbolic-ref', '--short', 'refs/remotes/origin/HEAD').removeprefix('origin/')
+               or next((line.removeprefix('branch refs/heads/') for line in first.splitlines() if line.startswith('branch ')), ''))
     found = git('log', '--first-parent', '--diff-filter=A', '--format=%H %ct', '-1', 'HEAD', '--', 'pr.json')
-    if branch != default or branch == path.name or not found:
+    if not branch or branch != default or branch == path.name or not found:
         return None
     merge, when = found.split()
     return {'outcome': 'merged', 'merge': merge, 'time_ns': int(when) * 10**9}
