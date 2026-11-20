@@ -163,12 +163,32 @@ class PiLauncherTests(StageBase):
             self.assertIn('stop any local server or background process you start before ending your turn', prompt)
             # tink-sdlc#185: two build turns ended uncommitted, so verify had no candidate.
             self.assertIn(f'Commit your work in {self.root} before ending your turn, even when a check still fails', prompt)
+            # tink-sdlc#168: fresh steps read the whole 55 KB guide before the first edit.
+            guide = self.root / '_system/SDLC.md'
+            self.assertIn(f'Of {guide}, read only #implementation-and-verification, #pinned-build-steps', prompt)
+            self.assertNotIn('previous step', prompt)
         answers = [json.loads(line)['message']['model'] for line in self.session_file().read_text().splitlines()
                    if '"assistant"' in line]
         self.assertEqual(answers, ['pinned-v1', 'pinned-v1'])
         self.report.with_name('build.md').write_text('TEST handoff')
         self.step('build', 'complete')
         self.assertEqual(self.contract()['state'], 'completed')
+
+    def test_a_later_step_is_pointed_at_what_the_previous_step_left(self):
+        # tink-sdlc#168: a finish step never opened what the stopped step left.
+        self.prepare()
+        self.launch()
+        self.report.with_name('build.md').write_text('TEST handoff')
+        self.step('build', 'complete')
+        self.prepare('fix')
+        self.launch('fix')
+        prompt = self.calls()[-1][-1]
+        self.assertIn(f"The previous step of this run, build, ended completed; read what it left at "
+                      f"{self.report.with_name('build.md')}", prompt)
+        guide = self.root / '_system/SDLC.md'
+        for heading in ('implementation-and-verification', 'pinned-build-steps'):
+            self.assertIn(f'#{heading}', prompt)
+            self.assertIn('\n## ' + heading.replace('-', ' ').capitalize(), guide.read_text())
 
     def test_pending_provisional_checks_and_proposals_are_named_on_launch_and_resume(self):
         records = [command(), provisional(), provisional('false'), {**DEFAULT[0], 'how_to_judge': 'Inspect'}]
