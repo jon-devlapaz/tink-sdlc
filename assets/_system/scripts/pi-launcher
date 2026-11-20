@@ -221,9 +221,16 @@ def prompt(args, operation, checkout):
     context = checkout / 'stages' / '03-build' / 'CONTEXT.md'
     named_inputs = ', '.join(str(path) for path in inputs)
     pending = pending_checks(checkout, run_dir)
+    guide = checkout / '_system' / 'SDLC.md'
+    sections = ['implementation-and-verification', 'pinned-build-steps'] + (['seed-definition-comparison'] if pending else [])
+    reading = (f' Of {guide}, read only ' + ', '.join(f'#{name}' for name in sections)
+               + ' when you need it; the rest of the guide is for the operator.')
+    before = previous_step(Path(args.contract))
+    if before:
+        reading += (f' The previous step of this run, {before[0]}, ended {before[1]}; read what it left at '
+                    f'{before[2]} before you start, and say in your report if it cannot be read.')
     activation = ''
     if pending:
-        guide = checkout / '_system' / 'SDLC.md'
         activation = ('\nPending provisional seed checks:\n'
                       + '\n'.join(pending_line(item) for item in pending)
                       + f'\nOnce the prerequisite exists, propose activation as described in '
@@ -244,7 +251,22 @@ def prompt(args, operation, checkout):
             f'Commit your work in {checkout} before ending your turn, even when a check still fails, '
             f'and name any failure in the report: verify runs only committed work. '
             f'Never run sdlc.py step, stage or decide. Do not change the model or thinking level.'
-            f'{activation}')
+            f'{reading}{activation}')
+
+
+def previous_step(contract):
+    """The name, state and report path of the step prepared just before `contract` in this run, or None.
+    Reads only the run's step contracts; an unreadable one is skipped, never guessed."""
+    mine = read_json(contract, 'Step contract').get('prepared_ns')
+    if type(mine) is not int:  # prepared by an older runtime: no order to go by
+        return None
+    earlier = []
+    for other in contract.parent.glob('*.json'):
+        with contextlib.suppress(Refusal, OSError, ValueError, AttributeError):
+            record = read_json(other, 'Step contract')
+            if other != contract and type(record.get('prepared_ns')) is int and record['prepared_ns'] < mine:
+                earlier.append((record['prepared_ns'], other.stem, record.get('state', 'unknown'), record.get('report')))
+    return max(earlier)[1:] if earlier else None
 
 
 def pending_checks(checkout, run_dir):
