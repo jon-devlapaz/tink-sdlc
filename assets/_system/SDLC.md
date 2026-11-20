@@ -160,9 +160,10 @@ For a Tinkery-originated run:
   candidate commit and PR/result revision. Link each claimed completion condition to
   evidence for that result; name unresolved conditions and findings. Keep automated
   proof, manual attestation, independent review and operator acceptance separate. The
-  handoff is human-readable only, not a normalized machine interface. API 1 exposes
-  run_id, the seed_contract binding and verification candidate provenance, but not an
-  explicit PR reference. Use structured status for the seed binding, not this prose.
+  handoff is human-readable only, not a normalized machine interface. Read the run's
+  identity, seed binding, candidate and recorded PR from structured status
+  ([API 1](https://github.com/jon-devlapaz/tink-sdlc/blob/main/references/api-1.md)), never from this prose; a run with no
+  recorded PR has none, and none is inferred from a branch or slug. A recorded PR is not a passing check or acceptance.
   A binding is evidence of intake, not approval, goal identity or release authority.
   Copying a handoff records no verdict and starts nothing; recheck current state
   before recording any external decision.

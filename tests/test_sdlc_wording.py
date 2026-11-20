@@ -93,9 +93,8 @@ class WordingTests(unittest.TestCase):
             'Accepted decisions and assumed defaults',
             'never discover operator sessions',
             'human-readable only, not a normalized machine interface',
-            'API 1 exposes run_id, the seed_contract binding and verification candidate provenance',
-            'but not an explicit PR reference',
-            'Use structured status for the seed binding',
+            'recorded PR from structured status',
+            'references/api-1.md',
             'A binding is evidence of intake, not approval, goal identity or release authority',
             'Never infer a goal-to-run connection from matching names',
             'each claimed completion condition to evidence for that result',
@@ -107,6 +106,7 @@ class WordingTests(unittest.TestCase):
             self.assertIn(rule, section)
         self.assertNotIn('Until those fields are exposed', section)
         self.assertNotIn('not the seed_contract binding', section)
+        self.assertNotIn('not an explicit PR reference', ' '.join(section.split()))
 
     def test_tinkery_guidance_is_reachable_from_active_contracts(self):
         for rel in ['SKILL.md', 'assets/stages/01-plan/CONTEXT.md',
