@@ -411,13 +411,21 @@ def seed_check_items(path):
             raise ValueError('Invalid seed record fields; preserve the cmd, provisional or judge schema.')
         activation = item.get('activation')
         if 'activation' in item:
+            text = {k: v for k, v in activation.items() if k != 'tests'} if isinstance(activation, dict) else {}
             if (item['kind'] != 'provisional' or not isinstance(activation, dict)
-                    or set(activation) != {'cmd', 'cwd', 'evidence'}
-                    or not all(isinstance(v, str) and v.strip() for v in activation.values())):
+                    or set(text) != {'cmd', 'cwd', 'evidence'}
+                    or not all(isinstance(v, str) and v.strip() for v in text.values())):
                 raise ValueError('Provisional activation needs a real cmd, cwd and prerequisite evidence.')
             relative_check_cwd(activation['cwd'])
-            if any('\x00' in value for value in activation.values()):
+            if any('\x00' in value for value in text.values()):
                 raise ValueError('Provisional activation must not contain NUL.')
+            if 'tests' in activation:  # Changed test files that red at base copies from the candidate.
+                tests = activation['tests']
+                if (not isinstance(tests, list) or not tests
+                        or any(not isinstance(t, str) or '\x00' in t or os.path.isabs(t)
+                               or os.path.normpath(t) in {'.', ''} or os.path.normpath(t).startswith('..')
+                               for t in tests)):
+                    raise ValueError('Activation tests must list relative test file paths inside the checkout.')
         pending = item['kind'] == 'provisional' and activation is None
         base = {'id': item['id'], 'description': item['description'],
                 'verify': item.get('how_to_judge', item['statement']) if item['kind'] == 'judge' else item['expect'], 'origin': item['origin'],
@@ -954,7 +962,7 @@ def dry_run(args):
 def probe(args):
     """Run one runnable seed check on a throwaway export of HEAD, first clean, then with the reviewer's fault
     patch. The clean run must pass and the patched run must fail: only then is the fault `caught`. The patch may not touch
-    the files the check names, and a build step session cannot probe its own work. Never touches the checkout."""
+    the files the check names or its activation tests, and a build step session cannot probe its own work. Never touches the checkout."""
     if os.environ.get('TINK_SDLC_STEP_SESSION') == '1':
         raise ValueError('A build step session cannot probe its own checks; the reviewer writes the fault.')
     path = run_path(args.run)
@@ -974,8 +982,9 @@ def probe(args):
                      if not os.path.isabs(name := os.path.normpath(os.path.join(check['cwd'], word)))
                      and name != '.' and not name.startswith('..')}
         commit = git('rev-parse', 'HEAD').decode().strip()
-        case = next(entry for entry in read_json(path / 'seed-checks.json')['items']
-                    if entry['id'] == args.check).get('failure_case')
+        record = next(entry for entry in read_json(path / 'seed-checks.json')['items'] if entry['id'] == args.check)
+        case = record.get('failure_case')
+        named |= {os.path.normpath(test) for test in record.get('activation', {}).get('tests', [])}
         log_path = path / '04-test/output/probe-log.md'
         log_path.parent.mkdir(parents=True, exist_ok=True)
         def run_in(export, log, label):
@@ -1071,8 +1080,9 @@ def verify(args):
             items = load_checklist(path)
             seed_results = {item['id']: 'pending' if 'check' not in item else 'not-run'
                             for item in items or [] if is_seed_check(item)}
-            activated = ({entry['id'] for entry in read_json(path / 'seed-checks.json')['items'] if 'activation' in entry}
-                         if require_run(path).get('seed_contract') else set())
+            activated = ({entry['id']: entry['activation'].get('tests', [])
+                          for entry in read_json(path / 'seed-checks.json')['items'] if 'activation' in entry}
+                         if require_run(path).get('seed_contract') else {})
             base = None
             if activated:  # The stage 3 open commit, or HEAD when the build opened in place.
                 base = (git('log', '-n1', '--format=%H', '--fixed-strings', '--grep', OPENED.format(n=3, run=args.run),
@@ -1115,7 +1125,8 @@ def verify(args):
                         raise ValueError(f"{failure}: {item['id']}{log_hint}")
                     if seed and item['id'] in activated:
                         # The same command in an export of the base, plus only the files it names that the
-                        # candidate added, must fail; the export never touches this checkout.
+                        # candidate added and the test files its activation lists, must fail; the export never
+                        # touches this checkout.
                         unrelated = f"{failure}: {item['id']}: the test does not depend on the change because it "
                         with tempfile.TemporaryDirectory(prefix='sdlc-base-') as export:
                             subprocess.run(['tar', '-x', '-C', export], input=git('archive', base), check=True)
@@ -1128,8 +1139,22 @@ def verify(args):
                                         (Path(export) / name).parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copy2(ROOT / name, Path(export) / name)
                                         copied.append(name)
+                            for test in activated[item['id']]:
+                                name = os.path.normpath(test)
+                                if not (ROOT / name).is_file():
+                                    raise ValueError(f"{failure}: {item['id']}: activation test {test} is not a file "
+                                                     f"in this checkout{log_hint}")
+                                at_base = Path(export) / name
+                                if at_base.is_file() and at_base.read_bytes() == (ROOT / name).read_bytes():
+                                    raise ValueError(f'{unrelated}lists test {test}, which is unchanged since base '
+                                                     f'{base[:12]}{log_hint}')
+                                if name not in copied:
+                                    at_base.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(ROOT / name, at_base)
+                                    copied.append(name)
                             if not copied:
-                                raise ValueError(f'{unrelated}names no file that is new since base {base[:12]}{log_hint}')
+                                raise ValueError(f'{unrelated}names no file that is new since base {base[:12]} and its '
+                                                 f'activation lists no changed test{log_hint}')
                             (Path(export) / check['cwd']).mkdir(parents=True, exist_ok=True)
                             log.write(f"\n# {item['id']} at base {base}, with {', '.join(copied)} from the candidate\n")
                             log.flush()

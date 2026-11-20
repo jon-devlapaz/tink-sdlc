@@ -372,16 +372,18 @@ class RedAtBase(StageBase):
     definitions = SeedChecks.definitions
     save = SeedChecks.save
 
-    def build(self, script, feature_at_base=False, script_at_base=False):
-        """Open the build like `stage r 3` does, then commit the candidate after that base."""
+    def build(self, script, feature_at_base=False, script_at_base=False, tests=None):
+        """Open the build like `stage r 3` does, then commit the candidate after that base.
+        `script_at_base` may be the base's own text for the test; `tests` goes into the activation."""
         self.bind([provisional('./future')])
         value = self.definitions()
-        value['items'][0]['activation'] = {'cmd': './future', 'cwd': '.', 'evidence': 'TEST future exists'}
+        value['items'][0]['activation'] = {'cmd': './future', 'cwd': '.', 'evidence': 'TEST future exists',
+                                           **({'tests': tests} if tests is not None else {})}
         future = self.root / 'future'
         if feature_at_base:
             (self.root / 'feature').write_text('TEST feature\n')
         if script_at_base:
-            future.write_text(script)
+            future.write_text(script if script_at_base is True else script_at_base)
             future.chmod(0o755)
         self.git('add', '-A')
         self.git('commit', '-qm', 'stage 3 open: r (approved artifacts and receipts)', env=IDENT)
@@ -426,6 +428,44 @@ class RedAtBase(StageBase):
         self.assertIn('the test does not depend on the change because it names no file that is new since base '
                       + self.base_commit[:12], result.stderr)
         self.assertEqual(receipt['result'], 'failed')
+
+    def test_a_changed_test_listed_in_the_activation_is_red_at_base(self):
+        # #212: the regression was edited into a test file that already existed at base.
+        self.build('#!/bin/sh\ntest -f feature\n', script_at_base='#!/bin/sh\nexit 0\n', tests=['future'])
+        result, receipt = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(receipt['red_at_base'], {'base': self.base_commit,
+                                                  'seeds': ['seed-1 red at base, green at candidate']})
+        log = (self.path / '04-test/output/test-log.md').read_text()
+        self.assertIn(f'# seed-1 at base {self.base_commit}, with future from the candidate', log)
+
+    def test_a_changed_test_not_listed_still_names_no_new_file(self):
+        self.build('#!/bin/sh\ntest -f feature\n', script_at_base='#!/bin/sh\nexit 0\n')
+        result, receipt = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('names no file that is new since base ' + self.base_commit[:12]
+                      + ' and its activation lists no changed test', result.stderr)
+        self.assertEqual(receipt['result'], 'failed')
+
+    def test_a_listed_test_unchanged_since_base_fails(self):
+        self.build('#!/bin/sh\ntest -f feature\n', script_at_base=True, tests=['future'])
+        result, receipt = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('the test does not depend on the change because it lists test future, which is unchanged '
+                      'since base ' + self.base_commit[:12], result.stderr)
+        self.assertEqual(receipt['result'], 'failed')
+
+    def test_activation_tests_outside_the_checkout_are_refused(self):
+        self.build('#!/bin/sh\ntest -f feature\n', tests=['future'])
+        for tests in [[], 'future', ['../future'], ['/tmp/future'], [3]]:
+            with self.subTest(tests=tests):
+                value = self.definitions()
+                value['items'][0]['activation']['tests'] = tests
+                self.save(value)
+                result = self.sdlc('verify', 'r', env={'TMPDIR': str(self.temporary)})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Activation tests must list relative test file paths inside the checkout.',
+                              result.stdout + result.stderr)
 
     def test_a_test_red_at_base_and_green_at_candidate_passes(self):
         self.build('#!/bin/sh\ntest -f feature\n')
@@ -509,6 +549,19 @@ class Probe(StageBase):
                                        '--- a/future\n+++ b/future\n@@ -1,2 +1,2 @@\n #!/bin/sh\n-test -f feature\n+false\n'))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('must change the code under test, not the files the check names: future', result.stderr)
+        self.assertEqual(self.records(), [])
+
+    def test_a_patch_to_an_activation_test_is_refused(self):
+        (self.root / 'helper').write_text('TEST helper\n')
+        value = self.definitions()
+        value['items'][0]['activation']['tests'] = ['helper']
+        self.save(value)
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'TEST activation test', env=IDENT)
+        self.approve_all()
+        result = self.probe(self.patch('TEST-fault.diff', '--- a/helper\n+++ b/helper\n@@ -1 +1 @@\n-TEST helper\n+TEST\n'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('not the files the check names: helper', result.stderr)
         self.assertEqual(self.records(), [])
 
     def test_a_check_that_already_fails_clean_is_inconclusive_not_caught(self):
