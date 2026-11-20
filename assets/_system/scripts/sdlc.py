@@ -99,6 +99,14 @@ def run_path(slug):
     return path
 
 
+def run_lock(run):
+    """The lock that serializes creating and labelling `run`, shared by every checkout of the repository and kept
+    outside each working tree, so it never shows as an untracked file or blocks `git worktree remove`."""
+    common = run_git(ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    key = common.stdout.strip() if common.returncode == 0 else str(ROOT.resolve())
+    return Path(tempfile.gettempdir()) / f'sdlc-run-{os.getuid()}-{digest(key.encode())[:12]}-{run}.lock'
+
+
 def tink_lock_path(root=ROOT):
     repo_id = digest(str(root.resolve()).encode())[:12]
     return Path(tempfile.gettempdir()) / f'sdlc-tink-{os.getuid()}-{repo_id}.lock'
@@ -848,7 +856,7 @@ def create(args):
         raise ValueError('--issue creates a light run; a full run defines intent, spec and plan itself.')
     issue = approved_issue(args.issue) if args.issue is not None else None
     path.parent.mkdir(exist_ok=True)
-    with locked(path.parent / f'.{args.run}.lock'):
+    with locked(run_lock(args.run)):
         if path.exists():
             raise ValueError('Run already exists; nothing overwritten.')
         temporary = Path(tempfile.mkdtemp(prefix=f'.{args.run}-', dir=path.parent))
@@ -1470,9 +1478,29 @@ def delivery(path):
                                                                                and re.fullmatch(r'[0-9a-f]{40}', closure['merge'])))):
         raise ValueError(f'runs/{path.name}/closure.json must record merged with its merge commit, or abandoned.')
     records = labels(path)
+    if closure is None and pr is not None and records:
+        closure = merged_here(path)
     if closure is not None and not records:
         raise ValueError(f'runs/{path.name} is closed but has no labels; restore labels.jsonl from Git.')
     return pr, closure, records
+
+
+def merged_here(path):
+    """A labelled run whose recorded PR reached this checkout's default branch is closed as merged: the first-parent
+    commit that brought its pr.json is the merge. Derived from Git each time, so a merge needs no closing commit."""
+    def git(*args):
+        result = run_git(path, *args)
+        return result.stdout.strip() if result.returncode == 0 else ''
+    branch = git('symbolic-ref', '--short', 'HEAD')
+    # The forge's default branch, else the branch of the repository's main working tree.
+    first = git('worktree', 'list', '--porcelain').split('\n\n', 1)[0]
+    default = (git('symbolic-ref', '--short', 'refs/remotes/origin/HEAD').removeprefix('origin/')
+               or next((line.removeprefix('branch refs/heads/') for line in first.splitlines() if line.startswith('branch ')), ''))
+    found = git('log', '--first-parent', '--diff-filter=A', '--format=%H %ct', '-1', 'HEAD', '--', 'pr.json')
+    if not branch or branch != default or branch == path.name or not found:
+        return None
+    merge, when = found.split()
+    return {'outcome': 'merged', 'merge': merge, 'time_ns': int(when) * 10**9}
 
 
 def labels(path):
@@ -1512,6 +1540,7 @@ def writing_here(run):
 
 def label(args):
     path = run_path(args.run)
+    writing_here(args.run)
     require_run(path)
     if os.environ.get('TINK_SDLC_STEP_SESSION') == '1':
         raise ValueError('Labels are the operator\'s; a build step session cannot record them.')
@@ -1526,11 +1555,10 @@ def label(args):
         if not target.is_relative_to(ROOT) or not target.is_file():
             raise ValueError('--about must name a file in this checkout (checkout-relative), or outside.')
         about = {'about': str(target.relative_to(ROOT)), 'about_sha256': digest(target.read_bytes())}
-    with locked(path.parent / f'.{args.run}.lock'), locked(path / '.writer-lock'):
+    with locked(run_lock(args.run)), locked(path / '.writer-lock'):
         meta = require_run(path)
         if args.expected_run_id is not None and args.expected_run_id != meta['run_id']:
             raise ValueError('Run identity changed; reread the run before saving a label.')
-        writing_here(args.run)
         human_review(args, path)
         if args.relay:
             first = re.match(r'\s*(accept|reject)(?:ed)?\b', args.words, re.I)
@@ -1553,10 +1581,10 @@ def label(args):
 
 def record_pr(args):
     path = run_path(args.run)
+    writing_here(args.run)
     require_run(path)
     if not PR_URL.fullmatch(args.url):
         raise ValueError('PR must be a full GitHub URL: https://github.com/OWNER/REPO/pull/NUMBER')
-    writing_here(args.run)
     with locked(path / '.writer-lock'):
         pr, closure, _ = delivery(path)
         if pr is not None:
@@ -1579,12 +1607,12 @@ def record_pr(args):
 
 def close(args):
     path = run_path(args.run)
+    writing_here(args.run)
     require_run(path)
     if args.outcome == 'merged' and not (args.merge and re.fullmatch(r'[0-9a-f]{40}', args.merge)):
         raise ValueError('A merged run needs --merge with the full 40-character merge commit.')
     if args.outcome == 'abandoned' and args.merge:
         raise ValueError('An abandoned run has no merge commit; leave out --merge.')
-    writing_here(args.run)
     with locked(path / '.writer-lock'):
         pr, closure, records = delivery(path)
         if closure is not None:
@@ -1595,55 +1623,8 @@ def close(args):
         if args.outcome == 'merged' and pr is None:
             raise ValueError(f'Record the PR first: python3 _system/scripts/sdlc.py pr {args.run} <PR URL>')
         closure = {'outcome': args.outcome, **({'merge': args.merge} if args.merge else {}), 'time_ns': time.time_ns()}
-        main = keep_records(path, closure)
         write_json(path / 'closure.json', closure)
     print(f'Closed {args.run}: {args.outcome}.')
-    if main:
-        print(f'Copied its records to {main}; commit them there before removing this worktree.')
-
-
-def main_checkout():
-    """This scaffold's root in the repository's main working tree; None when this checkout is that tree or the
-    repository is bare, so there is no other working tree to keep records in."""
-    listed = run_git(ROOT, 'worktree', 'list', '--porcelain')
-    top = run_git(ROOT, 'rev-parse', '--show-toplevel')
-    if listed.returncode or top.returncode or not listed.stdout.startswith('worktree '):
-        return None
-    first = listed.stdout.split('\n\n', 1)[0].splitlines()
-    if 'bare' in first:
-        return None
-    main = Path(first[0].removeprefix('worktree '))
-    if main.resolve() == Path(top.stdout.strip()).resolve():
-        return None
-    return main / ROOT.resolve().relative_to(Path(top.stdout.strip()).resolve())
-
-
-def keep_records(path, closure):
-    """Closing in a linked worktree copies the run's records, closure included, into the main checkout, so they
-    outlive the worktree. Refuses rather than overwrite uncommitted changes there or another run of the same name.
-    Copies before the local closure is written, so a failed copy leaves the run open; files it already copied show
-    as uncommitted there, so restore them before closing again."""
-    main = main_checkout()
-    if main is None:
-        return None
-    target = main / 'runs' / path.name
-    if target.is_symlink() or (target.exists() and not target.is_dir()):
-        raise ValueError(f'{target} must be a directory, not a symlink; the run stays open.')
-    held = read_json(target / 'run.json') if (target / 'run.json').is_file() else None
-    if held is not None and not (isinstance(held, dict) and held.get('run_id') == require_run(path)['run_id']):
-        raise ValueError(f'{target} holds a different run of the same name; the run stays open.')
-    dirty = run_git(main, 'status', '--porcelain', '--', f'runs/{path.name}')
-    if dirty.returncode:
-        raise ValueError(f'Could not read Git status in {main}: {git_line(dirty)}; the run stays open.')
-    if dirty.stdout.strip():
-        raise ValueError(f'{target} has uncommitted changes; commit or restore them, then close again. The run stays open.')
-    for file in sorted(path.rglob('*')):
-        relative = file.relative_to(path)
-        if any(part.startswith('.') for part in relative.parts) or file.is_symlink() or not file.is_file():
-            continue
-        write_bytes(target / relative, file.read_bytes())
-    write_json(target / 'closure.json', closure)
-    return target
 
 
 def status_state(path):
@@ -1939,9 +1920,17 @@ def status(args):
                 print(status_text(status_state(run_path(args.run))))
         return
     directory = ROOT / 'runs'
-    names = [p.name for p in sorted(directory.iterdir()) if p.is_dir() and not p.name.startswith('.')] if directory.exists() else []
+    names = {p.name for p in directory.iterdir() if p.is_dir() and not p.name.startswith('.')} if directory.exists() else set()
+    # A building run's records live only on its branch, in its own checkout.
+    listed = run_git(ROOT, 'worktree', 'list', '--porcelain')
+    for block in listed.stdout.split('\n\n') if listed.returncode == 0 else []:
+        fields = dict(line.split(' ', 1) for line in block.splitlines() if ' ' in line)
+        name = fields.get('branch', '').removeprefix('refs/heads/')
+        if name and (Path(fields['worktree']) / 'runs' / name / 'run.json').is_file():
+            names.add(name)
+    names = sorted(names)
     if not getattr(args, 'json', False):
-        print('\n'.join(names) if directory.exists() else 'No runs.')
+        print('\n'.join(names) if names else 'No runs.')
         return
     runs = []
     for name in names:
@@ -2275,6 +2264,39 @@ def run_git(cwd, *args):
     return subprocess.run(['git', '-C', str(cwd), *args], capture_output=True, text=True)
 
 
+def open_commit(run, message):
+    """A commit of HEAD plus runs/<run>, made in a private index; this checkout's branch and index do not move."""
+    with tempfile.TemporaryDirectory(prefix='sdlc-open-') as scratch:
+        env = {**os.environ, 'GIT_INDEX_FILE': str(Path(scratch) / 'index')}
+        def git(*args):
+            result = subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True, text=True, env=env)
+            if result.returncode:
+                raise ValueError(f'git {args[0]} failed: {git_line(result)}')
+            return result.stdout.strip()
+        git('read-tree', 'HEAD')
+        git('add', '-A', '--', f'runs/{run}')
+        return git('commit-tree', git('write-tree'), '-p', 'HEAD', '-m', message)
+
+
+def moved(here, there):
+    """Deletes this checkout's untracked copy of a run's records once the run's checkout holds the same bytes, so this
+    checkout's status is as it was before the stage opened. Never deletes a tracked file; keeps any file that differs,
+    and names the folder."""
+    listed = run_git(ROOT, 'ls-files', '--others', '-z', '--', str(here.relative_to(ROOT)))
+    for name in sorted(listed.stdout.split('\0') if listed.returncode == 0 else []):
+        file = ROOT / name
+        if name and not file.is_symlink() and (there / file.relative_to(here)).is_file() \
+                and (there / file.relative_to(here)).read_bytes() == file.read_bytes():
+            file.unlink()
+    for folder in sorted((p for p in here.rglob('*') if p.is_dir() and not p.is_symlink()), reverse=True):
+        with contextlib.suppress(OSError):
+            folder.rmdir()
+    with contextlib.suppress(OSError):
+        here.rmdir()
+    if here.exists() and run_git(ROOT, 'ls-files', '--others', '--', str(here.relative_to(ROOT))).stdout.strip():
+        print(f'warning: kept {here}: it differs from the run\'s checkout', file=sys.stderr)
+
+
 def git_line(result):
     lines = [line for line in (result.stderr + result.stdout).splitlines() if line.strip()]
     return lines[0] if lines else f'git exited {result.returncode}'
@@ -2447,7 +2469,7 @@ def stage_seed_contract(value, tinkery):
 def stage_dirty(run):
     result = run_git(ROOT, 'status', '--porcelain', '--untracked-files=all')
     paths = [line[3:].split(' -> ')[-1].strip('"') for line in result.stdout.splitlines() if line[3:]]
-    return [p for p in paths if not p.startswith(f'runs/{run}/') and p not in (f'runs/{run}', f'runs/.{run}.lock')]
+    return [p for p in paths if not p.startswith(f'runs/{run}/') and p != f'runs/{run}']
 
 
 def tracked_mode_mismatches():
@@ -2691,7 +2713,11 @@ def stage(args):
         print(f'Would create worktree: {target} ({how})' if make_worktree else 'Would create worktree: none')
     else:
         committed = None
-        if pending:
+        start = 'HEAD'
+        if pending and not detached:
+            # The open commit goes only on the new run branch: this checkout's branch, index and files stay as they were (#201).
+            start = open_commit(run, OPENED.format(n=n, run=run))
+        elif pending:
             message = OPENED.format(n=n, run=run)
             added = run_git(ROOT, 'add', '-A', '--', f'runs/{run}')
             if added.returncode:
@@ -2701,7 +2727,7 @@ def stage(args):
                 raise ValueError(f'git commit failed: {git_line(done)}')
             committed = (run_git(ROOT, 'rev-parse', '--short', 'HEAD').stdout.strip(), message)
         if make_worktree:
-            command = ['worktree', 'add', '--detach', str(target), 'HEAD'] if detached else ['worktree', 'add', '-b', run, str(target), 'HEAD']
+            command = ['worktree', 'add', '--detach', str(target), 'HEAD'] if detached else ['worktree', 'add', '-b', run, str(target), start]
             created = run_git(ROOT, *command)
             if created.returncode:
                 if not detached:
@@ -2754,6 +2780,8 @@ def stage(args):
         print('Checkout: none yet (--check creates nothing; the real run creates the worktree above)')
         print('Launch prompt (start a NEW session in that checkout):')
     else:
+        if pending and not detached:
+            moved(ROOT / 'runs' / run, target / 'runs' / run)
         print(f'Checkout: {target}')
         print('Launch prompt (start a NEW session there):')
     print(prompt)

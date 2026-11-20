@@ -442,23 +442,42 @@ class WorktreeMode(StageBase):
 
     def test_light_build_opens_a_worktree(self):
         self.new_run('r')
+        head, status = self.git('rev-parse', 'HEAD').stdout, self.git('status', '--porcelain').stdout
         result = self.stage('r', 3, env=IDENT)
         worktree = self.wt / 'r'
         self.assertTrue(worktree.is_dir())
         self.assertEqual(sorted(p.name for p in self.root.parent.iterdir()), ['proj'])  # nothing lands beside the checkout
-        # one new commit, touching only runs/r
-        self.assertEqual(self.git('log', '--oneline').stdout.count('\n'), 2)
-        self.assertEqual(self.git('log', '-1', '--format=%s').stdout.strip(), 'stage 3 open: r (approved artifacts and receipts)')
-        touched = set(self.git('show', '--name-only', '--format=', 'HEAD').stdout.split())
+        # tink-sdlc#201: the canonical checkout's branch and HEAD do not move, and the run's records move to its branch
+        self.assertEqual(status, '?? runs/\n')
+        self.assertEqual(self.git('branch', '--show-current').stdout.strip(), 'main')
+        self.assertEqual((self.git('rev-parse', 'HEAD').stdout, self.git('status', '--porcelain', '--untracked-files=all').stdout),
+                         (head, ''))
+        # one new commit on the run branch, touching only runs/r
+        self.assertEqual(self.git('rev-parse', 'r~1').stdout, head)
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'r').stdout.strip(), 'stage 3 open: r (approved artifacts and receipts)')
+        touched = set(self.git('show', '--name-only', '--format=', 'r').stdout.split())
         self.assertTrue(touched and all(name.startswith('runs/r/') for name in touched), touched)
         self.assertEqual(self.git('branch', '--show-current', cwd=worktree).stdout.strip(), 'r')
-        self.assertEqual(self.git('rev-parse', 'r').stdout, self.git('rev-parse', 'HEAD').stdout)
+        self.assertEqual(self.git('rev-parse', 'HEAD', cwd=worktree).stdout, self.git('rev-parse', 'r').stdout)
+        self.assertEqual(self.git('status', '--porcelain', cwd=worktree).stdout, '')
         self.assertEqual(self.tink_calls(), [f'{worktree}|use build-skillset --snapshot runs/r/03-build'])
         status = self.run_cmd([PYTHON, '_system/scripts/sdlc.py', 'status', 'r'], cwd=worktree)
         self.assertIn('Stage 3: approved', status.stdout)
         self.assertEqual(result.stdout.splitlines()[-3:], [f'Checkout: {worktree}', 'Launch prompt (start a NEW session there):',
                                                             'Begin stage 3 (build) of SDLC run `r`.'])
-        self.assertEqual(self.git('status', '--porcelain', '--', 'runs/r').stdout, '')
+
+    def test_a_build_never_deletes_tracked_records_in_the_launching_checkout(self):
+        # #214 review: records committed on main and then edited must stay; only the untracked copy goes.
+        self.new_run('r')
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'TEST intake on main', env=IDENT)
+        (self.root / 'runs/r/brief.md').write_text('edited brief\n')
+        self.decide('r', 3)
+        self.stage('r', 3, env=IDENT)
+        status = self.git('status', '--porcelain', '--untracked-files=all').stdout
+        self.assertNotIn('D ', status)
+        self.assertEqual((self.root / 'runs/r/brief.md').read_text(), 'edited brief\n')
+        self.assertTrue((self.root / 'runs/r/run.json').is_file())
 
     def test_main_checkout_points_to_a_build_worktree_without_the_run(self):
         self.new_run('r')
@@ -792,7 +811,7 @@ class WorktreeMode(StageBase):
         retry = self.stage('r', 3, env=IDENT)
         self.assertIn('Launch prompt', retry.stdout)
         self.assertTrue(worktree.is_dir())
-        self.assertEqual(json.loads((self.root / 'runs/r/run.json').read_text())['run_id'], run_id)
+        self.assertFalse((self.root / 'runs/r').exists())
         self.assertEqual(json.loads((worktree / 'runs/r/run.json').read_text())['run_id'], run_id)
 
     def test_tink_failure_removes_a_detached_review_worktree(self):
@@ -804,14 +823,16 @@ class WorktreeMode(StageBase):
         self.assertFalse((self.wt / 'review-r').exists())
         self.stage('r', 5, env=IDENT)
 
-    def test_worktree_failure_after_commit_says_what_was_committed(self):
+    def test_worktree_failure_leaves_the_checkout_unmoved(self):
         self.new_run('r')
         blocker = self.base / 'blocker'
         blocker.write_text('a file, not a directory')
+        head = self.git('rev-parse', 'HEAD').stdout
         result = self.stage('r', 3, '--worktree', str(blocker / 'wt'), ok=False, env=IDENT)
-        head = self.git('rev-parse', '--short', 'HEAD').stdout.strip()
         self.assertIn('worktree creation failed', result.stderr)
-        self.assertIn(f'already committed {head}: stage 3 open: r (approved artifacts and receipts)', result.stderr)
+        self.assertNotIn('already committed', result.stderr)  # the open commit was never on a branch (#201)
+        self.assertEqual(self.git('rev-parse', 'HEAD').stdout, head)
+        self.assertEqual(self.git('branch', '--list', 'r').stdout, '')
         self.assertNotIn('Launch prompt', result.stdout)
         self.assertEqual(self.tink_calls(), [])
 

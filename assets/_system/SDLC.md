@@ -184,6 +184,8 @@ proposals grant no implementation authority.
   `python3 _system/scripts/sdlc.py stage <run> <n>` (`--check` previews; `--worktree PATH` or `--here`
   picks the checkout; stage 1 takes `--seed-contract PATH --tinkery PATH`). Only a worktree
   launch (stages 3 and 5 unless `--here`) commits `runs/<run>`; other launches commit nothing.
+  Stage 3 makes that commit only on the new branch `<run>`, then deletes the launching checkout's copy: from then on the
+  run's records live only on its branch, and the launching checkout's branch and status are as before.
   It creates the worktree under `~/dev/worktrees/<repo>/` (stage 3: branch `<run>`; stage 5: detached
   `review-<run>`), runs `tink use <skillset> --snapshot runs/<run>/<stage-dir>` there, and prints the
   prompt for a NEW session. It refuses unless entry gates are approved and current (stage 5 also needs
@@ -271,10 +273,10 @@ Record the run's ending:
 python3 _system/scripts/sdlc.py pr <run> <PR URL>   # needs current verification; one PR per run
 python3 _system/scripts/sdlc.py label <run> --kind correction|none|accepted|rejected --words TEXT \
   --reviewer NAME --source REF [--about FILE|outside] [--consent local|shareable]
-python3 _system/scripts/sdlc.py close <run> --outcome merged --merge <full commit>   # or --outcome abandoned
+python3 _system/scripts/sdlc.py close <run> --outcome abandoned   # a merged run needs no close
 ```
 
-Put `Tink-Run: <run_id>` in the PR description. Labels are the operator's (typed, or relayed with `--relayed`; refused inside a build step session), keep the words verbatim, and chain to each other by digest; `none` records no corrections and `outside` a correction outside the run's records. `close` needs a label (and, when merged, the recorded PR); a run closes once. While the run builds in another checkout, these refuse and name it. Closing in a linked worktree copies the run's records into the main checkout's `runs/<run>/` (refusing if that folder has uncommitted changes or another run); commit them there.
+Put `Tink-Run: <run_id>` in the PR description. Labels are the operator's (typed, or relayed with `--relayed`; refused inside a build step session), keep the words verbatim, and chain to each other by digest; `none` records no corrections and `outside` a correction outside the run's records. Commit `pr.json` and the labels on the run branch before the merge. A labelled run whose `pr.json` reaches the default branch is closed as merged there; the first-parent commit that brought it is the merge, so nothing is recorded after it. `close` records any other ending in the run's own checkout and needs a label; a run closes once. While the run builds in another checkout, these refuse and name it. No command writes in another checkout, and the run lock lives outside every working tree.
 
 Maintenance is optional intake. Enable it only with metric thresholds, deduplication, cooldowns and run limits; alerts create drafts for triage, never approvals.
 
