@@ -466,6 +466,19 @@ class WorktreeMode(StageBase):
         self.assertEqual(result.stdout.splitlines()[-3:], [f'Checkout: {worktree}', 'Launch prompt (start a NEW session there):',
                                                             'Begin stage 3 (build) of SDLC run `r`.'])
 
+    def test_a_build_never_deletes_tracked_records_in_the_launching_checkout(self):
+        # #214 review: records committed on main and then edited must stay; only the untracked copy goes.
+        self.new_run('r')
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'TEST intake on main', env=IDENT)
+        (self.root / 'runs/r/brief.md').write_text('edited brief\n')
+        self.decide('r', 3)
+        self.stage('r', 3, env=IDENT)
+        status = self.git('status', '--porcelain', '--untracked-files=all').stdout
+        self.assertNotIn('D ', status)
+        self.assertEqual((self.root / 'runs/r/brief.md').read_text(), 'edited brief\n')
+        self.assertTrue((self.root / 'runs/r/run.json').is_file())
+
     def test_main_checkout_points_to_a_build_worktree_without_the_run(self):
         self.new_run('r')
         self.set_checks([PASSING])

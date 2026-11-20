@@ -2280,16 +2280,20 @@ def open_commit(run, message):
 
 def moved(here, there):
     """Deletes this checkout's untracked copy of a run's records once the run's checkout holds the same bytes, so this
-    checkout's status is as it was before the stage opened. Keeps any file that differs, and names it."""
-    for file in sorted(here.rglob('*'), reverse=True):
-        if file.is_dir() and not file.is_symlink():
-            with contextlib.suppress(OSError):
-                file.rmdir()
-        elif (there / file.relative_to(here)).is_file() and (there / file.relative_to(here)).read_bytes() == file.read_bytes():
+    checkout's status is as it was before the stage opened. Never deletes a tracked file; keeps any file that differs,
+    and names the folder."""
+    listed = run_git(ROOT, 'ls-files', '--others', '-z', '--', str(here.relative_to(ROOT)))
+    for name in sorted(listed.stdout.split('\0') if listed.returncode == 0 else []):
+        file = ROOT / name
+        if name and not file.is_symlink() and (there / file.relative_to(here)).is_file() \
+                and (there / file.relative_to(here)).read_bytes() == file.read_bytes():
             file.unlink()
+    for folder in sorted((p for p in here.rglob('*') if p.is_dir() and not p.is_symlink()), reverse=True):
+        with contextlib.suppress(OSError):
+            folder.rmdir()
     with contextlib.suppress(OSError):
         here.rmdir()
-    if here.exists():
+    if here.exists() and run_git(ROOT, 'ls-files', '--others', '--', str(here.relative_to(ROOT))).stdout.strip():
         print(f'warning: kept {here}: it differs from the run\'s checkout', file=sys.stderr)
 
 
