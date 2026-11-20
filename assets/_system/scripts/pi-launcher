@@ -258,6 +258,8 @@ def previous_step(contract):
     """The name, state and report path of the step prepared just before `contract` in this run, or None.
     Reads only the run's step contracts; an unreadable one is skipped, never guessed."""
     mine = read_json(contract, 'Step contract').get('prepared_ns')
+    if type(mine) is not int:  # prepared by an older runtime: no order to go by
+        return None
     earlier = []
     for other in contract.parent.glob('*.json'):
         with contextlib.suppress(Refusal, OSError, ValueError, AttributeError):
