@@ -26,6 +26,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -323,6 +324,57 @@ def responses(path):
     return sum(1 for entry in entries(path) if answered_by(entry))
 
 
+def display_excerpt(words, limit):
+    """Bound local tool output for display; preserve no terminal controls."""
+    return ' '.join(''.join(char if char.isprintable() else ' ' for char in words).split())[-limit:]
+
+
+def last_shell_result(path):
+    """Keep the latest completed shell result, not a worker claim or a Verify receipt."""
+    messages = [entry.get('message') or {} for entry in branch(path) if entry.get('type') == 'message']
+    for index in range(len(messages) - 1, -1, -1):
+        result = messages[index]
+        if result.get('role') != 'toolResult' or result.get('toolName') != 'bash':
+            continue
+        output = ' '.join(block['text'] for block in result.get('content', [])
+                          if isinstance(block, dict) and isinstance(block.get('text'), str))
+        identity = result.get('toolCallId')
+        for message in reversed(messages[:index]):
+            if message.get('role') != 'assistant' or not identity:
+                continue
+            for call in message.get('content', []):
+                if (isinstance(call, dict) and call.get('type') == 'toolCall'
+                        and call.get('id') == identity and call.get('name') == 'bash'):
+                    command = (call.get('arguments') or {}).get('command')
+                    if isinstance(command, str) and type(result.get('isError')) is bool:
+                        return {'command': display_excerpt(command, 240), 'output': display_excerpt(output, 600),
+                                'error': result['isError']}
+        return None
+    return None
+
+
+def save_cap_stop(contract, session, group, cap):
+    """Record bounded evidence beside the step without changing its state or candidate."""
+    checkpoint = Path(contract).with_suffix('.cap-stop')
+    record = {'session': header(session)['id'], 'process_group': group, 'cap': cap,
+              'changed_files': None, 'omitted_files': 0, 'shell': last_shell_result(session)}
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        output = subprocess.check_output(
+            ['git', '--no-optional-locks', 'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all',
+             '--', '.', ':(exclude)runs'], timeout=3, stderr=subprocess.DEVNULL)
+        paths = output.decode(errors='replace').split('\0')[:-1]
+        record['changed_files'] = [display_excerpt(path[3:], 180) for path in paths[:12]]
+        record['omitted_files'] = max(0, len(paths) - 12)
+    with tempfile.NamedTemporaryFile(dir=checkpoint.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write((json.dumps(record, ensure_ascii=False) + '\n').encode())
+            stream.flush()
+            temporary.replace(checkpoint)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
 def watched(args, process, path, log):
     """With a response cap, leave a watcher that stops the worker's process group once the session holds that
     many responses; the launcher itself still exits after admission. Returns the worker's process group."""
@@ -350,6 +402,10 @@ def watch(args):
                 deadline = time.monotonic() + wait
                 while time.monotonic() < deadline and alive(group):
                     time.sleep(0.05)
+            try:
+                save_cap_stop(args.contract, path, group, args.max_responses)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                print(f'pi-launcher: could not save cap-stop evidence: {error}', file=sys.stderr)
             print(f'pi-launcher: response cap {args.max_responses} reached; stopped process group {group}. '
                   'Finish the step with sdlc.py step <run> <name> complete --stopped-by cap.', file=sys.stderr)
             return

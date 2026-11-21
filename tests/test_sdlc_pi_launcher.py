@@ -45,6 +45,13 @@ answered = [message(rows[-1]['id'], 'assistant', provider=answer.split('/')[0], 
 if os.environ.get('FAKE_PI_PAUSED'):
     # Stopped after a tool ran, before the closing answer: the shape of a paused run.
     answered.append(message(answered[-1]['id'], 'toolResult', toolName='write'))
+if os.environ.get('FAKE_PI_PROOF'):
+    Path('game.js').write_text('TEST game')
+    answered[0]['message'].update(stopReason='toolUse', content=[
+        {{'type': 'toolCall', 'name': 'bash', 'id': 'TEST-check',
+          'arguments': {{'command': 'node tests/game.mjs'}}}}])
+    answered.append(message(answered[-1]['id'], 'toolResult', toolName='bash', toolCallId='TEST-check',
+                            isError=False, content=[{{'type': 'text', 'text': 'PASS TEST browser check'}}]))
 path.write_text(''.join(json.dumps(r) + '\\n' for r in rows))
 time.sleep(float(os.environ.get('FAKE_PI_THINK', '0.3')))
 with path.open('a') as stream:
@@ -307,7 +314,7 @@ class PiLauncherTests(StageBase):
         self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
                   '--launcher', str(self.adapter), '--max-responses', '3')
         child_file = self.base / 'TEST-child.pid'
-        self.step('build', 'launch', env={'FAKE_PI_MORE': '20', 'FAKE_PI_CHILD': str(child_file)})
+        self.step('build', 'launch', env={'FAKE_PI_MORE': '20', 'FAKE_PI_CHILD': str(child_file), 'FAKE_PI_PROOF': '1'})
         pid = int(Path(str(self.pi_log) + '.pid').read_text())
         for _ in range(100):
             try:
@@ -330,10 +337,26 @@ class PiLauncherTests(StageBase):
             self.fail('the watcher did not report the cap: ' + log.read_text())
         with self.assertRaises(ProcessLookupError):
             os.kill(child, 0)
+        status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        [step] = status['steps']
+        self.assertEqual(step['state'], 'active')
+        self.assertEqual(step['cap_stop']['cap'], 3)
+        self.assertIn('game.js', step['cap_stop']['changed_files'])
+        self.assertEqual(step['cap_stop']['shell'], {
+            'command': 'node tests/game.mjs', 'output': 'PASS TEST browser check', 'error': False})
+        self.assertIn('complete --stopped-by cap', status['next_action'])
+        self.assertEqual(status['verification_status'], 'not-run')
+        checkpoint = self.root / 'runs/r/steps/build.cap-stop'
+        original = checkpoint.read_text()
+        checkpoint.write_text(json.dumps({**json.loads(original), 'session': 'TEST wrong session'}))
+        self.assertNotIn('cap_stop', json.loads(self.sdlc('status', 'r', '--json').stdout)['run']['steps'][0])
+        checkpoint.write_text(original)
         self.assertIn('already holds its cap of 3 responses', self.step('build', 'resume', ok=False).stderr)
         self.assertEqual(len(self.calls()), 1)
         self.step('build', 'complete', '--stopped-by', 'cap')
         self.assertEqual(self.contract()['state'], 'stopped')
+        status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(status['steps'][0]['cap_stop'], step['cap_stop'])
 
     def test_a_stop_refuses_a_process_group_that_is_no_longer_the_step(self):
         self.prepare()

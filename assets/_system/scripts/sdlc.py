@@ -1815,7 +1815,7 @@ def status_state(path):
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
     checks = (config['checks'] if config else []) + [configured(i, config['seed_timeout_seconds'] if config else 120) for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
-    next_action = unavailable or worker_action(path.name, steps, newest) or (errors[0] if errors else '') or {
+    next_action = unavailable or worker_action(path.name, steps, newest, state) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
         'awaiting-attestation': (record.get('error') or 'Record the pending attestations, then rerun verification.') if record else '',
@@ -1902,6 +1902,14 @@ def status_text(view):
         lines.append('Verification: not run (implementation may be pending; a text log is not passing evidence)')
     if all(g['status'] == 'approved' for g in view['gates']):
         lines.append(f"Next: {view['next_action']}")
+    for fact in view['steps']:
+        if stop := fact.get('cap_stop'):
+            lines.append(f"Worker step {fact['name']} stopped at its response cap ({stop['cap']}).")
+            files = stop['changed_files']
+            lines.append('Local changes at stop: ' + ('unavailable' if files is None else ', '.join(files) or 'none')
+                         + (f" (+{stop['omitted_files']} more)" if stop['omitted_files'] else ''))
+            if result := stop['shell']:
+                lines.append(f"Last shell result (not Verify): {result['command']}: {result['output']}")
     if view['pr']:
         lines.append(f"PR: {view['pr']['url']}")
     if view['labels']['count']:
@@ -2995,6 +3003,32 @@ def observed_turn(record, contract):
     return probe_turn(record, contract)[1]
 
 
+def cap_stop(record, contract):
+    """Read only a bounded checkpoint for this admission; never make it a verification result."""
+    path = contract.with_suffix('.cap-stop')
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16384:
+        return None
+    value = read_json(path)
+    if (not isinstance(value, dict) or not record.get('session') or not record.get('process_group')
+            or not record.get('max_responses') or value.get('session') != record['session']
+            or value.get('process_group') != record['process_group'] or value.get('cap') != record['max_responses']):
+        return None
+    files, omitted, shell = value['changed_files'], value['omitted_files'], value['shell']
+    def display(text, limit):
+        return isinstance(text, str) and len(text) <= limit and (not text or text.isprintable())
+    if files is not None and (not isinstance(files, list) or len(files) > 12
+                              or not all(display(pathname, 180) for pathname in files)):
+        return None
+    if type(omitted) is not int or not 0 <= omitted <= 2**32 - 1:
+        return None
+    if shell is not None:
+        if (not isinstance(shell, dict) or not display(shell['command'], 240)
+                or not display(shell['output'], 600) or type(shell['error']) is not bool):
+            return None
+        shell = {name: shell[name] for name in ('command', 'output', 'error')}
+    return {'cap': record['max_responses'], 'changed_files': files, 'omitted_files': omitted, 'shell': shell}
+
+
 def step_facts(path):
     """Each pinned step's recorded state, by name; an active one adds what its adapter sees now."""
     facts = []
@@ -3010,6 +3044,12 @@ def step_facts(path):
         if state == 'stopped':
             fact['stopped_by'] = record.get('stopped_by')
         if state == 'active':
+            fact['turn'], fact['observed_turn'] = 'not-ended', 'not ended: stopped at its response cap'
+        if state == 'active' or (state == 'stopped' and fact['stopped_by'] == 'cap'):
+            with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
+                if stop := cap_stop(record, contract):
+                    fact['cap_stop'] = stop
+        if state == 'active' and 'cap_stop' not in fact:
             fact['turn'], fact['observed_turn'] = probe_turn(record, contract)
         facts.append(fact)
     return facts
@@ -3029,15 +3069,20 @@ def newest_step(path):
     return newest[1] if newest else None
 
 
-def worker_action(slug, steps, newest=None):
+def worker_action(slug, steps, newest=None, verification=None):
     """The next action an active step owes, so a run never reads as being worked on by nobody.
     An uncertain step owes reconciliation while it is the newest step; preparing another ends that."""
     step = next((s for s in steps if s['state'] == 'active'), None)
     if step is None:
         step = next((s for s in steps if s['state'] == 'uncertain' and s['name'] == newest), None)
     if step is None:
+        if verification == 'not-run' and any(s['name'] == newest and s.get('cap_stop') for s in steps):
+            return 'Review the saved cap-stop evidence. Run Verify when the candidate is ready; any human checks still need judgment.'
         return ''
     command = f"python3 _system/scripts/sdlc.py step {slug} {step['name']}"
+    if 'cap_stop' in step:
+        return (f"The {step['name']} worker stopped at its response cap. Review the saved evidence, then record the stop: "
+                f'{command} complete --stopped-by cap.')
     if step['state'] == 'uncertain':
         return (f"The {step['name']} step's launch or resume did not confirm; a worker may still be running. "
                 f'Inspect it with {command} show and the actual harness or session, then reconcile that session '
