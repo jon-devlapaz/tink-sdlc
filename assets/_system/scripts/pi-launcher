@@ -357,7 +357,9 @@ def save_cap_stop(contract, session, group, cap):
     """Record bounded evidence beside the step without changing its state or candidate."""
     checkpoint = Path(contract).with_suffix('.cap-stop')
     record = {'session': header(session)['id'], 'process_group': group, 'cap': cap,
-              'changed_files': None, 'omitted_files': 0, 'shell': last_shell_result(session)}
+              'changed_files': None, 'omitted_files': 0, 'shell': None}
+    with contextlib.suppress(OSError, ValueError, KeyError, TypeError, AttributeError):
+        record['shell'] = last_shell_result(session)
     with contextlib.suppress(OSError, subprocess.SubprocessError):
         output = subprocess.check_output(
             ['git', '--no-optional-locks', 'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all',

@@ -353,8 +353,8 @@ class PiLauncherTests(StageBase):
         checkpoint.write_text(original)
         self.assertIn('already holds its cap of 3 responses', self.step('build', 'resume', ok=False).stderr)
         self.assertEqual(len(self.calls()), 1)
-        self.step('build', 'complete', '--stopped-by', 'cap')
-        self.assertEqual(self.contract()['state'], 'stopped')
+        self.step('build', 'complete', '--stopped-by', 'operator')
+        self.assertEqual((self.contract()['state'], self.contract()['stopped_by']), ('stopped', 'cap'))
         status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
         self.assertEqual(status['steps'][0]['cap_stop'], step['cap_stop'])
 

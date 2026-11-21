@@ -3181,11 +3181,15 @@ def step(args):
                     raise ValueError('Only an active step with a known session can be completed.')
                 if args.stopped_by:
                     print(end_process_group(record, contract))
+                    reason = args.stopped_by
+                    with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
+                        if cap_stop(record, contract):
+                            reason = 'cap'
                     contents = report.read_bytes() if report.is_file() else b''
-                    record.update(state='stopped', stopped_by=args.stopped_by,
+                    record.update(state='stopped', stopped_by=reason,
                                   report_sha256=digest(contents) if contents.strip() else None)
                     write_json(contract, record)
-                    print(f'Recorded step {args.name} as stopped ({STOPPED_WORDS[args.stopped_by]}), not as an ended turn; '
+                    print(f'Recorded step {args.name} as stopped ({STOPPED_WORDS[reason]}), not as an ended turn; '
                           + ('its report digest is stored.' if contents.strip() else 'it left no report.'))
                     return
                 if not report.is_file():

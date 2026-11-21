@@ -102,7 +102,8 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   and `shell` (the last completed shell result, or null). The shell object contains
   `command`, `output`, and `error`. Text is bounded. It is not a Verify receipt.
   An active step with this checkpoint still needs explicit stop recording. A recorded
-  cap stop retains the checkpoint.
+  cap stop retains the checkpoint. Recording a stop preserves this observed reason,
+  including when an older client asks to record it as an operator stop.
   An uncertain step adds `owed`: true while it is the newest step and so still owes reconciliation. An active step's turn, or else the newest step when it is uncertain, sets `next_action` (after gates and locks), so a run that nothing is building
   is never mistaken for running work, and one that may be is never mistaken for idle. Older runtimes omit the field: absence means unknown.
 - `log`: `path` (checkout-relative, regular UTF-8 file), `text` (last 256 KiB,
