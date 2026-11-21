@@ -97,6 +97,7 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
 - `steps`: each pinned build step by `name`, with its `state` (`prepared`, `active`,
   `uncertain`, `completed`, or `unreadable`) and, when active, `turn` (`ended`, `not-ended`
   or `unknown`) with human-readable `observed_turn` words. Read `turn`; the words may change.
+  An active step can include `response_cap_reached: true` before its evidence is available.
   Optional `cap_stop` means the launcher stopped this admission and saved a checkpoint.
   It contains `cap`, `changed_files` (project paths changed since preparation or still
   uncommitted, or null when unavailable), `omitted_files`,

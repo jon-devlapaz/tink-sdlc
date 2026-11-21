@@ -441,6 +441,7 @@ class PiLauncherTests(StageBase):
         run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
         [step] = run['steps']
         self.assertEqual((step['state'], step['turn']), ('active', 'not-ended'))
+        self.assertIs(step.get('response_cap_reached'), True)
         self.assertNotIn('cap_stop', step)
         self.assertIn('complete --stopped-by cap', run['next_action'])
         self.assertEqual(run['verification_status'], 'not-run')

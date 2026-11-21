@@ -2997,19 +2997,19 @@ def probe_turn(record, contract, checkpoint):
     """What the adapter's offline finished probe sees now, as (turn, words); never stored.
     `active` alone cannot tell a running agent from an ended turn (tinkery#615)."""
     if checkpoint:
-        return 'not-ended', CAP_STOPPED
+        return 'not-ended', CAP_STOPPED, True
     if cap_record(record, contract, '.cap-stopping'):
-        return 'not-ended', CAP_REACHED
+        return 'not-ended', CAP_REACHED, True
     try:
         step_paths(record)
         reply = step_adapter(record, 'finished', contract)
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
-        return 'unknown', f'unknown: {error}'
+        return 'unknown', f'unknown: {error}', False
     if reply.get('response_cap_reached'):
-        return 'not-ended', CAP_REACHED
+        return 'not-ended', CAP_REACHED, True
     if reply['finished']:
-        return 'ended', 'ended: read the report, then complete the step'
-    return 'not-ended', f'not ended: {NOT_FINISHED}'
+        return 'ended', 'ended: read the report, then complete the step', False
+    return 'not-ended', f'not ended: {NOT_FINISHED}', False
 
 
 def cap_record(record, contract, suffix):
@@ -3070,7 +3070,9 @@ def step_facts(path):
                     if state == 'stopped':
                         fact['stopped_by'] = 'cap'
         if state == 'active':
-            fact['turn'], fact['observed_turn'] = probe_turn(record, contract, fact.get('cap_stop'))
+            fact['turn'], fact['observed_turn'], cap_reached = probe_turn(record, contract, fact.get('cap_stop'))
+            if cap_reached:
+                fact['response_cap_reached'] = True
         facts.append(fact)
     return facts
 
@@ -3107,7 +3109,7 @@ def worker_action(slug, steps, newest=None, verification=None):
         return (f"The {step['name']} step's launch or resume did not confirm; a worker may still be running. "
                 f'Inspect it with {command} show and the actual harness or session, then reconcile that session '
                 'before explicitly preparing another uniquely named step.')
-    if step['observed_turn'] == CAP_REACHED:
+    if step.get('response_cap_reached'):
         return (f"The {step['name']} worker reached its response cap. Record the stop with "
                 f'{command} complete --stopped-by cap.')
     if step['turn'] == 'ended':
@@ -3207,7 +3209,7 @@ def step(args):
                     print(end_process_group(record, contract))
                     reason = args.stopped_by
                     if (reason == 'operator' and record.get('max_responses')
-                            and probe_turn(record, contract, cap_stop(record, contract))[1] in (CAP_REACHED, CAP_STOPPED)):
+                            and probe_turn(record, contract, cap_stop(record, contract))[2]):
                         reason = 'cap'
                     contents = report.read_bytes() if report.is_file() else b''
                     record.update(state='stopped', stopped_by=reason,
