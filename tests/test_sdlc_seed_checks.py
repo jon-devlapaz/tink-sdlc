@@ -286,8 +286,7 @@ class SeedTimeout(StageBase):
     SLOW = command('cat proof | grep "exact output"', 'sub')
 
     def configure(self, **extra):
-        (self.root / '_system/verification.json').write_text(
-            json.dumps({'require_tink': False, 'checks': [PASSING], **extra}))
+        self.set_checks([PASSING], **extra)
 
     def budget(self):
         return json.loads(self.sdlc('status', 'r', '--json').stdout)['run']['actions']['verify']['timeout_seconds']
@@ -514,9 +513,7 @@ class RedAtBase(StageBase):
 
     def test_a_timeout_at_base_fails_the_seed_and_removes_the_export(self):
         self.build('#!/bin/sh\ntest -f feature || exec sleep 30\n')
-        (self.root / '_system/verification.json').write_text(
-            json.dumps({'require_tink': False, 'checks': [PASSING], 'seed_timeout_seconds': 1}))
-        self.git('commit', '-qam', 'TEST timeout', env=IDENT)
+        self.set_checks([PASSING], seed_timeout_seconds=1)
         result, receipt = self.verify()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(f'Seed check failed: seed-1: it did not exit nonzero at base {self.base_commit[:12]} '

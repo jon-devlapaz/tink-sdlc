@@ -32,15 +32,19 @@ class WorkflowTests(unittest.TestCase):
         (self.root / 'stages/01-plan/CONTEXT.md').write_text('contract')
         (self.root / 'code.py').write_text('original')
         self.config([{'argv': ['python3', '-c', 'print("real check")'], 'timeout_seconds': 5}])
-        subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.root)], check=True)
         self.git('add', '.')
         self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'baseline')
 
     def git(self, *args):
         subprocess.run(['git', '-C', str(self.root), *args], check=True, capture_output=True)
 
-    def config(self, checks, require_tink=False):
-        (self.root / '_system/verification.json').write_text(json.dumps({'checks': checks, 'require_tink': require_tink}))
+    def config(self, checks, require_tink=False, commit=True):
+        name = '_system/verification.json'
+        (self.root / name).write_text(json.dumps({'checks': checks, 'require_tink': require_tink}))
+        if commit and (self.root / '.git').exists():
+            self.git('-c', 'user.name=Test', '-c', 'user.email=test@local',
+                     'commit', '-qm', 'TEST project policy', '--allow-empty', '--', name)
 
     def cli(self, *args, ok=True):
         result = subprocess.run(['python3', str(self.root / '_system/scripts/sdlc.py'), *args], cwd='/', capture_output=True, text=True)
@@ -65,6 +69,41 @@ class WorkflowTests(unittest.TestCase):
         self.git('add', name)
         self.git('-c', 'user.name=TEST committer', '-c', 'user.email=test@local',
                  'commit', '-qm', f'TEST {name}', '--author', author)
+
+    def test_verify_refuses_candidate_check_policy_changes(self):
+        self.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+        self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+        self.git('switch', '-qc', 'example-build')
+        self.create_ready()
+        self.config([{'argv': ['python3', '-c', 'print("alternate check")'], 'timeout_seconds': 5}], commit=False)
+        working_only = self.cli('verify', 'example', ok=False)
+        self.assertIn('_system/verification.json', working_only)
+        self.git('add', '_system/verification.json')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'alternate policy')
+
+        result = self.cli('verify', 'example', ok=False)
+        self.assertIn('_system/verification.json', result)
+        log = self.root / 'runs/example/04-test/output/test-log.md'
+        self.assertFalse(log.exists())
+        self.git('restore', '--source=refs/remotes/origin/main', '--', '_system/verification.json')
+        result = self.cli('verify', 'example', ok=False)
+        self.assertIn('_system/verification.json', result)  # Restoring only the working copy does not fix HEAD.
+        self.git('add', '_system/verification.json')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'restore policy')
+        self.cli('verify', 'example')
+        self.assertIn('real check', log.read_text())
+        self.assertNotIn('alternate check', log.read_text())
+
+    def test_changed_review_policy_blocks_verification_and_review(self):
+        self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+        self.git('switch', '-qc', 'example-build')
+        self.create_ready()
+        self.cli('verify', 'example')
+        guide = self.root / '_shared/REVIEW.md'
+        guide.write_text('Alternate review guide.\n')
+        self.assertIn('run verify first', self.cli('stage', 'example', '5', '--here', ok=False))
+        result = self.cli('verify', 'example', ok=False)
+        self.assertIn('_shared/REVIEW.md', result)
 
     def test_verify_refuses_commits_from_unlisted_authors_since_the_policy_point(self):
         # #78: Stacker agent commits were authored by a stray local identity (tink-arcade 720b7ff and others).
@@ -1192,8 +1231,6 @@ class WorkflowTests(unittest.TestCase):
         # #197: the Split worker made a broken check pass with NODE_OPTIONS on the verify command line.
         self.config([{'argv': ['python3', '-c', 'import os, sys; sys.exit(os.environ.get("NODE_OPTIONS") != "--x")'],
                       'timeout_seconds': 5}])
-        self.git('add', '.')
-        self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'check')
         self.create_ready()
         out = self.verify_with(False, NODE_OPTIONS='--x', PYTHONPATH='src')
         self.assertIn('the caller set NODE_OPTIONS, PYTHONPATH', out)

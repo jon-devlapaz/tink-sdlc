@@ -100,7 +100,7 @@ Receipts report `seed_checks` (`proven`, `attested`, `pending`, or `not-run` on 
 
 Give each code-writing run its own Git worktree or clone, never just a second branch in one checkout. Ports, databases and credentials need their own isolation when used.
 
-Configure `_system/verification.json` with nonempty argv arrays and timeouts. A fresh install has no checks and fails until real tests, build and lint are selected; the runner should reject zero tests, since an exit code alone proves no coverage. Optional keys:
+Configure `_system/verification.json` with nonempty argv arrays and timeouts. A fresh install has no checks and fails until real tests, build and lint are selected and committed; the runner should reject zero tests, since an exit code alone proves no coverage. Optional keys:
 
 - `"setup": {"argv": [...], "timeout_seconds": N}` prepares ignored dependencies, such as `["pnpm", "install", "--frozen-lockfile"]`. `stage <run> 3` and `5` run it from the committed file in each new worktree; a failure removes the worktree and opens no stage. Keep its output Git-ignored.
 - `"seed_timeout_seconds": N` gives each seed `cmd` check, and each activated proposal, N seconds instead of 120. It must be a positive integer.
@@ -110,6 +110,8 @@ Configure `_system/verification.json` with nonempty argv arrays and timeouts. A 
 ```sh
 python3 _system/scripts/sdlc.py verify fix-example
 ```
+
+Verify uses the check policy from the common ancestor of the candidate and the fetched default branch. Without a fetched default, it uses the local main or master branch. For standalone repos with another branch name, a new run records its starting commit. Verify refuses if the candidate commit or working files change the check policy or `_shared/REVIEW.md`. Stage 5 requires current evidence under both policies and uses the same base for setup. Use separately reviewed project checks to land policy changes, then update the candidate from that base.
 
 Verification writes the log (`runs/<slug>/04-test/output/test-log.md`, named in any failure) and a receipt binding the commit, tracked and nonignored untracked files, artifact inputs, policy, test lock and log digest.
 

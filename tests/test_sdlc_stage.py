@@ -109,8 +109,10 @@ class StageBase(unittest.TestCase):
             for s in ([3] if profile == 'light' else [1, 2, 3]):
                 self.decide(run, s)
 
-    def set_checks(self, checks):
-        (self.root / '_system/verification.json').write_text(json.dumps({'require_tink': False, 'checks': checks}))
+    def set_checks(self, checks, **policy):
+        name = '_system/verification.json'
+        (self.root / name).write_text(json.dumps({'require_tink': False, 'checks': checks, **policy}))
+        self.git('commit', '-qm', 'TEST project policy', '--allow-empty', '--', name, env=IDENT)
 
     def snapshot_state(self):
         return (tree_hash(self.root), self.git('worktree', 'list').stdout, self.git('log', '--oneline', '--all').stdout,
@@ -489,10 +491,10 @@ class WorktreeMode(StageBase):
 
     def test_main_checkout_status_reports_the_build_worktree_verification(self):
         # tinkery#433: Watch reads the main checkout, which said "not verified yet" after verify passed in the build worktree.
+        self.set_checks([PASSING])
         self.new_run('r')
         self.stage('r', 3, env=IDENT)
         worktree = self.wt / 'r'
-        (worktree / '_system/verification.json').write_text(json.dumps({'require_tink': False, 'checks': [PASSING]}))
         verified = self.sdlc('verify', 'r', root=worktree, cwd=worktree)
         self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
         view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
