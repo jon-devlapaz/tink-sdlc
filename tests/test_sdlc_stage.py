@@ -899,6 +899,18 @@ class CheckoutSetup(StageBase):
         self.new_run('r')
         self.refuses('r', 3, message='positive timeout_seconds', env=IDENT)
 
+    def test_review_refuses_if_setup_changes_the_review_policy(self):
+        self.declare(['python3', '-c', "from pathlib import Path; Path('_shared/REVIEW.md').write_text('TEST rewrite')"])
+        self.new_run('r')
+        self.commit_run()
+        verified = self.sdlc('verify', 'r')
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        out = self.stage('r', 5, ok=False, env=IDENT)
+        self.assertIn('_shared/REVIEW.md', out.stderr)
+        self.assertIn('worktree removed', out.stderr)
+        self.assertNotIn('Launch prompt', out.stdout)
+        self.assertFalse((self.wt / 'review-r').exists())
+
     def test_here_mode_runs_no_setup(self):
         self.declare(self.WRITE)
         self.new_run('r')
