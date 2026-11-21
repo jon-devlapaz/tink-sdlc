@@ -812,20 +812,60 @@ class WorkflowTests(unittest.TestCase):
         url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
         # CRLF, as the GitHub web form stores it.
         body = ('### Goal\r\n\r\nShow the digest.\r\n\r\n### Done when\r\n\r\n- [ ] The screen shows the full SHA-256, for human and agent starts.\r\n'
-                '- [ ] `python3 scripts/full-check.py` passes.\r\n\r\n### Context\r\n\r\n- Not a check.\r\n')
+                '- [ ] `python3 scripts/full-check.py` passes.\r\n'
+                '- [ ] `printf "%s" "two words"` exits 0.\r\n'
+                '- Review `python3 scripts/full-check.py` passes.\r\n'
+                '- `one` and `two` passes.\r\n'
+                '- ` ` passes.\r\n'
+                '- `python3 scripts/full-check.py` passes on Linux.\r\n\r\n'
+                '### Context\r\n\r\n- Not a check.\r\n')
         issue = {'title': 'TEST show the digest', 'body': body, 'state': 'OPEN', 'labels': [{'name': 'approved'}]}
         self.assertIn('from the approved issue', self.issue_cli(issue, '--issue', url))
         brief = (self.root / 'runs/example/brief.md').read_bytes().decode()
         self.assertIn(body, brief)
         self.assertIn(f'Source: {url}\nIssue body sha256: {hashlib.sha256(body.encode()).hexdigest()}\nTitle: TEST show the digest\n', brief)
-        self.assertEqual([(item['id'], item['description']) for item in json.loads(self.checklist_path().read_text())['items']],
-                         [('done-1', 'The screen shows the full SHA-256, for human and agent starts.'),
-                          ('done-2', '`python3 scripts/full-check.py` passes.')])
+        items = json.loads(self.checklist_path().read_text())['items']
+        self.assertEqual([item['id'] for item in items], [f'done-{n}' for n in range(1, 8)])
+        self.assertEqual([item['description'] for item in items], [
+            'The screen shows the full SHA-256, for human and agent starts.',
+            '`python3 scripts/full-check.py` passes.',
+            '`printf "%s" "two words"` exits 0.',
+            'Review `python3 scripts/full-check.py` passes.',
+            '`one` and `two` passes.',
+            '` ` passes.',
+            '`python3 scripts/full-check.py` passes on Linux.'])
+        self.assertEqual({item['id']: item['check'] for item in items if 'check' in item}, {
+            'done-2': {'argv': ['bash', '-c', 'python3 scripts/full-check.py'], 'timeout_seconds': 600},
+            'done-3': {'argv': ['bash', '-c', 'printf "%s" "two words"'], 'timeout_seconds': 600}})
         self.assertEqual(json.loads((self.root / 'runs/example/run.json').read_text())['issue'],
                          {'url': url, 'title': 'TEST show the digest', 'sha256': hashlib.sha256(body.encode()).hexdigest()})
         # The issue fills the definition; it records no decision.
         self.assertFalse((self.root / 'runs/example/decisions').exists())
-        self.assertIn('Stage 3: pending\nNext: revise/review stage 3; record the human decision.', self.cli('status', 'example'))
+        status = self.cli('status', 'example')
+        self.assertIn('Stage 3: pending', status)
+        self.assertIn('dry-run example before definition review', status)
+        self.assertIn('0/7 passed (2 with a check, 5 attested)', status)
+
+    def test_issue_command_must_run_and_cannot_be_marked(self):
+        url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
+        body = '### Done when\n\n- `test -f proof.txt` passes.\n- A person checks the result.\n'
+        self.issue_cli({'title': 'TEST proof', 'body': body, 'state': 'OPEN', 'labels': [{'name': 'approved'}]},
+                       '--issue', url)
+        self.approve()
+        self.cli('mark', 'example', 'done-2', 'passed', '--evidence', 'TEST visual observation')
+        script = [sys.executable, str(self.root / '_system/scripts/sdlc.py')]
+        marked = subprocess.run([*script, 'mark', 'example', 'done-1', 'passed', '--evidence', 'TEST self-report'],
+                                cwd='/', capture_output=True, text=True)
+        verified = subprocess.run([*script, 'verify', 'example'], cwd='/', capture_output=True, text=True)
+
+        self.assertNotEqual(verified.returncode, 0, f'mark exit {marked.returncode}; verify exit 0: {verified.stdout}')
+        self.assertIn('Checklist check failed: done-1', verified.stderr)
+        self.assertNotEqual(marked.returncode, 0, marked.stdout)
+        self.assertIn('has an executable check', marked.stderr)
+        self.assertFalse((self.root / 'proof.txt').exists())
+        (self.root / 'proof.txt').touch()
+        self.cli('verify', 'example')
+        self.assertEqual(self.receipt()['checklist_items'], {'done-1': 'proven', 'done-2': 'attested'})
 
     def test_an_issue_that_is_not_an_approved_contract_creates_no_run(self):
         url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
