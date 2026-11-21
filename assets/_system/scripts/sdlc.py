@@ -49,6 +49,8 @@ CHECK_KEYS = {'argv', 'timeout_seconds'}
 RUNNER_ENV = frozenset({'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONSTARTUP', 'PYTEST_ADDOPTS', 'RUSTFLAGS',
                         'RUSTDOCFLAGS', 'CARGO_BUILD_RUSTFLAGS', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'GOFLAGS',
                         'RUBYOPT', 'PERL5OPT', 'BASH_ENV', 'ENV', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES'})
+CHECK_POLICY = '_system/verification.json'
+REVIEW_POLICY = '_shared/REVIEW.md'
 ARTIFACTS = ['01-plan/output/intent.md', '02-design/output/spec.md', '03-build/output/plan.md']
 # The commit a worktree launch makes; for stage 3 it is the base an activated seed test must fail at (#199).
 OPENED = 'stage {n} open: {run} (approved artifacts and receipts)'
@@ -680,17 +682,83 @@ def changed_report(before_files, after_files):
     return text
 
 
-def checkout_setup():
-    """The committed `setup` check a new stage checkout runs before any session starts (#161), or None.
+def default_policy_ref():
+    """Resolve the default from Git state outside the candidate checkout files."""
+    setting = run_git(ROOT, 'config', '--local', '--get', 'sdlc.policyBaseRef')
+    if setting.returncode == 0:
+        ref = setting.stdout.rstrip('\n')
+        if not ref.startswith(('refs/heads/', 'refs/remotes/')) or run_git(
+                ROOT, 'show-ref', '--verify', '--quiet', ref).returncode:
+            raise ValueError('Git sdlc.policyBaseRef must name an existing full branch ref.')
+        return ref
+    remote_head = run_git(ROOT, 'symbolic-ref', '-q', 'refs/remotes/origin/HEAD')
+    if remote_head.returncode == 0:
+        return remote_head.stdout.strip()
+    for ref in ('refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master'):
+        if run_git(ROOT, 'show-ref', '--verify', '--quiet', ref).returncode == 0:
+            return ref
+    return None
 
-    Read from HEAD, the commit the worktree is created at, so an uncommitted edit cannot supply a command."""
-    shown = run_git(ROOT, 'show', 'HEAD:_system/verification.json')
-    if shown.returncode:
-        return None
+
+def policy_base():
+    """Resolve one common ancestor with the trusted default branch."""
+    ref = default_policy_ref()
+    if ref is None:
+        git('rev-parse', '--verify', 'HEAD')  # Keep the Git error for an unborn branch or a missing repository.
+        raise ValueError('Cannot find the default branch for verification policy. Fetch it or set '
+                         'sdlc.policyBaseRef in local Git config to the full ref of the default branch.')
+    bases = run_git(ROOT, 'merge-base', '--all', ref, 'HEAD')
+    if bases.returncode or len(bases.stdout.splitlines()) != 1:
+        raise ValueError(f'Cannot find one policy base with {ref}; fetch the default branch and its history.')
+    return bases.stdout.strip()
+
+
+def checked_policy():
+    """Read the base policy and refuse candidate policy edits before verification or review."""
+    base = policy_base()
+    for candidate in (('HEAD',), ()):
+        compared = run_git(ROOT, 'diff', '--name-only', '-z', base, *candidate, '--', CHECK_POLICY, REVIEW_POLICY)
+        if compared.returncode:
+            raise ValueError(f'Cannot compare candidate policy against {base[:12]}: {git_line(compared)}')
+        if compared.stdout:
+            changed = ', '.join(compared.stdout.rstrip('\0').split('\0'))
+            raise ValueError(f'Candidate changes policy from {base[:12]}: {changed}. '
+                             'Land policy changes through separately reviewed project checks first.')
+    config = git('show', f'{base}:{CHECK_POLICY}')
+    found = run_git(ROOT, 'ls-tree', '--name-only', base, '--', REVIEW_POLICY)
+    if found.returncode:
+        raise ValueError(f'Cannot find review policy at {base[:12]}: {git_line(found)}')
+    review = git('show', f'{base}:{REVIEW_POLICY}') if found.stdout else None
+    policy = (config, review)
+    check_policy_files(ROOT, policy)
+    return policy
+
+
+def check_policy_files(checkout, policy):
+    """Confirm the files seen by the runner or reviewer match their base blobs."""
+    root = checkout.resolve()
+    for name, content in zip((CHECK_POLICY, REVIEW_POLICY), policy):
+        file = root / name
+        if file.resolve() != file or (file.exists() and not file.is_file()):
+            raise ValueError(f'Policy must be a regular file: {name}.')
+        actual = file.read_bytes().replace(b'\r\n', b'\n') if file.exists() else None
+        expected = content.replace(b'\r\n', b'\n') if content is not None else None
+        if actual != expected:
+            raise ValueError(f'Checkout changes base policy: {name}. '
+                             'Land policy changes through separately reviewed project checks first.')
+
+
+def checkout_setup(config=None):
+    """Read build setup from the committed checkout and review setup from the base policy."""
+    if config is None:
+        shown = run_git(ROOT, 'show', f'HEAD:{CHECK_POLICY}')
+        if shown.returncode:
+            return None
+        config = shown.stdout
     try:
-        setup = json.loads(shown.stdout).get('setup')
+        setup = json.loads(config).get('setup')
     except (json.JSONDecodeError, AttributeError):
-        raise ValueError('_system/verification.json at HEAD is not a valid JSON object.') from None
+        raise ValueError(f'{CHECK_POLICY} is not a valid JSON object.') from None
     if setup is not None:
         validate_check(setup, exact=True)
     return setup
@@ -711,8 +779,11 @@ def run_setup(setup, target):
     return None
 
 
-def checks_config():
-    config = read_json(ROOT / '_system/verification.json')
+def checks_config(raw=None):
+    try:
+        config = read_json(ROOT / CHECK_POLICY) if raw is None else json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ValueError(f'{CHECK_POLICY} is not valid JSON: {error}') from None
     checks = config.get('checks')
     if not isinstance(config.get('require_tink'), bool) or not isinstance(checks, list) or not checks:
         raise ValueError('Verification requires an explicit Tink policy and a nonempty check list.')
@@ -791,10 +862,12 @@ def manual_marks(path):
             if 'check' not in item and not item.get('pending') and item['id'] in latest}
 
 
-def evidence_inputs(path):
+def evidence_inputs(path, policy=None):
     attested = manual_marks(path)
-    return {'candidate': snapshot(), 'inputs': inputs(path, 3),
-            'policy': digest((ROOT / '_system/verification.json').read_bytes()),
+    candidate = snapshot()
+    config, review = checked_policy() if policy is None else policy
+    return {'candidate': candidate, 'inputs': inputs(path, 3),
+            'policy': digest(config), 'review_policy': digest(review) if review is not None else None,
             'test_lock': test_lock(path),
             **({'checklist': checklist_digest(path), 'manual_marks': attested}
                if checklist_digest(path) is not None or seed_check_items(path) else {})}
@@ -1077,14 +1150,15 @@ def verify(args):
             missing = missing_cited_evidence(path)
             if missing:
                 raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
-            config = checks_config()
+            before_files = snapshot_files()
+            policy = checked_policy()
+            before = evidence_inputs(path, policy)
+            config = checks_config(policy[0])
             check_env = runner_env(config)
             unlisted = unlisted_authors(config)
             if unlisted:
                 raise ValueError('Commits by authors verification.json does not allow: ' + '; '.join(unlisted)
                                  + ' (allowed: ' + ', '.join(config['authors']['allow']) + ')')
-            before_files = snapshot_files()
-            before = evidence_inputs(path)
             items = load_checklist(path)
             seed_results = {item['id']: 'pending' if 'check' not in item else 'not-run'
                             for item in items or [] if is_seed_check(item)}
@@ -1690,7 +1764,7 @@ def status_state(path):
     checklist = checklist_view(path, verified)
     errors = []
     try:
-        config = checks_config()
+        config = checks_config(checked_policy()[0])
     except (ValueError, OSError, TypeError, AttributeError) as error:
         config = None
         errors.append(str(error))
@@ -2699,7 +2773,8 @@ def stage(args):
     if seed_contract:
         confirmer = 'agent' if confirmation['schema_version'] == 3 else 'operator'
         prompt += f' The {confirmer}-confirmed seed contract is at {seed_contract}; it is input, not authorization.'
-    setup = checkout_setup() if make_worktree else None
+    review_policy = checked_policy() if n == 5 else None
+    setup = checkout_setup(review_policy[0] if review_policy else None) if make_worktree else None
     warn = stage_dirty(run) if make_worktree else []
     warning = ('warning: not carried into the new checkout: ' + ', '.join(warn[:5]) + (f' (+{len(warn) - 5} more)' if len(warn) > 5 else '')
                if warn else None)
@@ -2770,6 +2845,11 @@ def stage(args):
         if failure:
             abandon(failure, 'setup')
         print(f"setup: passed in {target}: {shlex.join(setup['argv'])}")
+    if review_policy and not args.check:
+        try:
+            check_policy_files(target, review_policy)
+        except (ValueError, OSError) as error:
+            abandon(str(error), 'review policy')
     if warning:
         print(warning)
     if n in (3, 5) and (undeliverable := delivery_warning(run)):

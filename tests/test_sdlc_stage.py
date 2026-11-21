@@ -109,8 +109,10 @@ class StageBase(unittest.TestCase):
             for s in ([3] if profile == 'light' else [1, 2, 3]):
                 self.decide(run, s)
 
-    def set_checks(self, checks):
-        (self.root / '_system/verification.json').write_text(json.dumps({'require_tink': False, 'checks': checks}))
+    def set_checks(self, checks, **policy):
+        name = '_system/verification.json'
+        (self.root / name).write_text(json.dumps({'require_tink': False, 'checks': checks, **policy}))
+        self.git('commit', '-qm', 'TEST project policy', '--allow-empty', '--', name, env=IDENT)
 
     def snapshot_state(self):
         return (tree_hash(self.root), self.git('worktree', 'list').stdout, self.git('log', '--oneline', '--all').stdout,
@@ -489,10 +491,10 @@ class WorktreeMode(StageBase):
 
     def test_main_checkout_status_reports_the_build_worktree_verification(self):
         # tinkery#433: Watch reads the main checkout, which said "not verified yet" after verify passed in the build worktree.
+        self.set_checks([PASSING])
         self.new_run('r')
         self.stage('r', 3, env=IDENT)
         worktree = self.wt / 'r'
-        (worktree / '_system/verification.json').write_text(json.dumps({'require_tink': False, 'checks': [PASSING]}))
         verified = self.sdlc('verify', 'r', root=worktree, cwd=worktree)
         self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
         view = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
@@ -896,6 +898,18 @@ class CheckoutSetup(StageBase):
         self.declare(['python3', '-c', 'pass'], timeout=0)
         self.new_run('r')
         self.refuses('r', 3, message='positive timeout_seconds', env=IDENT)
+
+    def test_review_refuses_if_setup_changes_the_review_policy(self):
+        self.declare(['python3', '-c', "from pathlib import Path; Path('_shared/REVIEW.md').write_text('TEST rewrite')"])
+        self.new_run('r')
+        self.commit_run()
+        verified = self.sdlc('verify', 'r')
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        out = self.stage('r', 5, ok=False, env=IDENT)
+        self.assertIn('_shared/REVIEW.md', out.stderr)
+        self.assertIn('worktree removed', out.stderr)
+        self.assertNotIn('Launch prompt', out.stdout)
+        self.assertFalse((self.wt / 'review-r').exists())
 
     def test_here_mode_runs_no_setup(self):
         self.declare(self.WRITE)

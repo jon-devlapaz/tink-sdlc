@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 
-from test_sdlc_stage import StageBase, IDENT
+from test_sdlc_stage import StageBase, IDENT, IDENT
 from tinkery_fixture import TINKERY, confirmed, command, DEFAULT
 
 
@@ -119,6 +119,8 @@ class PendingAttestation(StageBase):
             with self.subTest(error=error):
                 before = file.read_bytes() if file.exists() else None
                 file.write_text(text)
+                if file == config:
+                    self.git('commit', '-qm', 'TEST failing base policy', '--', str(config.relative_to(self.root)), env=IDENT)
                 self.decide('r', 3)
                 failed = self.sdlc('verify', 'r')
                 self.assertNotEqual(failed.returncode, 0)
@@ -129,6 +131,8 @@ class PendingAttestation(StageBase):
                     file.unlink()
                 else:
                     file.write_bytes(before)
+                if file == config:
+                    self.git('commit', '-qm', 'TEST restore base policy', '--', str(config.relative_to(self.root)), env=IDENT)
 
     def test_receipt_retains_candidate_policy_lock_and_pending_ids(self):
         self.pending()
