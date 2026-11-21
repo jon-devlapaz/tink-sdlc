@@ -1,5 +1,4 @@
 """The bundled Pi launcher adapter, driven through sdlc.py step and its own CLI with a fake Pi."""
-import fcntl
 import json
 import os
 import subprocess
@@ -371,27 +370,29 @@ class PiLauncherTests(StageBase):
         rows[-1]['message']['stopReason'] = 'stop'
         session.write_text(''.join(json.dumps(row) + '\n' for row in rows))
         checkpoint.unlink()
-        with checkpoint.with_suffix('.cap-lock').open('r+b') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            with subprocess.Popen([PYTHON, str(self.root / '_system/scripts/sdlc.py'), 'step', 'r', 'build', 'complete'],
-                                  cwd=self.root, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                  text=True) as completing:
-                try:
-                    with self.assertRaises(subprocess.TimeoutExpired):
-                        completing.wait(timeout=1)
-                    checkpoint.write_text(original)
-                finally:
-                    fcntl.flock(lock, fcntl.LOCK_UN)
-                _, errors = completing.communicate(timeout=10)
-                self.assertNotEqual(completing.returncode, 0)
-                self.assertIn('stopped at its response cap', errors)
-        checkpoint.unlink()
+        self.assertIn('stopped at its response cap', self.step('build', 'complete', ok=False).stderr)
+        checkpoint.with_suffix('.cap-stopping').unlink()
         self.step('build', 'complete', '--stopped-by', 'operator')
         self.assertEqual((self.contract()['state'], self.contract()['stopped_by']), ('stopped', 'operator'))
         checkpoint.write_text(original)
         status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
         self.assertEqual(status['steps'][0]['cap_stop'], step['cap_stop'])
         self.assertEqual(status['steps'][0]['stopped_by'], 'cap')
+
+    def test_report_and_final_response_cannot_complete_while_capped_worker_is_live(self):
+        self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
+                  '--launcher', str(self.adapter), '--max-responses', '2')
+        self.step('build', 'launch', env={'FAKE_PI_LINGER': '20'})
+        for _ in range(30):
+            if '"stopReason": "stop"' in self.session_file().read_text():
+                break
+            time.sleep(0.1)
+        try:
+            self.report.write_text('TEST report')
+            self.assertIn('capped worker process is still present', self.step('build', 'complete', ok=False).stderr)
+            self.assertEqual(self.contract()['state'], 'active')
+        finally:
+            self.step('build', 'complete', '--stopped-by', 'operator')
 
     def test_a_stop_refuses_a_process_group_that_is_no_longer_the_step(self):
         self.prepare()

@@ -3004,20 +3004,28 @@ def observed_turn(record, contract):
     return probe_turn(record, contract)[1]
 
 
-def cap_stop(record, contract):
-    """Read only a bounded checkpoint for this admission; never make it a verification result."""
-    path = contract.with_suffix('.cap-stop')
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16384:
-        return None
+def cap_record(record, contract, suffix):
+    """Read a bounded observation bound to this capped admission."""
+    path = contract.with_suffix(suffix)
     try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 16384:
+            return None
         value = read_json(path)
-        files, omitted, shell = value['changed_files'], value['omitted_files'], value['shell']
-    except (ValueError, OSError, KeyError, TypeError):
+    except (ValueError, OSError):
         return None
     if (not isinstance(value, dict) or not record.get('session') or not record.get('process_group')
             or not record.get('max_responses') or value.get('session') != record['session']
             or value.get('process_group') != record['process_group'] or value.get('cap') != record['max_responses']):
         return None
+    return value
+
+
+def cap_stop(record, contract):
+    """Return saved work, never a verification result."""
+    value = cap_record(record, contract, '.cap-stop')
+    if not value or not {'changed_files', 'omitted_files', 'shell'} <= value.keys():
+        return None
+    files, omitted, shell = value['changed_files'], value['omitted_files'], value['shell']
     def display(text, limit):
         return isinstance(text, str) and len(text) <= limit and (not text or text.isprintable())
     if files is not None and (not isinstance(files, list) or len(files) > 12
@@ -3189,9 +3197,8 @@ def step(args):
                 if args.stopped_by:
                     print(end_process_group(record, contract))
                     reason = args.stopped_by
-                    with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
-                        if cap_stop(record, contract):
-                            reason = 'cap'
+                    if cap_record(record, contract, '.cap-stopping') or cap_stop(record, contract):
+                        reason = 'cap'
                     contents = report.read_bytes() if report.is_file() else b''
                     record.update(state='stopped', stopped_by=reason,
                                   report_sha256=digest(contents) if contents.strip() else None)
@@ -3199,7 +3206,7 @@ def step(args):
                     print(f'Recorded step {args.name} as stopped ({STOPPED_WORDS[reason]}), not as an ended turn; '
                           + ('its report digest is stored.' if contents.strip() else 'it left no report.'))
                     return
-                if cap_stop(record, contract):
+                if cap_record(record, contract, '.cap-stopping') or cap_stop(record, contract):
                     raise ValueError('The worker stopped at its response cap. Record it with complete --stopped-by cap.')
                 if not report.is_file():
                     raise ValueError(f'Step report is missing at {report}; completion refused, with no project-root fallback.')
@@ -3209,11 +3216,13 @@ def step(args):
                 # A report alone can be left by an interrupted run; the adapter must confirm the agent finished.
                 if not step_adapter(record, 'finished', contract)['finished']:
                     raise ValueError(NOT_FINISHED + '; resume the step and complete it after the agent ends its turn.')
-                with locked(contract.with_suffix('.cap-lock')) if 'max_responses' in record else contextlib.nullcontext():
-                    if cap_stop(record, contract):
-                        raise ValueError('The worker stopped at its response cap. Record it with complete --stopped-by cap.')
-                    record.update(state='completed', report_sha256=digest(contents))
-                    write_json(contract, record)
+                group = record.get('process_group')
+                if 'max_responses' in record and type(group) is int and group > 1 and group_alive(group):
+                    raise ValueError('The capped worker process is still present. Wait for it to exit, then read status again.')
+                if cap_record(record, contract, '.cap-stopping') or cap_stop(record, contract):
+                    raise ValueError('The worker stopped at its response cap. Record it with complete --stopped-by cap.')
+                record.update(state='completed', report_sha256=digest(contents))
+                write_json(contract, record)
             else:
                 expected = 'prepared' if args.action == 'launch' else 'active'
                 if record['state'] != expected or (args.action == 'resume' and not record.get('session')):
