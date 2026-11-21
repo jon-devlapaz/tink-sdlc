@@ -917,9 +917,15 @@ def approved_issue(url):
     brief = (f"# Change brief\n\nSource: {url}\nIssue body sha256: {binding['sha256']}\nTitle: {issue['title']}\n\n"
              'The approved issue below is this run\'s brief, unchanged. '
              'Each Done-when line is one item in `checklist.json`.\n\n---\n\n' + issue['body'] + '\n')
-    items = [{'id': f'done-{number}', 'description': line,
-              'verify': 'Show evidence on the pull request that this Done-when line holds.'}
-             for number, line in enumerate(lines, 1)]
+    items = []
+    for number, line in enumerate(lines, 1):
+        item = {'id': f'done-{number}', 'description': line,
+                'verify': 'Show evidence on the pull request that this Done-when line holds.'}
+        command = re.fullmatch(r'`([^`\x00\r\n]+)` (?:passes|exits 0)\.', line)
+        if command and command[1].strip():
+            item['verify'] = 'Run the command and require exit 0.'
+            item['check'] = {'argv': ['bash', '-c', command[1]], 'timeout_seconds': 600}
+        items.append(item)
     return binding, brief, items
 
 
