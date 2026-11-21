@@ -361,11 +361,19 @@ def save_cap_stop(contract, session, group, cap):
     with contextlib.suppress(OSError, ValueError, KeyError, TypeError, AttributeError):
         record['shell'] = last_shell_result(session)
     with contextlib.suppress(OSError, subprocess.SubprocessError):
+        start = read_json(Path(contract), 'Step contract').get('start_head')
+        selection = ['--', '.', ':(exclude)runs']
         output = subprocess.check_output(
             ['git', '--no-optional-locks', 'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all',
-             '--', '.', ':(exclude)runs'], timeout=3, stderr=subprocess.DEVNULL)
-        paths = output.decode(errors='replace').split('\0')[:-1]
-        record['changed_files'] = [display_excerpt(path[3:], 180) for path in paths[:12]]
+             *selection], timeout=3, stderr=subprocess.DEVNULL)
+        paths = [path[3:] for path in output.decode(errors='replace').split('\0')[:-1]]
+        if isinstance(start, str) and start.isalnum() and len(start) in (40, 64):
+            committed = subprocess.check_output(
+                ['git', '--no-optional-locks', 'diff', '--name-only', '--no-renames', '-z',
+                 start, 'HEAD', *selection], timeout=3, stderr=subprocess.DEVNULL)
+            paths += committed.decode(errors='replace').split('\0')[:-1]
+        paths = sorted(set(paths))
+        record['changed_files'] = [display_excerpt(path, 180) for path in paths[:12]]
         record['omitted_files'] = max(0, len(paths) - 12)
     with tempfile.NamedTemporaryFile(dir=checkpoint.parent, delete=False) as stream:
         temporary = Path(stream.name)

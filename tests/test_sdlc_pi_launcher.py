@@ -46,7 +46,12 @@ if os.environ.get('FAKE_PI_PAUSED'):
     # Stopped after a tool ran, before the closing answer: the shape of a paused run.
     answered.append(message(answered[-1]['id'], 'toolResult', toolName='write'))
 if os.environ.get('FAKE_PI_PROOF'):
+    import subprocess
     Path('game.js').write_text('TEST game')
+    subprocess.run(['git', 'add', 'game.js'], check=True)
+    subprocess.run(['git', '-c', 'user.name=TEST', '-c', 'user.email=test@example.test',
+                    'commit', '-qm', 'TEST candidate'], check=True)
+    Path('style.css').write_text('TEST local edit')
     answered[0]['message'].update(stopReason='toolUse', content=[
         {{'type': 'toolCall', 'name': 'bash', 'id': 'TEST-check',
           'arguments': {{'command': 'node tests/game.mjs'}}}}])
@@ -342,21 +347,31 @@ class PiLauncherTests(StageBase):
         self.assertEqual(step['state'], 'active')
         self.assertEqual(step['cap_stop']['cap'], 3)
         self.assertIn('game.js', step['cap_stop']['changed_files'])
+        self.assertIn('style.css', step['cap_stop']['changed_files'])
         self.assertEqual(step['cap_stop']['shell'], {
             'command': 'node tests/game.mjs', 'output': 'PASS TEST browser check', 'error': False})
         self.assertIn('complete --stopped-by cap', status['next_action'])
         self.assertEqual(status['verification_status'], 'not-run')
         checkpoint = self.root / 'runs/r/steps/build.cap-stop'
         original = checkpoint.read_text()
+        stopped = json.loads(original)
+        stopped['shell']['error'] = True
+        checkpoint.write_text(json.dumps(stopped))
+        self.assertIn('Last shell result (error, not Verify)', self.sdlc('status', 'r').stdout)
         checkpoint.write_text(json.dumps({**json.loads(original), 'session': 'TEST wrong session'}))
         self.assertNotIn('cap_stop', json.loads(self.sdlc('status', 'r', '--json').stdout)['run']['steps'][0])
         checkpoint.write_text(original)
         self.assertIn('already holds its cap of 3 responses', self.step('build', 'resume', ok=False).stderr)
         self.assertEqual(len(self.calls()), 1)
+        self.report.with_name('build.md').write_text('TEST report')
+        self.assertIn('stopped at its response cap', self.step('build', 'complete', ok=False).stderr)
+        checkpoint.unlink()
         self.step('build', 'complete', '--stopped-by', 'operator')
-        self.assertEqual((self.contract()['state'], self.contract()['stopped_by']), ('stopped', 'cap'))
+        self.assertEqual((self.contract()['state'], self.contract()['stopped_by']), ('stopped', 'operator'))
+        checkpoint.write_text(original)
         status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
         self.assertEqual(status['steps'][0]['cap_stop'], step['cap_stop'])
+        self.assertEqual(status['steps'][0]['stopped_by'], 'cap')
 
     def test_a_stop_refuses_a_process_group_that_is_no_longer_the_step(self):
         self.prepare()

@@ -1815,7 +1815,7 @@ def status_state(path):
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
     checks = (config['checks'] if config else []) + [configured(i, config['seed_timeout_seconds'] if config else 120) for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
-    next_action = unavailable or worker_action(path.name, steps, newest, state) or (errors[0] if errors else '') or {
+    next_action = unavailable or worker_action(path.name, steps, newest, state if not errors else None) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
         'awaiting-attestation': (record.get('error') or 'Record the pending attestations, then rerun verification.') if record else '',
@@ -1906,10 +1906,11 @@ def status_text(view):
         if stop := fact.get('cap_stop'):
             lines.append(f"Worker step {fact['name']} stopped at its response cap ({stop['cap']}).")
             files = stop['changed_files']
-            lines.append('Local changes at stop: ' + ('unavailable' if files is None else ', '.join(files) or 'none')
+            lines.append('Changed files at stop: ' + ('unavailable' if files is None else ', '.join(files) or 'none')
                          + (f" (+{stop['omitted_files']} more)" if stop['omitted_files'] else ''))
             if result := stop['shell']:
-                lines.append(f"Last shell result (not Verify): {result['command']}: {result['output']}")
+                outcome = 'error' if result['error'] else 'no error reported'
+                lines.append(f"Last shell result ({outcome}, not Verify): {result['command']}: {result['output']}")
     if view['pr']:
         lines.append(f"PR: {view['pr']['url']}")
     if view['labels']['count']:
@@ -3008,12 +3009,15 @@ def cap_stop(record, contract):
     path = contract.with_suffix('.cap-stop')
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 16384:
         return None
-    value = read_json(path)
+    try:
+        value = read_json(path)
+        files, omitted, shell = value['changed_files'], value['omitted_files'], value['shell']
+    except (ValueError, OSError, KeyError, TypeError):
+        return None
     if (not isinstance(value, dict) or not record.get('session') or not record.get('process_group')
             or not record.get('max_responses') or value.get('session') != record['session']
             or value.get('process_group') != record['process_group'] or value.get('cap') != record['max_responses']):
         return None
-    files, omitted, shell = value['changed_files'], value['omitted_files'], value['shell']
     def display(text, limit):
         return isinstance(text, str) and len(text) <= limit and (not text or text.isprintable())
     if files is not None and (not isinstance(files, list) or len(files) > 12
@@ -3022,8 +3026,8 @@ def cap_stop(record, contract):
     if type(omitted) is not int or not 0 <= omitted <= 2**32 - 1:
         return None
     if shell is not None:
-        if (not isinstance(shell, dict) or not display(shell['command'], 240)
-                or not display(shell['output'], 600) or type(shell['error']) is not bool):
+        if (not isinstance(shell, dict) or not display(shell.get('command'), 240)
+                or not display(shell.get('output'), 600) or type(shell.get('error')) is not bool):
             return None
         shell = {name: shell[name] for name in ('command', 'output', 'error')}
     return {'cap': record['max_responses'], 'changed_files': files, 'omitted_files': omitted, 'shell': shell}
@@ -3045,10 +3049,12 @@ def step_facts(path):
             fact['stopped_by'] = record.get('stopped_by')
         if state == 'active':
             fact['turn'], fact['observed_turn'] = 'not-ended', 'not ended: stopped at its response cap'
-        if state == 'active' or (state == 'stopped' and fact['stopped_by'] == 'cap'):
+        if state in ('active', 'stopped'):
             with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
                 if stop := cap_stop(record, contract):
                     fact['cap_stop'] = stop
+                    if state == 'stopped':
+                        fact['stopped_by'] = 'cap'
         if state == 'active' and 'cap_stop' not in fact:
             fact['turn'], fact['observed_turn'] = probe_turn(record, contract)
         facts.append(fact)
@@ -3157,7 +3163,8 @@ def step(args):
                       'report': str(report), 'model': model, 'launcher': str(launcher),
                       'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None,
                       'prepared_ns': time.time_ns(),
-                      **({'max_responses': args.max_responses} if args.max_responses is not None else {})}
+                      **({'max_responses': args.max_responses, 'start_head': git('rev-parse', 'HEAD').decode().strip()}
+                         if args.max_responses is not None else {})}
             step_paths(record)
             write_json(contract, record)
         else:
@@ -3192,6 +3199,8 @@ def step(args):
                     print(f'Recorded step {args.name} as stopped ({STOPPED_WORDS[reason]}), not as an ended turn; '
                           + ('its report digest is stored.' if contents.strip() else 'it left no report.'))
                     return
+                if cap_stop(record, contract):
+                    raise ValueError('The worker stopped at its response cap. Record it with complete --stopped-by cap.')
                 if not report.is_file():
                     raise ValueError(f'Step report is missing at {report}; completion refused, with no project-root fallback.')
                 contents = report.read_bytes()
