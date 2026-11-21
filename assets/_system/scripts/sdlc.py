@@ -3209,8 +3209,11 @@ def step(args):
                 # A report alone can be left by an interrupted run; the adapter must confirm the agent finished.
                 if not step_adapter(record, 'finished', contract)['finished']:
                     raise ValueError(NOT_FINISHED + '; resume the step and complete it after the agent ends its turn.')
-                record.update(state='completed', report_sha256=digest(contents))
-                write_json(contract, record)
+                with locked(contract.with_suffix('.cap-lock')) if 'max_responses' in record else contextlib.nullcontext():
+                    if cap_stop(record, contract):
+                        raise ValueError('The worker stopped at its response cap. Record it with complete --stopped-by cap.')
+                    record.update(state='completed', report_sha256=digest(contents))
+                    write_json(contract, record)
             else:
                 expected = 'prepared' if args.action == 'launch' else 'active'
                 if record['state'] != expected or (args.action == 'resume' and not record.get('session')):

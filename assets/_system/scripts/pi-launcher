@@ -20,10 +20,12 @@ It is not a Herdr adapter and does not use pi-herdr routing or Pi session restor
 """
 import argparse
 import contextlib
+import fcntl
 import json
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -406,20 +408,42 @@ def watch(args):
         except OSError:
             return
         if responses(path) >= args.max_responses:
-            for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 1)):
-                with contextlib.suppress(OSError):
-                    os.killpg(group, sig)
-                deadline = time.monotonic() + wait
-                while time.monotonic() < deadline and alive(group):
-                    time.sleep(0.05)
-            try:
-                save_cap_stop(args.contract, path, group, args.max_responses)
-            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
-                print(f'pi-launcher: could not save cap-stop evidence: {error}', file=sys.stderr)
-            print(f'pi-launcher: response cap {args.max_responses} reached; stopped process group {group}. '
-                  'Finish the step with sdlc.py step <run> <name> complete --stopped-by cap.', file=sys.stderr)
+            checkpoint_at_cap(args, path, group)
             return
         time.sleep(WATCH_SECONDS)
+
+
+def checkpoint_at_cap(args, path, group):
+    """Serialize the cap stop and ordinary completion without delaying the response counter."""
+    contract = Path(args.contract)
+    lock = contract.with_suffix('.cap-lock')
+    try:
+        with os.fdopen(os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), 'r+b') as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise Refusal('Cap completion lock must be a regular file.')
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            if read_json(contract, 'Step contract').get('state') in ('active', 'uncertain') and alive(group):
+                stop_capped_group(args, path, group)
+    except (OSError, Refusal, ValueError, AttributeError) as error:
+        print(f'pi-launcher: cap-stop coordination failed: {error}', file=sys.stderr)
+        if alive(group):
+            stop_capped_group(args, path, group)
+
+
+def stop_capped_group(args, path, group):
+    """Keep enforcing the cap even if evidence cannot be saved."""
+    for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 1)):
+        with contextlib.suppress(OSError):
+            os.killpg(group, sig)
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline and alive(group):
+            time.sleep(0.05)
+    try:
+        save_cap_stop(args.contract, path, group, args.max_responses)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, Refusal) as error:
+        print(f'pi-launcher: could not save cap-stop evidence: {error}', file=sys.stderr)
+    print(f'pi-launcher: response cap {args.max_responses} reached; stopped process group {group}. '
+          'Finish the step with sdlc.py step <run> <name> complete --stopped-by cap.', file=sys.stderr)
 
 
 def alive(group):

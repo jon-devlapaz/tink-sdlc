@@ -1,4 +1,5 @@
 """The bundled Pi launcher adapter, driven through sdlc.py step and its own CLI with a fake Pi."""
+import fcntl
 import json
 import os
 import subprocess
@@ -365,6 +366,25 @@ class PiLauncherTests(StageBase):
         self.assertEqual(len(self.calls()), 1)
         self.report.with_name('build.md').write_text('TEST report')
         self.assertIn('stopped at its response cap', self.step('build', 'complete', ok=False).stderr)
+        session = self.session_file()
+        rows = [json.loads(line) for line in session.read_text().splitlines()]
+        rows[-1]['message']['stopReason'] = 'stop'
+        session.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        checkpoint.unlink()
+        with checkpoint.with_suffix('.cap-lock').open('r+b') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with subprocess.Popen([PYTHON, str(self.root / '_system/scripts/sdlc.py'), 'step', 'r', 'build', 'complete'],
+                                  cwd=self.root, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True) as completing:
+                try:
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        completing.wait(timeout=1)
+                    checkpoint.write_text(original)
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+                _, errors = completing.communicate(timeout=10)
+                self.assertNotEqual(completing.returncode, 0)
+                self.assertIn('stopped at its response cap', errors)
         checkpoint.unlink()
         self.step('build', 'complete', '--stopped-by', 'operator')
         self.assertEqual((self.contract()['state'], self.contract()['stopped_by']), ('stopped', 'operator'))
