@@ -19,6 +19,9 @@ implementing `tink-sdlc-launcher` protocol 1 (one is bundled for Pi, below):
   It must make **zero provider requests** and reply `finished: true` only when the
   retained session's newest turn ended normally on the pin. `complete` refuses on
   `false`, a failure or a missing probe.
+  A capped adapter can also report the boolean `response_cap_reached`. When it
+  reports `true`, ordinary completion refuses even if the turn ended normally.
+  Record the stop with `complete --stopped-by cap`.
 - Each operation returns exit zero and one JSON object on stdout containing
   `protocol: "tink-sdlc-launcher"`, integer `api_version: 1`, `operation` (launch, resume
   or finished) and the exact `model`. Resume and finished responses include the same `session`;
@@ -69,8 +72,9 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   are not watched.
 - With `--max-responses N`, admission leaves a watcher (in its own session) that counts the
   assistant answers in the session file every half second and, once there are N, ends Pi's
-  process group and writes the stop to the step's `.pi.log`. Finish such a step with
-  `complete --stopped-by cap`. Resume refuses a session that already holds N answers. An
+  process group before saving any stop evidence. The finished probe counts the
+  same recorded answers, so a missing checkpoint cannot hide a reached cap.
+  Finish such a step with `complete --stopped-by cap`. Resume refuses a session that already holds N answers. An
   answer requested before the stop may still be charged; the cap counts recorded answers.
 
 pi-herdr 0.6.0's `herdr_resume_agent` re-derives the model without the spawn-level pin

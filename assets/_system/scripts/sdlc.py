@@ -2934,12 +2934,18 @@ def step_adapter(record, operation, contract, resolve=False):
         raise ValueError('Step adapter cannot resume the pinned session.')
     if operation == 'finished' and (reply.get('session') != record['session'] or type(reply.get('finished')) is not bool):
         raise ValueError('Step adapter gave no finished answer for the pinned session.')
+    if operation == 'finished' and 'response_cap_reached' in reply:
+        if not record.get('max_responses') or type(reply['response_cap_reached']) is not bool:
+            raise ValueError('Step adapter gave an invalid response cap answer for the pinned session.')
     if not resolve and (not isinstance(reply.get('session'), str) or not reply['session'].strip()):
         raise ValueError('Step adapter returned no session identity.')
     return reply
 
 
 NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, stopped, failed or still running)'
+CAP_REACHED = 'not ended: reached its response cap'
+CAP_STOPPED = 'not ended: stopped at its response cap'
+RECORD_CAP_STOP = 'The worker reached its response cap. Record it with complete --stopped-by cap.'
 STEP_STATES = [word for word in WORDS['steps[].state'] if word != 'unreadable']
 FINISHED_STEPS = ('completed', 'stopped')
 STOPPED_WORDS = {'operator': 'by the operator', 'cap': 'at its response cap'}
@@ -2987,21 +2993,23 @@ def end_process_group(record, contract):
     raise ValueError(f'Process group {group} survived SIGKILL; nothing was recorded.')
 
 
-def probe_turn(record, contract):
+def probe_turn(record, contract, checkpoint):
     """What the adapter's offline finished probe sees now, as (turn, words); never stored.
     `active` alone cannot tell a running agent from an ended turn (tinkery#615)."""
+    if checkpoint:
+        return 'not-ended', CAP_STOPPED
+    if cap_record(record, contract, '.cap-stopping'):
+        return 'not-ended', CAP_REACHED
     try:
         step_paths(record)
-        ended = step_adapter(record, 'finished', contract)['finished']
+        reply = step_adapter(record, 'finished', contract)
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
         return 'unknown', f'unknown: {error}'
-    if ended:
+    if reply.get('response_cap_reached'):
+        return 'not-ended', CAP_REACHED
+    if reply['finished']:
         return 'ended', 'ended: read the report, then complete the step'
     return 'not-ended', f'not ended: {NOT_FINISHED}'
-
-
-def observed_turn(record, contract):
-    return probe_turn(record, contract)[1]
 
 
 def cap_record(record, contract, suffix):
@@ -3055,16 +3063,14 @@ def step_facts(path):
         fact = {'name': contract.stem, 'state': state}
         if state == 'stopped':
             fact['stopped_by'] = record.get('stopped_by')
-        if state == 'active':
-            fact['turn'], fact['observed_turn'] = 'not-ended', 'not ended: stopped at its response cap'
         if state in ('active', 'stopped'):
             with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
                 if stop := cap_stop(record, contract):
                     fact['cap_stop'] = stop
                     if state == 'stopped':
                         fact['stopped_by'] = 'cap'
-        if state == 'active' and 'cap_stop' not in fact:
-            fact['turn'], fact['observed_turn'] = probe_turn(record, contract)
+        if state == 'active':
+            fact['turn'], fact['observed_turn'] = probe_turn(record, contract, fact.get('cap_stop'))
         facts.append(fact)
     return facts
 
@@ -3101,6 +3107,9 @@ def worker_action(slug, steps, newest=None, verification=None):
         return (f"The {step['name']} step's launch or resume did not confirm; a worker may still be running. "
                 f'Inspect it with {command} show and the actual harness or session, then reconcile that session '
                 'before explicitly preparing another uniquely named step.')
+    if step['observed_turn'] == CAP_REACHED:
+        return (f"The {step['name']} worker reached its response cap. Record the stop with "
+                f'{command} complete --stopped-by cap.')
     if step['turn'] == 'ended':
         return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
     if step['turn'] == 'not-ended':
@@ -3150,7 +3159,7 @@ def step(args):
     if args.action == 'show':
         record = read_json(contract)
         if isinstance(record, dict) and record.get('state') == 'active':
-            record['observed_turn'] = observed_turn(record, contract)
+            record['observed_turn'] = probe_turn(record, contract, cap_stop(record, contract))[1]
         print(json.dumps(record, indent=2))
         return
     with locked(path / '.writer-lock'):
@@ -3197,7 +3206,8 @@ def step(args):
                 if args.stopped_by:
                     print(end_process_group(record, contract))
                     reason = args.stopped_by
-                    if cap_record(record, contract, '.cap-stopping') or cap_stop(record, contract):
+                    if (reason == 'operator' and record.get('max_responses')
+                            and probe_turn(record, contract, cap_stop(record, contract))[1] in (CAP_REACHED, CAP_STOPPED)):
                         reason = 'cap'
                     contents = report.read_bytes() if report.is_file() else b''
                     record.update(state='stopped', stopped_by=reason,
@@ -3207,20 +3217,22 @@ def step(args):
                           + ('its report digest is stored.' if contents.strip() else 'it left no report.'))
                     return
                 if cap_record(record, contract, '.cap-stopping') or cap_stop(record, contract):
-                    raise ValueError('The worker stopped at its response cap. Record it with complete --stopped-by cap.')
+                    raise ValueError(RECORD_CAP_STOP)
                 if not report.is_file():
                     raise ValueError(f'Step report is missing at {report}; completion refused, with no project-root fallback.')
                 contents = report.read_bytes()
                 if not contents.strip():
                     raise ValueError('Step report is empty; completion refused.')
-                # A report alone can be left by an interrupted run; the adapter must confirm the agent finished.
-                if not step_adapter(record, 'finished', contract)['finished']:
-                    raise ValueError(NOT_FINISHED + '; resume the step and complete it after the agent ends its turn.')
                 group = record.get('process_group')
                 if 'max_responses' in record and type(group) is int and group > 1 and group_alive(group):
                     raise ValueError('The capped worker process is still present. Wait for it to exit, then read status again.')
-                if cap_record(record, contract, '.cap-stopping') or cap_stop(record, contract):
-                    raise ValueError('The worker stopped at its response cap. Record it with complete --stopped-by cap.')
+                # Read the capped session only after the group can no longer append responses.
+                reply = step_adapter(record, 'finished', contract)
+                if (reply.get('response_cap_reached') or cap_record(record, contract, '.cap-stopping')
+                        or cap_stop(record, contract)):
+                    raise ValueError(RECORD_CAP_STOP)
+                if not reply['finished']:
+                    raise ValueError(NOT_FINISHED + '; resume the step and complete it after the agent ends its turn.')
                 record.update(state='completed', report_sha256=digest(contents))
                 write_json(contract, record)
             else:

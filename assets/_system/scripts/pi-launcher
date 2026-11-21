@@ -10,8 +10,8 @@ on the pin; with a response cap, a watcher left after admission ends Pi's proces
 once the session holds that many answers, and resume refuses a session already at its cap;
 the builder prompt states its write and network
 boundaries and names pending provisional seed checks from sdlc status;
-finished reads only local files and reports true only when the newest turn ended
-normally on the pin.
+finished reads only local files and reports whether the newest turn ended normally
+on the pin and whether a capped session reached its response limit.
 Launch records Pi's session folder beside the step contract; resume and finished read it
 from there, so a reader's PI_CODING_AGENT_SESSION_DIR cannot hide the session.
 Refuses: pins without an explicit thinking level, models absent from Pi's local
@@ -132,9 +132,9 @@ def entries(path):
     return found
 
 
-def branch(path):
+def branch(rows):
     """The active branch: the newest entry and its parent chain, oldest first."""
-    tree = [e for e in entries(path) if e.get('type') != 'session' and e.get('id')]
+    tree = [e for e in rows if e.get('type') != 'session' and e.get('id')]
     by_id = {e['id']: e for e in tree}
     chain, node, seen = [], tree[-1] if tree else None, set()
     while node and node['id'] not in seen:
@@ -153,7 +153,7 @@ def answered_by(entry):
 
 def recorded_model(path):
     """Pi's own restore rule: the last model_change or assistant answer on the branch."""
-    for entry in reversed(branch(path)):
+    for entry in reversed(branch(entries(path))):
         if entry.get('type') == 'model_change':
             return f"{entry.get('provider')}/{entry.get('modelId')}"
         if answered_by(entry):
@@ -161,9 +161,9 @@ def recorded_model(path):
     return None
 
 
-def finished(path, pin):
+def finished(rows, pin):
     """The newest entry on the active branch is a pinned answer that stopped normally."""
-    chain = branch(path)
+    chain = branch(rows)
     last = chain[-1] if chain else {}
     return answered_by(last) == pin and last['message'].get('stopReason') == 'stop'
 
@@ -201,7 +201,7 @@ def resolve(args, operation):
     path = retained_session(args, provider, model_id) if operation == 'resume' else None
     if args.max_responses is not None and args.max_responses < 1:
         raise Refusal('A response cap must be at least 1.')
-    if path and args.max_responses and responses(path) >= args.max_responses:
+    if path and args.max_responses and responses(entries(path)) >= args.max_responses:
         raise Refusal(f'The session already holds its cap of {args.max_responses} responses; resume refused. '
                       'Finish the step with complete --stopped-by cap.')
     if operation == 'launch':
@@ -320,8 +320,8 @@ def stop(process):
         pass
 
 
-def responses(path):
-    return sum(1 for entry in entries(path) if answered_by(entry))
+def responses(rows):
+    return sum(1 for entry in rows if answered_by(entry))
 
 
 def display_excerpt(words, limit):
@@ -331,7 +331,7 @@ def display_excerpt(words, limit):
 
 def last_shell_result(path):
     """Keep the latest completed shell result, not a worker claim or a Verify receipt."""
-    messages = [entry.get('message') or {} for entry in branch(path) if entry.get('type') == 'message']
+    messages = [entry.get('message') or {} for entry in branch(entries(path)) if entry.get('type') == 'message']
     for index in range(len(messages) - 1, -1, -1):
         result = messages[index]
         if result.get('role') != 'toolResult' or result.get('toolName') != 'bash':
@@ -409,7 +409,7 @@ def watch(args):
             os.kill(group, 0)
         except OSError:
             return
-        if responses(path) >= args.max_responses:
+        if responses(entries(path)) >= args.max_responses:
             stop_capped_group(args, path, group)
             return
         time.sleep(WATCH_SECONDS)
@@ -419,13 +419,6 @@ def stop_capped_group(args, path, group):
     """Keep enforcing the cap even if evidence cannot be saved."""
     if not alive(group):
         return
-    contract = Path(args.contract)
-    record = None
-    try:
-        record = {'session': header(path)['id'], 'process_group': group, 'cap': args.max_responses}
-        write_cap_record(contract.with_suffix('.cap-stopping'), record)
-    except (OSError, ValueError, KeyError, TypeError) as error:
-        print(f'pi-launcher: could not record the cap stop in progress: {error}', file=sys.stderr)
     for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 1)):
         with contextlib.suppress(OSError):
             os.killpg(group, sig)
@@ -433,8 +426,8 @@ def stop_capped_group(args, path, group):
         while time.monotonic() < deadline and alive(group):
             time.sleep(0.05)
     try:
-        if record is not None:
-            save_cap_stop(contract, path, record)
+        record = {'session': header(path)['id'], 'process_group': group, 'cap': args.max_responses}
+        save_cap_stop(args.contract, path, record)
     except (OSError, ValueError, KeyError, TypeError, AttributeError, Refusal) as error:
         print(f'pi-launcher: could not save cap-stop evidence: {error}', file=sys.stderr)
     print(f'pi-launcher: response cap {args.max_responses} reached; stopped process group {group}. '
@@ -531,7 +524,13 @@ def main():
             session = args.session
         elif args.operation == 'finished':
             provider, model_id, _ = parse_pin(args.model)
-            done = finished(retained_session(args, provider, model_id), f'{provider}/{model_id}')
+            path = retained_session(args, provider, model_id)
+            cap = read_json(Path(args.contract), 'Step contract').get('max_responses')
+            if cap is not None and (type(cap) is not int or cap < 1):
+                raise Refusal('A response cap must be at least 1.')
+            rows = entries(path)
+            reached_cap = responses(rows) >= cap if cap is not None else None
+            done = finished(rows, f'{provider}/{model_id}')
             session = args.session
         else:
             session, group = admit(args, operation)
@@ -541,6 +540,8 @@ def main():
     reply = {'protocol': PROTOCOL, 'api_version': 1, 'operation': operation, 'model': args.model}
     if args.operation == 'finished':
         reply['finished'] = done
+        if reached_cap is not None:
+            reply['response_cap_reached'] = reached_cap
     if session:
         reply['session'] = session
     if args.operation in ('launch', 'resume'):

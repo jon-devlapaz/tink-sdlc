@@ -105,6 +105,8 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   An active step with this checkpoint still needs explicit stop recording. A recorded
   cap stop retains the checkpoint. Recording a stop preserves this observed reason,
   including when an older client already recorded an operator stop before the checkpoint arrived.
+  A reached cap can also set `turn` to `not-ended` and direct the operator to
+  record the cap stop in `next_action` before a checkpoint exists.
   An uncertain step adds `owed`: true while it is the newest step and so still owes reconciliation. An active step's turn, or else the newest step when it is uncertain, sets `next_action` (after gates and locks), so a run that nothing is building
   is never mistaken for running work, and one that may be is never mistaken for idle. Older runtimes omit the field: absence means unknown.
 - `log`: `path` (checkout-relative, regular UTF-8 file), `text` (last 256 KiB,
