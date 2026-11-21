@@ -485,6 +485,8 @@ class PiLauncherTests(StageBase):
                 os.killpg(group, 0)
             except ProcessLookupError:
                 return True
+            except PermissionError:
+                return False
             return False
 
         self.wait_for(exited, 'normal worker did not exit')
@@ -505,10 +507,30 @@ class PiLauncherTests(StageBase):
             time.sleep(0.1)
         try:
             self.report.write_text('TEST report')
+            status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+            self.assertIn('Wait for it to exit', status['next_action'])
+            self.assertNotIn('then run', status['next_action'])
             self.assertIn('capped worker process is still present', self.step('build', 'complete', ok=False).stderr)
             self.assertEqual(self.contract()['state'], 'active')
         finally:
             self.step('build', 'complete', '--stopped-by', 'operator')
+
+    def test_cap_stops_child_after_worker_leader_exits(self):
+        source = self.adapter.read_text()
+        anchor = '    path, group = Path(args.session_file), args.group'
+        self.assertEqual(source.count(anchor), 1)
+        self.adapter.write_text(source.replace(anchor, '    time.sleep(1)\n' + anchor))
+        child_file = self.base / 'TEST-child.pid'
+        self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
+                  '--launcher', str(self.adapter), '--max-responses', '1')
+        self.step('build', 'launch', env={'FAKE_PI_CHILD': str(child_file)})
+        self.wait_for(child_file.is_file, 'the stand-in did not start its child')
+        child = int(child_file.read_text())
+        self.addCleanup(lambda: subprocess.run(['kill', '-9', str(child)], capture_output=True))
+        checkpoint = self.root / 'runs/r/steps/build.cap-stop'
+        self.wait_for(checkpoint.is_file, 'the watcher lost the cap when the leader exited')
+        with self.assertRaises(ProcessLookupError):
+            os.kill(child, 0)
 
     def test_a_stop_refuses_a_process_group_that_is_no_longer_the_step(self):
         self.prepare()

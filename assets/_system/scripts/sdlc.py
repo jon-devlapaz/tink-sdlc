@@ -2946,6 +2946,7 @@ NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, s
 CAP_REACHED = 'not ended: reached its response cap'
 CAP_STOPPED = 'not ended: stopped at its response cap'
 RECORD_CAP_STOP = 'The worker reached its response cap. Record it with complete --stopped-by cap.'
+CAPPED_GROUP_PRESENT = 'The capped worker process is still present. Wait for it to exit, then read status again.'
 STEP_STATES = [word for word in WORDS['steps[].state'] if word != 'unreadable']
 FINISHED_STEPS = ('completed', 'stopped')
 STOPPED_WORDS = {'operator': 'by the operator', 'cap': 'at its response cap'}
@@ -2960,6 +2961,12 @@ def group_alive(group):
     except PermissionError:
         return True
     return True
+
+
+def capped_group_present(record):
+    """A final response does not prove that a capped process group has exited."""
+    group = record.get('process_group')
+    return 'max_responses' in record and type(group) is int and group > 1 and group_alive(group)
 
 
 def end_process_group(record, contract):
@@ -3008,6 +3015,8 @@ def probe_turn(record, contract, checkpoint):
     if reply.get('response_cap_reached'):
         return 'not-ended', CAP_REACHED, True
     if reply['finished']:
+        if capped_group_present(record):
+            return 'unknown', f'unknown: {CAPPED_GROUP_PRESENT}', False
         return 'ended', 'ended: read the report, then complete the step', False
     return 'not-ended', f'not ended: {NOT_FINISHED}', False
 
@@ -3225,9 +3234,8 @@ def step(args):
                 contents = report.read_bytes()
                 if not contents.strip():
                     raise ValueError('Step report is empty; completion refused.')
-                group = record.get('process_group')
-                if 'max_responses' in record and type(group) is int and group > 1 and group_alive(group):
-                    raise ValueError('The capped worker process is still present. Wait for it to exit, then read status again.')
+                if capped_group_present(record):
+                    raise ValueError(CAPPED_GROUP_PRESENT)
                 # Read the capped session only after the group can no longer append responses.
                 reply = step_adapter(record, 'finished', contract)
                 if (reply.get('response_cap_reached') or cap_record(record, contract, '.cap-stopping')

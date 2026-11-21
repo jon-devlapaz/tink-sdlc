@@ -404,13 +404,16 @@ def watched(args, process, path, log):
 def watch(args):
     """Runs until the worker exits, or stops its whole process group at the cap and says so in the step's log."""
     path, group = Path(args.session_file), args.group
-    while True:
+    while alive(group):
+        leader_alive = True
         try:
             os.kill(group, 0)
         except OSError:
-            return
+            leader_alive = False
         if responses(entries(path)) >= args.max_responses:
             stop_capped_group(args, path, group)
+            return
+        if not leader_alive:
             return
         time.sleep(WATCH_SECONDS)
 
