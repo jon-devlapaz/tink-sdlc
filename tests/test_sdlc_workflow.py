@@ -94,6 +94,41 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('real check', log.read_text())
         self.assertNotIn('alternate check', log.read_text())
 
+    def test_fetched_default_policy_takes_precedence_over_old_run_metadata(self):
+        old = subprocess.check_output(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], text=True).strip()
+        self.config([{'argv': ['python3', '-c', 'print("updated default check")'], 'timeout_seconds': 5}])
+        self.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+        self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+        self.git('switch', '-qc', 'example-build')
+        self.create_ready()
+        metadata = self.root / 'runs/example/run.json'
+        stored = json.loads(metadata.read_text())
+        metadata.write_text(json.dumps({**stored, 'policy_base': old}))
+
+        self.cli('verify', 'example')
+        log = self.root / 'runs/example/04-test/output/test-log.md'
+        self.assertIn('updated default check', log.read_text())
+
+    def test_custom_default_policy_uses_local_git_config(self):
+        self.git('branch', '-m', 'trunk')
+        self.git('config', '--local', 'sdlc.policyBaseRef', 'refs/heads/trunk')
+        self.git('switch', '-qc', 'example-build')
+        self.create_ready()
+
+        self.cli('verify', 'example')
+
+    def test_review_policy_accepts_git_checkout_line_endings(self):
+        (self.root / '.gitattributes').write_text('_shared/REVIEW.md text eol=crlf\n')
+        self.git('add', '.gitattributes')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@local', 'commit', '-qm', 'use CRLF in checkout')
+        guide = self.root / '_shared/REVIEW.md'
+        guide.unlink()
+        self.git('restore', '--', '_shared/REVIEW.md')
+        self.assertIn(b'\r\n', guide.read_bytes())
+        self.create_ready()
+
+        self.cli('verify', 'example')
+
     def test_changed_review_policy_blocks_verification_and_review(self):
         self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
         self.git('switch', '-qc', 'example-build')

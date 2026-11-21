@@ -111,7 +111,7 @@ Configure `_system/verification.json` with nonempty argv arrays and timeouts. A 
 python3 _system/scripts/sdlc.py verify fix-example
 ```
 
-Verify uses the check policy from the common ancestor of the candidate and the fetched default branch. Without a fetched default, it uses the local main or master branch. For standalone repos with another branch name, a new run records its starting commit. Verify refuses if the candidate commit or working files change the check policy or `_shared/REVIEW.md`. Stage 5 requires current evidence under both policies and uses the same base for setup. Use separately reviewed project checks to land policy changes, then update the candidate from that base.
+Verify uses the check policy from the common ancestor of the candidate and the default branch. It uses the fetched default when available, then looks for main or master. For a standalone repo with another default, set its full ref in local Git config, for example `git config --local sdlc.policyBaseRef refs/heads/trunk`. Verify refuses if the candidate commit or working files change the check policy or `_shared/REVIEW.md`. Stage 5 requires current evidence under both policies, uses the same base for setup, and checks both files in the review checkout before opening the session. Use separately reviewed project checks to land policy changes, then update the candidate from that base.
 
 Verification writes the log (`runs/<slug>/04-test/output/test-log.md`, named in any failure) and a receipt binding the commit, tracked and nonignored untracked files, artifact inputs, policy, test lock and log digest.
 

@@ -683,7 +683,14 @@ def changed_report(before_files, after_files):
 
 
 def default_policy_ref():
-    """Use the fetched default branch when available, or the conventional local default."""
+    """Resolve the default from Git state outside the candidate checkout files."""
+    setting = run_git(ROOT, 'config', '--local', '--get', 'sdlc.policyBaseRef')
+    if setting.returncode == 0:
+        ref = setting.stdout.rstrip('\n')
+        if not ref.startswith(('refs/heads/', 'refs/remotes/')) or run_git(
+                ROOT, 'show-ref', '--verify', '--quiet', ref).returncode:
+            raise ValueError('Git sdlc.policyBaseRef must name an existing full branch ref.')
+        return ref
     remote_head = run_git(ROOT, 'symbolic-ref', '-q', 'refs/remotes/origin/HEAD')
     if remote_head.returncode == 0:
         return remote_head.stdout.strip()
@@ -693,29 +700,22 @@ def default_policy_ref():
     return None
 
 
-def policy_base(path):
-    """Resolve a single trusted ancestor. Standalone runs can use the commit recorded at creation."""
-    recorded = require_run(path).get('policy_base')
-    if recorded is not None:
-        if not isinstance(recorded, str) or not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', recorded):
-            raise ValueError('The recorded policy base is not a Git commit ID.')
-        if run_git(ROOT, 'merge-base', '--is-ancestor', recorded, 'HEAD').returncode:
-            raise ValueError('The recorded policy base is no longer an ancestor of HEAD.')
-        return recorded
+def policy_base():
+    """Resolve one common ancestor with the trusted default branch."""
     ref = default_policy_ref()
     if ref is None:
         git('rev-parse', '--verify', 'HEAD')  # Keep the Git error for an unborn branch or a missing repository.
-        raise ValueError('Cannot find the default branch for verification policy. Fetch it or start a new run '
-                         'from the committed project baseline.')
+        raise ValueError('Cannot find the default branch for verification policy. Fetch it or set '
+                         'sdlc.policyBaseRef in local Git config to the full ref of the default branch.')
     bases = run_git(ROOT, 'merge-base', '--all', ref, 'HEAD')
     if bases.returncode or len(bases.stdout.splitlines()) != 1:
         raise ValueError(f'Cannot find one policy base with {ref}; fetch the default branch and its history.')
     return bases.stdout.strip()
 
 
-def checked_policy(path):
+def checked_policy():
     """Read the base policy and refuse candidate policy edits before verification or review."""
-    base = policy_base(path)
+    base = policy_base()
     for candidate in (('HEAD',), ()):
         compared = run_git(ROOT, 'diff', '--name-only', '-z', base, *candidate, '--', CHECK_POLICY, REVIEW_POLICY)
         if compared.returncode:
@@ -729,12 +729,23 @@ def checked_policy(path):
     if found.returncode:
         raise ValueError(f'Cannot find review policy at {base[:12]}: {git_line(found)}')
     review = git('show', f'{base}:{REVIEW_POLICY}') if found.stdout else None
-    for name, content in ((CHECK_POLICY, config), (REVIEW_POLICY, review)):
-        candidate = regular_evidence(ROOT / name)
-        if (candidate.read_bytes() if candidate.exists() else None) != content:
-            raise ValueError(f'Candidate changes policy from {base[:12]}: {name}. '
+    policy = (config, review)
+    check_policy_files(ROOT, policy)
+    return policy
+
+
+def check_policy_files(checkout, policy):
+    """Confirm the files seen by the runner or reviewer match their base blobs."""
+    root = checkout.resolve()
+    for name, content in zip((CHECK_POLICY, REVIEW_POLICY), policy):
+        file = root / name
+        if file.resolve() != file or (file.exists() and not file.is_file()):
+            raise ValueError(f'Policy must be a regular file: {name}.')
+        actual = file.read_bytes().replace(b'\r\n', b'\n') if file.exists() else None
+        expected = content.replace(b'\r\n', b'\n') if content is not None else None
+        if actual != expected:
+            raise ValueError(f'Checkout changes base policy: {name}. '
                              'Land policy changes through separately reviewed project checks first.')
-    return config, review
 
 
 def checkout_setup(config=None):
@@ -854,7 +865,7 @@ def manual_marks(path):
 def evidence_inputs(path, policy=None):
     attested = manual_marks(path)
     candidate = snapshot()
-    config, review = checked_policy(path) if policy is None else policy
+    config, review = checked_policy() if policy is None else policy
     return {'candidate': candidate, 'inputs': inputs(path, 3),
             'policy': digest(config), 'review_policy': digest(review) if review is not None else None,
             'test_lock': test_lock(path),
@@ -918,15 +929,13 @@ def create(args):
         raise ValueError('--issue creates a light run; a full run defines intent, spec and plan itself.')
     issue = approved_issue(args.issue) if args.issue is not None else None
     path.parent.mkdir(exist_ok=True)
-    start = run_git(ROOT, 'rev-parse', '--verify', 'HEAD') if default_policy_ref() is None else None
-    standalone = {'policy_base': start.stdout.strip()} if start is not None and start.returncode == 0 else {}
     with locked(run_lock(args.run)):
         if path.exists():
             raise ValueError('Run already exists; nothing overwritten.')
         temporary = Path(tempfile.mkdtemp(prefix=f'.{args.run}-', dir=path.parent))
         try:
             write_json(temporary / 'run.json', {'profile': args.profile, 'kind': args.kind, 'schema': 1,
-                                              'run_id': str(uuid.uuid4()), **standalone, **({'issue': issue[0]} if issue else {})})
+                                              'run_id': str(uuid.uuid4()), **({'issue': issue[0]} if issue else {})})
             write_json(temporary / 'checklist.json', {'schema': 1, 'items': issue[2] if issue else []})
             if issue:
                 (temporary / 'brief.md').write_text(issue[1])
@@ -1142,7 +1151,7 @@ def verify(args):
             if missing:
                 raise ValueError('Cited evidence is missing from this checkout: ' + ', '.join(missing))
             before_files = snapshot_files()
-            policy = checked_policy(path)
+            policy = checked_policy()
             before = evidence_inputs(path, policy)
             config = checks_config(policy[0])
             check_env = runner_env(config)
@@ -1755,7 +1764,7 @@ def status_state(path):
     checklist = checklist_view(path, verified)
     errors = []
     try:
-        config = checks_config(checked_policy(path)[0])
+        config = checks_config(checked_policy()[0])
     except (ValueError, OSError, TypeError, AttributeError) as error:
         config = None
         errors.append(str(error))
@@ -2764,7 +2773,8 @@ def stage(args):
     if seed_contract:
         confirmer = 'agent' if confirmation['schema_version'] == 3 else 'operator'
         prompt += f' The {confirmer}-confirmed seed contract is at {seed_contract}; it is input, not authorization.'
-    setup = checkout_setup(checked_policy(path)[0] if n == 5 else None) if make_worktree else None
+    review_policy = checked_policy() if n == 5 else None
+    setup = checkout_setup(review_policy[0] if review_policy else None) if make_worktree else None
     warn = stage_dirty(run) if make_worktree else []
     warning = ('warning: not carried into the new checkout: ' + ', '.join(warn[:5]) + (f' (+{len(warn) - 5} more)' if len(warn) > 5 else '')
                if warn else None)
@@ -2835,6 +2845,11 @@ def stage(args):
         if failure:
             abandon(failure, 'setup')
         print(f"setup: passed in {target}: {shlex.join(setup['argv'])}")
+    if review_policy and not args.check:
+        try:
+            check_policy_files(target, review_policy)
+        except (ValueError, OSError) as error:
+            abandon(str(error), 'review policy')
     if warning:
         print(warning)
     if n in (3, 5) and (undeliverable := delivery_warning(run)):
