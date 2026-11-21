@@ -1815,7 +1815,7 @@ def status_state(path):
     mark_reason = unavailable or ('' if manual else 'This run has no manual checklist items to attest.')
     checks = (config['checks'] if config else []) + [configured(i, config['seed_timeout_seconds'] if config else 120) for i in checklist['items'] if i['automatic']]
     timeout = sum(c['timeout_seconds'] for c in checks) + 30 + (120 if config and config['require_tink'] else 0)
-    next_action = unavailable or worker_action(path.name, steps, newest) or (errors[0] if errors else '') or {
+    next_action = unavailable or worker_action(path.name, steps, newest, state if not errors else None) or (errors[0] if errors else '') or {
         'current': (f'{unproven} Then independent PR review and release checks.'
                     if (unproven := unproven_goal(checklist['items'])) else 'independent PR review and release checks.'),
         'awaiting-attestation': (record.get('error') or 'Record the pending attestations, then rerun verification.') if record else '',
@@ -1902,6 +1902,15 @@ def status_text(view):
         lines.append('Verification: not run (implementation may be pending; a text log is not passing evidence)')
     if all(g['status'] == 'approved' for g in view['gates']):
         lines.append(f"Next: {view['next_action']}")
+    for fact in view['steps']:
+        if stop := fact.get('cap_stop'):
+            lines.append(f"Worker step {fact['name']} stopped at its response cap ({stop['cap']}).")
+            files = stop['changed_files']
+            lines.append('Changed files at stop: ' + ('unavailable' if files is None else ', '.join(files) or 'none')
+                         + (f" (+{stop['omitted_files']} more)" if stop['omitted_files'] else ''))
+            if result := stop['shell']:
+                outcome = 'error' if result['error'] else 'no error reported'
+                lines.append(f"Last shell result ({outcome}, not Verify): {result['command']}: {result['output']}")
     if view['pr']:
         lines.append(f"PR: {view['pr']['url']}")
     if view['labels']['count']:
@@ -2925,12 +2934,19 @@ def step_adapter(record, operation, contract, resolve=False):
         raise ValueError('Step adapter cannot resume the pinned session.')
     if operation == 'finished' and (reply.get('session') != record['session'] or type(reply.get('finished')) is not bool):
         raise ValueError('Step adapter gave no finished answer for the pinned session.')
+    if operation == 'finished' and 'response_cap_reached' in reply:
+        if not record.get('max_responses') or type(reply['response_cap_reached']) is not bool:
+            raise ValueError('Step adapter gave an invalid response cap answer for the pinned session.')
     if not resolve and (not isinstance(reply.get('session'), str) or not reply['session'].strip()):
         raise ValueError('Step adapter returned no session identity.')
     return reply
 
 
 NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, stopped, failed or still running)'
+CAP_REACHED = 'not ended: reached its response cap'
+CAP_STOPPED = 'not ended: stopped at its response cap'
+RECORD_CAP_STOP = 'The worker reached its response cap. Record it with complete --stopped-by cap.'
+CAPPED_GROUP_PRESENT = 'The capped worker process is still present. Wait for it to exit, then read status again.'
 STEP_STATES = [word for word in WORDS['steps[].state'] if word != 'unreadable']
 FINISHED_STEPS = ('completed', 'stopped')
 STOPPED_WORDS = {'operator': 'by the operator', 'cap': 'at its response cap'}
@@ -2945,6 +2961,12 @@ def group_alive(group):
     except PermissionError:
         return True
     return True
+
+
+def capped_group_present(record):
+    """A final response does not prove that a capped process group has exited."""
+    group = record.get('process_group')
+    return 'max_responses' in record and type(group) is int and group > 1 and group_alive(group)
 
 
 def end_process_group(record, contract):
@@ -2978,21 +3000,62 @@ def end_process_group(record, contract):
     raise ValueError(f'Process group {group} survived SIGKILL; nothing was recorded.')
 
 
-def probe_turn(record, contract):
+def probe_turn(record, contract, checkpoint):
     """What the adapter's offline finished probe sees now, as (turn, words); never stored.
     `active` alone cannot tell a running agent from an ended turn (tinkery#615)."""
+    if checkpoint:
+        return 'not-ended', CAP_STOPPED, True
+    if cap_record(record, contract, '.cap-stopping'):
+        return 'not-ended', CAP_REACHED, True
     try:
         step_paths(record)
-        ended = step_adapter(record, 'finished', contract)['finished']
+        reply = step_adapter(record, 'finished', contract)
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
-        return 'unknown', f'unknown: {error}'
-    if ended:
-        return 'ended', 'ended: read the report, then complete the step'
-    return 'not-ended', f'not ended: {NOT_FINISHED}'
+        return 'unknown', f'unknown: {error}', False
+    if reply.get('response_cap_reached'):
+        return 'not-ended', CAP_REACHED, True
+    if reply['finished']:
+        if capped_group_present(record):
+            return 'unknown', f'unknown: {CAPPED_GROUP_PRESENT}', False
+        return 'ended', 'ended: read the report, then complete the step', False
+    return 'not-ended', f'not ended: {NOT_FINISHED}', False
 
 
-def observed_turn(record, contract):
-    return probe_turn(record, contract)[1]
+def cap_record(record, contract, suffix):
+    """Read a bounded observation bound to this capped admission."""
+    path = contract.with_suffix(suffix)
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 16384:
+            return None
+        value = read_json(path)
+    except (ValueError, OSError):
+        return None
+    if (not isinstance(value, dict) or not record.get('session') or not record.get('process_group')
+            or not record.get('max_responses') or value.get('session') != record['session']
+            or value.get('process_group') != record['process_group'] or value.get('cap') != record['max_responses']):
+        return None
+    return value
+
+
+def cap_stop(record, contract):
+    """Return saved work, never a verification result."""
+    value = cap_record(record, contract, '.cap-stop')
+    if not value or not {'changed_files', 'omitted_files', 'shell'} <= value.keys():
+        return None
+    files, omitted, shell = value['changed_files'], value['omitted_files'], value['shell']
+    def display(text, limit):
+        return isinstance(text, str) and len(text) <= limit and (not text or text.isprintable())
+    if files is not None and (not isinstance(files, list) or len(files) > 12
+                              or not all(display(pathname, 180) for pathname in files)):
+        return None
+    if type(omitted) is not int or not 0 <= omitted <= 2**32 - 1:
+        return None
+    if shell is not None:
+        if (not isinstance(shell, dict) or not display(shell.get('command'), 240)
+                or not display(shell.get('output'), 600) or type(shell.get('error')) is not bool):
+            return None
+        shell = {name: shell[name] for name in ('command', 'output', 'error')}
+    return {'cap': record['max_responses'], 'changed_files': files, 'omitted_files': omitted, 'shell': shell}
 
 
 def step_facts(path):
@@ -3009,8 +3072,16 @@ def step_facts(path):
         fact = {'name': contract.stem, 'state': state}
         if state == 'stopped':
             fact['stopped_by'] = record.get('stopped_by')
+        if state in ('active', 'stopped'):
+            with contextlib.suppress(ValueError, OSError, KeyError, TypeError):
+                if stop := cap_stop(record, contract):
+                    fact['cap_stop'] = stop
+                    if state == 'stopped':
+                        fact['stopped_by'] = 'cap'
         if state == 'active':
-            fact['turn'], fact['observed_turn'] = probe_turn(record, contract)
+            fact['turn'], fact['observed_turn'], cap_reached = probe_turn(record, contract, fact.get('cap_stop'))
+            if cap_reached:
+                fact['response_cap_reached'] = True
         facts.append(fact)
     return facts
 
@@ -3029,19 +3100,27 @@ def newest_step(path):
     return newest[1] if newest else None
 
 
-def worker_action(slug, steps, newest=None):
+def worker_action(slug, steps, newest=None, verification=None):
     """The next action an active step owes, so a run never reads as being worked on by nobody.
     An uncertain step owes reconciliation while it is the newest step; preparing another ends that."""
     step = next((s for s in steps if s['state'] == 'active'), None)
     if step is None:
         step = next((s for s in steps if s['state'] == 'uncertain' and s['name'] == newest), None)
     if step is None:
+        if verification == 'not-run' and any(s['name'] == newest and s.get('cap_stop') for s in steps):
+            return 'Review the saved cap-stop evidence. Run Verify when the candidate is ready; any human checks still need judgment.'
         return ''
     command = f"python3 _system/scripts/sdlc.py step {slug} {step['name']}"
+    if 'cap_stop' in step:
+        return (f"The {step['name']} worker stopped at its response cap. Review the saved evidence, then record the stop: "
+                f'{command} complete --stopped-by cap.')
     if step['state'] == 'uncertain':
         return (f"The {step['name']} step's launch or resume did not confirm; a worker may still be running. "
                 f'Inspect it with {command} show and the actual harness or session, then reconcile that session '
                 'before explicitly preparing another uniquely named step.')
+    if step.get('response_cap_reached'):
+        return (f"The {step['name']} worker reached its response cap. Record the stop with "
+                f'{command} complete --stopped-by cap.')
     if step['turn'] == 'ended':
         return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
     if step['turn'] == 'not-ended':
@@ -3091,7 +3170,7 @@ def step(args):
     if args.action == 'show':
         record = read_json(contract)
         if isinstance(record, dict) and record.get('state') == 'active':
-            record['observed_turn'] = observed_turn(record, contract)
+            record['observed_turn'] = probe_turn(record, contract, cap_stop(record, contract))[1]
         print(json.dumps(record, indent=2))
         return
     with locked(path / '.writer-lock'):
@@ -3112,7 +3191,8 @@ def step(args):
                       'report': str(report), 'model': model, 'launcher': str(launcher),
                       'launcher_sha256': digest(launcher.read_bytes()), 'state': 'prepared', 'session': None,
                       'prepared_ns': time.time_ns(),
-                      **({'max_responses': args.max_responses} if args.max_responses is not None else {})}
+                      **({'max_responses': args.max_responses, 'start_head': git('rev-parse', 'HEAD').decode().strip()}
+                         if args.max_responses is not None else {})}
             step_paths(record)
             write_json(contract, record)
         else:
@@ -3136,20 +3216,32 @@ def step(args):
                     raise ValueError('Only an active step with a known session can be completed.')
                 if args.stopped_by:
                     print(end_process_group(record, contract))
+                    reason = args.stopped_by
+                    if (reason == 'operator' and record.get('max_responses')
+                            and probe_turn(record, contract, cap_stop(record, contract))[2]):
+                        reason = 'cap'
                     contents = report.read_bytes() if report.is_file() else b''
-                    record.update(state='stopped', stopped_by=args.stopped_by,
+                    record.update(state='stopped', stopped_by=reason,
                                   report_sha256=digest(contents) if contents.strip() else None)
                     write_json(contract, record)
-                    print(f'Recorded step {args.name} as stopped ({STOPPED_WORDS[args.stopped_by]}), not as an ended turn; '
+                    print(f'Recorded step {args.name} as stopped ({STOPPED_WORDS[reason]}), not as an ended turn; '
                           + ('its report digest is stored.' if contents.strip() else 'it left no report.'))
                     return
+                if cap_record(record, contract, '.cap-stopping') or cap_stop(record, contract):
+                    raise ValueError(RECORD_CAP_STOP)
                 if not report.is_file():
                     raise ValueError(f'Step report is missing at {report}; completion refused, with no project-root fallback.')
                 contents = report.read_bytes()
                 if not contents.strip():
                     raise ValueError('Step report is empty; completion refused.')
-                # A report alone can be left by an interrupted run; the adapter must confirm the agent finished.
-                if not step_adapter(record, 'finished', contract)['finished']:
+                if capped_group_present(record):
+                    raise ValueError(CAPPED_GROUP_PRESENT)
+                # Read the capped session only after the group can no longer append responses.
+                reply = step_adapter(record, 'finished', contract)
+                if (reply.get('response_cap_reached') or cap_record(record, contract, '.cap-stopping')
+                        or cap_stop(record, contract)):
+                    raise ValueError(RECORD_CAP_STOP)
+                if not reply['finished']:
                     raise ValueError(NOT_FINISHED + '; resume the step and complete it after the agent ends its turn.')
                 record.update(state='completed', report_sha256=digest(contents))
                 write_json(contract, record)

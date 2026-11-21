@@ -45,6 +45,18 @@ answered = [message(rows[-1]['id'], 'assistant', provider=answer.split('/')[0], 
 if os.environ.get('FAKE_PI_PAUSED'):
     # Stopped after a tool ran, before the closing answer: the shape of a paused run.
     answered.append(message(answered[-1]['id'], 'toolResult', toolName='write'))
+if os.environ.get('FAKE_PI_PROOF'):
+    import subprocess
+    Path('game.js').write_text('TEST game')
+    subprocess.run(['git', 'add', 'game.js'], check=True)
+    subprocess.run(['git', '-c', 'user.name=TEST', '-c', 'user.email=test@example.test',
+                    'commit', '-qm', 'TEST candidate'], check=True)
+    Path('style.css').write_text('TEST local edit')
+    answered[0]['message'].update(stopReason='toolUse', content=[
+        {{'type': 'toolCall', 'name': 'bash', 'id': 'TEST-check',
+          'arguments': {{'command': 'node tests/game.mjs'}}}}])
+    answered.append(message(answered[-1]['id'], 'toolResult', toolName='bash', toolCallId='TEST-check',
+                            isError=False, content=[{{'type': 'text', 'text': 'PASS TEST browser check'}}]))
 path.write_text(''.join(json.dumps(r) + '\\n' for r in rows))
 time.sleep(float(os.environ.get('FAKE_PI_THINK', '0.3')))
 with path.open('a') as stream:
@@ -307,7 +319,7 @@ class PiLauncherTests(StageBase):
         self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
                   '--launcher', str(self.adapter), '--max-responses', '3')
         child_file = self.base / 'TEST-child.pid'
-        self.step('build', 'launch', env={'FAKE_PI_MORE': '20', 'FAKE_PI_CHILD': str(child_file)})
+        self.step('build', 'launch', env={'FAKE_PI_MORE': '20', 'FAKE_PI_CHILD': str(child_file), 'FAKE_PI_PROOF': '1'})
         pid = int(Path(str(self.pi_log) + '.pid').read_text())
         for _ in range(100):
             try:
@@ -330,10 +342,195 @@ class PiLauncherTests(StageBase):
             self.fail('the watcher did not report the cap: ' + log.read_text())
         with self.assertRaises(ProcessLookupError):
             os.kill(child, 0)
+        status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        [step] = status['steps']
+        self.assertEqual(step['state'], 'active')
+        self.assertEqual(step['cap_stop']['cap'], 3)
+        self.assertIn('game.js', step['cap_stop']['changed_files'])
+        self.assertIn('style.css', step['cap_stop']['changed_files'])
+        self.assertEqual(step['cap_stop']['shell'], {
+            'command': 'node tests/game.mjs', 'output': 'PASS TEST browser check', 'error': False})
+        self.assertIn('complete --stopped-by cap', status['next_action'])
+        self.assertEqual(status['verification_status'], 'not-run')
+        checkpoint = self.root / 'runs/r/steps/build.cap-stop'
+        original = checkpoint.read_text()
+        stopped = json.loads(original)
+        stopped['shell']['error'] = True
+        checkpoint.write_text(json.dumps(stopped))
+        self.assertIn('Last shell result (error, not Verify)', self.sdlc('status', 'r').stdout)
+        checkpoint.write_text(json.dumps({**json.loads(original), 'session': 'TEST wrong session'}))
+        self.assertNotIn('cap_stop', json.loads(self.sdlc('status', 'r', '--json').stdout)['run']['steps'][0])
+        checkpoint.write_text(original)
         self.assertIn('already holds its cap of 3 responses', self.step('build', 'resume', ok=False).stderr)
         self.assertEqual(len(self.calls()), 1)
+        self.report.with_name('build.md').write_text('TEST report')
+        self.assertIn('complete --stopped-by cap', self.step('build', 'complete', ok=False).stderr)
+        session = self.session_file()
+        rows = [json.loads(line) for line in session.read_text().splitlines()]
+        rows[-1]['message']['stopReason'] = 'stop'
+        session.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        checkpoint.unlink()
+        self.assertIn('complete --stopped-by cap', self.step('build', 'complete', ok=False).stderr)
+        self.step('build', 'complete', '--stopped-by', 'operator')
+        self.assertEqual((self.contract()['state'], self.contract()['stopped_by']), ('stopped', 'cap'))
+        # An older client can still have recorded an operator stop before evidence arrived.
+        contract = checkpoint.with_suffix('.json')
+        contract.write_text(json.dumps({**self.contract(), 'stopped_by': 'operator'}))
+        checkpoint.write_text(original)
+        status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(status['steps'][0]['cap_stop'], step['cap_stop'])
+        self.assertEqual(status['steps'][0]['stopped_by'], 'cap')
+
+    def wait_for(self, predicate, message):
+        for _ in range(200):
+            if predicate():
+                return
+            time.sleep(0.05)
+        self.fail(message)
+
+    def launch_with_paused_checkpoint(self, *, legacy_marker=False, fail_write=False):
+        steps = self.root / 'runs/r/steps'
+        marker = steps / 'build.cap-stopping'
+        checkpoint = steps / 'build.cap-stop'
+        steps.mkdir(exist_ok=True)
+        if not legacy_marker:
+            marker.mkdir()  # An atomic replace of the legacy marker path must fail.
+        if fail_write:
+            checkpoint.mkdir()  # An atomic replace of the checkpoint path must fail.
+        waiting = self.base / 'TEST-checkpoint-waiting'
+        release = self.base / 'TEST-checkpoint-release'
+        source = self.adapter.read_text()
+        anchor = '    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:'
+        self.assertEqual(source.count(anchor), 1)
+        suffixes = ('.cap-stop', '.cap-stopping') if fail_write else ('.cap-stop',)
+        source = source.replace(anchor,
+                                f"    if path.suffix in {suffixes!r}:\n"
+                                f"        Path({str(waiting)!r}).touch()\n"
+                                "        deadline = time.monotonic() + 20\n"
+                                f"        while not Path({str(release)!r}).exists():\n"
+                                "            if time.monotonic() >= deadline:\n"
+                                "                raise OSError('TEST checkpoint wait timed out')\n"
+                                "            time.sleep(0.05)\n" + anchor)
+        if legacy_marker:
+            # A launcher prepared before cap-aware finished replies.
+            source = source.replace("    print(json.dumps(reply))",
+                                    "    reply.pop('response_cap_reached', None)\n    print(json.dumps(reply))")
+        self.adapter.write_text(source)
+        self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
+                  '--launcher', str(self.adapter), '--max-responses', '1')
+        self.step('build', 'launch', env={'FAKE_PI_LINGER': '60'})
+        contract = self.contract()
+        group = contract['process_group']
+        log, = steps.glob('build.launch-*.pi.log')
+
+        def release_checkpoint():
+            release.touch()
+            self.wait_for(lambda: 'response cap 1 reached' in log.read_text(), 'watcher did not finish')
+
+        self.addCleanup(release_checkpoint)
+        self.wait_for(waiting.is_file, 'watcher did not attempt to save the checkpoint')
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(group, 0)
+        self.assertIn('"stopReason": "stop"', self.session_file().read_text())
+        self.report.write_text('TEST handoff')
+        if legacy_marker:
+            marker.write_text(json.dumps({'session': contract['session'], 'process_group': group, 'cap': 1}))
+        return checkpoint, log, release_checkpoint
+
+    def assert_cap_awaits_stop(self):
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        [step] = run['steps']
+        self.assertEqual((step['state'], step['turn']), ('active', 'not-ended'))
+        self.assertIs(step.get('response_cap_reached'), True)
+        self.assertNotIn('cap_stop', step)
+        self.assertIn('complete --stopped-by cap', run['next_action'])
+        self.assertEqual(run['verification_status'], 'not-run')
+        self.assertIn('reached its response cap', json.loads(self.step('build', 'show').stdout)['observed_turn'])
+        self.assertIn('complete --stopped-by cap', self.step('build', 'complete', ok=False).stderr)
+        self.assertEqual(self.contract()['state'], 'active')
+
+    def test_pending_legacy_marker_guides_status_before_checkpoint(self):
+        checkpoint, _, release = self.launch_with_paused_checkpoint(legacy_marker=True)
+        self.assert_cap_awaits_stop()
+        release()
+        self.assertTrue(checkpoint.is_file())
+
+    def test_unwritable_marker_cannot_hide_a_late_checkpoint(self):
+        _, _, release = self.launch_with_paused_checkpoint()
+        self.assert_cap_awaits_stop()
+        self.step('build', 'complete', '--stopped-by', 'operator')
+        self.assertEqual((self.contract()['state'], self.contract()['stopped_by']), ('stopped', 'cap'))
+        release()
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(run['steps'][0]['cap_stop']['cap'], 1)
+        self.assertEqual(run['verification_status'], 'not-run')
+
+    def test_failed_checkpoint_write_leaves_cap_enforced_and_visible(self):
+        _, log, release = self.launch_with_paused_checkpoint(fail_write=True)
+        release()
+        self.assertIn('could not save cap-stop evidence', log.read_text())
+        self.assert_cap_awaits_stop()
         self.step('build', 'complete', '--stopped-by', 'cap')
-        self.assertEqual(self.contract()['state'], 'stopped')
+        self.assertEqual((self.contract()['state'], self.contract()['stopped_by']), ('stopped', 'cap'))
+
+    def test_normal_turn_below_cap_completes(self):
+        self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
+                  '--launcher', str(self.adapter), '--max-responses', '2')
+        self.launch()
+        self.report.write_text('TEST handoff')
+        group = self.contract()['process_group']
+
+        def exited():
+            try:
+                os.killpg(group, 0)
+            except ProcessLookupError:
+                return True
+            except PermissionError:
+                return False
+            return False
+
+        self.wait_for(exited, 'normal worker did not exit')
+        run = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+        self.assertEqual(run['steps'][0]['turn'], 'ended')
+        self.assertIn('then run python3 _system/scripts/sdlc.py step r build complete.', run['next_action'])
+        self.step('build', 'complete')
+        self.assertEqual(self.contract()['state'], 'completed')
+        self.assertNotIn('stopped_by', self.contract())
+
+    def test_report_and_final_response_cannot_complete_while_capped_worker_is_live(self):
+        self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
+                  '--launcher', str(self.adapter), '--max-responses', '2')
+        self.step('build', 'launch', env={'FAKE_PI_LINGER': '20'})
+        for _ in range(30):
+            if '"stopReason": "stop"' in self.session_file().read_text():
+                break
+            time.sleep(0.1)
+        try:
+            self.report.write_text('TEST report')
+            status = json.loads(self.sdlc('status', 'r', '--json').stdout)['run']
+            self.assertIn('Wait for it to exit', status['next_action'])
+            self.assertNotIn('then run', status['next_action'])
+            self.assertIn('capped worker process is still present', self.step('build', 'complete', ok=False).stderr)
+            self.assertEqual(self.contract()['state'], 'active')
+        finally:
+            self.step('build', 'complete', '--stopped-by', 'operator')
+
+    def test_cap_stops_child_after_worker_leader_exits(self):
+        source = self.adapter.read_text()
+        anchor = '    path, group = Path(args.session_file), args.group'
+        self.assertEqual(source.count(anchor), 1)
+        self.adapter.write_text(source.replace(anchor, '    time.sleep(1)\n' + anchor))
+        child_file = self.base / 'TEST-child.pid'
+        self.step('build', 'prepare', '--report', str(self.report), '--model', PIN,
+                  '--launcher', str(self.adapter), '--max-responses', '1')
+        self.step('build', 'launch', env={'FAKE_PI_CHILD': str(child_file)})
+        self.wait_for(child_file.is_file, 'the stand-in did not start its child')
+        child = int(child_file.read_text())
+        self.addCleanup(lambda: subprocess.run(['kill', '-9', str(child)], capture_output=True))
+        checkpoint = self.root / 'runs/r/steps/build.cap-stop'
+        self.wait_for(checkpoint.is_file, 'the watcher lost the cap when the leader exited')
+        with self.assertRaises(ProcessLookupError):
+            os.kill(child, 0)
 
     def test_a_stop_refuses_a_process_group_that_is_no_longer_the_step(self):
         self.prepare()

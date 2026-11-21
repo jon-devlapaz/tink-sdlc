@@ -10,8 +10,8 @@ on the pin; with a response cap, a watcher left after admission ends Pi's proces
 once the session holds that many answers, and resume refuses a session already at its cap;
 the builder prompt states its write and network
 boundaries and names pending provisional seed checks from sdlc status;
-finished reads only local files and reports true only when the newest turn ended
-normally on the pin.
+finished reads only local files and reports whether the newest turn ended normally
+on the pin and whether a capped session reached its response limit.
 Launch records Pi's session folder beside the step contract; resume and finished read it
 from there, so a reader's PI_CODING_AGENT_SESSION_DIR cannot hide the session.
 Refuses: pins without an explicit thinking level, models absent from Pi's local
@@ -26,6 +26,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -131,9 +132,9 @@ def entries(path):
     return found
 
 
-def branch(path):
+def branch(rows):
     """The active branch: the newest entry and its parent chain, oldest first."""
-    tree = [e for e in entries(path) if e.get('type') != 'session' and e.get('id')]
+    tree = [e for e in rows if e.get('type') != 'session' and e.get('id')]
     by_id = {e['id']: e for e in tree}
     chain, node, seen = [], tree[-1] if tree else None, set()
     while node and node['id'] not in seen:
@@ -152,7 +153,7 @@ def answered_by(entry):
 
 def recorded_model(path):
     """Pi's own restore rule: the last model_change or assistant answer on the branch."""
-    for entry in reversed(branch(path)):
+    for entry in reversed(branch(entries(path))):
         if entry.get('type') == 'model_change':
             return f"{entry.get('provider')}/{entry.get('modelId')}"
         if answered_by(entry):
@@ -160,9 +161,9 @@ def recorded_model(path):
     return None
 
 
-def finished(path, pin):
+def finished(rows, pin):
     """The newest entry on the active branch is a pinned answer that stopped normally."""
-    chain = branch(path)
+    chain = branch(rows)
     last = chain[-1] if chain else {}
     return answered_by(last) == pin and last['message'].get('stopReason') == 'stop'
 
@@ -200,7 +201,7 @@ def resolve(args, operation):
     path = retained_session(args, provider, model_id) if operation == 'resume' else None
     if args.max_responses is not None and args.max_responses < 1:
         raise Refusal('A response cap must be at least 1.')
-    if path and args.max_responses and responses(path) >= args.max_responses:
+    if path and args.max_responses and responses(entries(path)) >= args.max_responses:
         raise Refusal(f'The session already holds its cap of {args.max_responses} responses; resume refused. '
                       'Finish the step with complete --stopped-by cap.')
     if operation == 'launch':
@@ -319,8 +320,73 @@ def stop(process):
         pass
 
 
-def responses(path):
-    return sum(1 for entry in entries(path) if answered_by(entry))
+def responses(rows):
+    return sum(1 for entry in rows if answered_by(entry))
+
+
+def display_excerpt(words, limit):
+    """Bound local tool output for display; preserve no terminal controls."""
+    return ' '.join(''.join(char if char.isprintable() else ' ' for char in words).split())[-limit:]
+
+
+def last_shell_result(path):
+    """Keep the latest completed shell result, not a worker claim or a Verify receipt."""
+    messages = [entry.get('message') or {} for entry in branch(entries(path)) if entry.get('type') == 'message']
+    for index in range(len(messages) - 1, -1, -1):
+        result = messages[index]
+        if result.get('role') != 'toolResult' or result.get('toolName') != 'bash':
+            continue
+        output = ' '.join(block['text'] for block in result.get('content', [])
+                          if isinstance(block, dict) and isinstance(block.get('text'), str))
+        identity = result.get('toolCallId')
+        for message in reversed(messages[:index]):
+            if message.get('role') != 'assistant' or not identity:
+                continue
+            for call in message.get('content', []):
+                if (isinstance(call, dict) and call.get('type') == 'toolCall'
+                        and call.get('id') == identity and call.get('name') == 'bash'):
+                    command = (call.get('arguments') or {}).get('command')
+                    if isinstance(command, str) and type(result.get('isError')) is bool:
+                        return {'command': display_excerpt(command, 240), 'output': display_excerpt(output, 600),
+                                'error': result['isError']}
+        return None
+    return None
+
+
+def save_cap_stop(contract, session, observed):
+    """Record bounded evidence beside the step without changing its state or candidate."""
+    checkpoint = Path(contract).with_suffix('.cap-stop')
+    record = {**observed, 'changed_files': None, 'omitted_files': 0, 'shell': None}
+    with contextlib.suppress(OSError, ValueError, KeyError, TypeError, AttributeError):
+        record['shell'] = last_shell_result(session)
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        start = read_json(Path(contract), 'Step contract').get('start_head')
+        selection = ['--', '.', ':(exclude)runs']
+        output = subprocess.check_output(
+            ['git', '--no-optional-locks', 'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all',
+             *selection], timeout=3, stderr=subprocess.DEVNULL)
+        paths = [path[3:] for path in output.decode(errors='replace').split('\0')[:-1]]
+        if isinstance(start, str) and start.isalnum() and len(start) in (40, 64):
+            committed = subprocess.check_output(
+                ['git', '--no-optional-locks', 'diff', '--name-only', '--no-renames', '-z',
+                 start, 'HEAD', *selection], timeout=3, stderr=subprocess.DEVNULL)
+            paths += committed.decode(errors='replace').split('\0')[:-1]
+        paths = sorted(set(paths))
+        record['changed_files'] = [display_excerpt(path, 180) for path in paths[:12]]
+        record['omitted_files'] = max(0, len(paths) - 12)
+    write_cap_record(checkpoint, record)
+
+
+def write_cap_record(path, record):
+    """Publish a whole record without waiting on an SDLC writer."""
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write((json.dumps(record, ensure_ascii=False) + '\n').encode())
+            stream.flush()
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def watched(args, process, path, log):
@@ -338,22 +404,37 @@ def watched(args, process, path, log):
 def watch(args):
     """Runs until the worker exits, or stops its whole process group at the cap and says so in the step's log."""
     path, group = Path(args.session_file), args.group
-    while True:
+    while alive(group):
+        leader_alive = True
         try:
             os.kill(group, 0)
         except OSError:
+            leader_alive = False
+        if responses(entries(path)) >= args.max_responses:
+            stop_capped_group(args, path, group)
             return
-        if responses(path) >= args.max_responses:
-            for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 1)):
-                with contextlib.suppress(OSError):
-                    os.killpg(group, sig)
-                deadline = time.monotonic() + wait
-                while time.monotonic() < deadline and alive(group):
-                    time.sleep(0.05)
-            print(f'pi-launcher: response cap {args.max_responses} reached; stopped process group {group}. '
-                  'Finish the step with sdlc.py step <run> <name> complete --stopped-by cap.', file=sys.stderr)
+        if not leader_alive:
             return
         time.sleep(WATCH_SECONDS)
+
+
+def stop_capped_group(args, path, group):
+    """Keep enforcing the cap even if evidence cannot be saved."""
+    if not alive(group):
+        return
+    for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 1)):
+        with contextlib.suppress(OSError):
+            os.killpg(group, sig)
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline and alive(group):
+            time.sleep(0.05)
+    try:
+        record = {'session': header(path)['id'], 'process_group': group, 'cap': args.max_responses}
+        save_cap_stop(args.contract, path, record)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, Refusal) as error:
+        print(f'pi-launcher: could not save cap-stop evidence: {error}', file=sys.stderr)
+    print(f'pi-launcher: response cap {args.max_responses} reached; stopped process group {group}. '
+          'Finish the step with sdlc.py step <run> <name> complete --stopped-by cap.', file=sys.stderr)
 
 
 def alive(group):
@@ -446,7 +527,13 @@ def main():
             session = args.session
         elif args.operation == 'finished':
             provider, model_id, _ = parse_pin(args.model)
-            done = finished(retained_session(args, provider, model_id), f'{provider}/{model_id}')
+            path = retained_session(args, provider, model_id)
+            cap = read_json(Path(args.contract), 'Step contract').get('max_responses')
+            if cap is not None and (type(cap) is not int or cap < 1):
+                raise Refusal('A response cap must be at least 1.')
+            rows = entries(path)
+            reached_cap = responses(rows) >= cap if cap is not None else None
+            done = finished(rows, f'{provider}/{model_id}')
             session = args.session
         else:
             session, group = admit(args, operation)
@@ -456,6 +543,8 @@ def main():
     reply = {'protocol': PROTOCOL, 'api_version': 1, 'operation': operation, 'model': args.model}
     if args.operation == 'finished':
         reply['finished'] = done
+        if reached_cap is not None:
+            reply['response_cap_reached'] = reached_cap
     if session:
         reply['session'] = session
     if args.operation in ('launch', 'resume'):

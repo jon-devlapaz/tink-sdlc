@@ -96,7 +96,18 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   (display-only human output). Human and machine status share one calculation.
 - `steps`: each pinned build step by `name`, with its `state` (`prepared`, `active`,
   `uncertain`, `completed`, or `unreadable`) and, when active, `turn` (`ended`, `not-ended`
-  or `unknown`) with the same `observed_turn` words as `step show`. Read `turn`; the words may change.
+  or `unknown`) with human-readable `observed_turn` words. Read `turn`; the words may change.
+  An active step can include `response_cap_reached: true` before its evidence is available.
+  Optional `cap_stop` means the launcher stopped this admission and saved a checkpoint.
+  It contains `cap`, `changed_files` (project paths changed since preparation or still
+  uncommitted, or null when unavailable), `omitted_files`,
+  and `shell` (the last completed shell result, or null). The shell object contains
+  `command`, `output`, and `error`. Text is bounded. It is not a Verify receipt.
+  An active step with this checkpoint still needs explicit stop recording. A recorded
+  cap stop retains the checkpoint. Recording a stop preserves this observed reason,
+  including when an older client already recorded an operator stop before the checkpoint arrived.
+  A reached cap can also set `turn` to `not-ended` and direct the operator to
+  record the cap stop in `next_action` before a checkpoint exists.
   An uncertain step adds `owed`: true while it is the newest step and so still owes reconciliation. An active step's turn, or else the newest step when it is uncertain, sets `next_action` (after gates and locks), so a run that nothing is building
   is never mistaken for running work, and one that may be is never mistaken for idle. Older runtimes omit the field: absence means unknown.
 - `log`: `path` (checkout-relative, regular UTF-8 file), `text` (last 256 KiB,
