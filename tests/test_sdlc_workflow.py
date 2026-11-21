@@ -18,6 +18,9 @@ SOURCE = Path(__file__).resolve().parents[1] / 'assets/_system/scripts/sdlc.py'
 spec = importlib.util.spec_from_file_location('workflow', SOURCE)
 workflow = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(workflow)
+# A caller's runner options make verify refuse (#197); scrub them so the suite runs in any shell.
+for name in workflow.RUNNER_ENV:
+    os.environ.pop(name, None)
 
 
 class WorkflowTests(unittest.TestCase):
@@ -1296,9 +1299,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('proof.txt', log)
 
     def verify_with(self, ok, **extra):
-        env = {k: v for k, v in os.environ.items() if k not in workflow.RUNNER_ENV}
         result = subprocess.run(['python3', str(self.root / '_system/scripts/sdlc.py'), 'verify', 'example'],
-                                cwd='/', capture_output=True, text=True, env={**env, **extra})
+                                cwd='/', capture_output=True, text=True, env={**os.environ, **extra})
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result.stdout + result.stderr
 
