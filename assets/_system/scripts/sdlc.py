@@ -704,6 +704,7 @@ def policy_base(path):
         return recorded
     ref = default_policy_ref()
     if ref is None:
+        git('rev-parse', '--verify', 'HEAD')  # Keep the Git error for an unborn branch or a missing repository.
         raise ValueError('Cannot find the default branch for verification policy. Fetch it or start a new run '
                          'from the committed project baseline.')
     bases = run_git(ROOT, 'merge-base', '--all', ref, 'HEAD')
