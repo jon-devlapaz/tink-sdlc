@@ -873,13 +873,13 @@ def evidence_inputs(path, policy=None):
                if checklist_digest(path) is not None or seed_check_items(path) else {})}
 
 
-def approved_issue(url):
-    """The approved issue as a run definition: its words unchanged, read once from the forge.
-    Refuses anything that is not an open GitHub issue labeled `approved` with Done-when lines."""
+def issue_definition(url):
+    """The issue as a run definition: its words unchanged, read once from the forge.
+    Refuses anything that is not an open GitHub issue with Done-when lines. It approves nothing."""
     if not ISSUE_URL.fullmatch(url):
         raise ValueError('--issue must be a full GitHub URL: https://github.com/OWNER/REPO/issues/NUMBER')
     try:
-        read = subprocess.run(['gh', 'issue', 'view', url, '--json', 'title,body,state,labels'], stdin=subprocess.DEVNULL,
+        read = subprocess.run(['gh', 'issue', 'view', url, '--json', 'title,body,state'], stdin=subprocess.DEVNULL,
                               capture_output=True, text=True, timeout=DELIVERY_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise ValueError(f'Could not read the issue with `gh` ({type(error).__name__}); no run was created.') from error
@@ -890,15 +890,11 @@ def approved_issue(url):
     except ValueError:
         issue = None
     # One shape check where the answer comes in; everything below just uses it.
-    if (not isinstance(issue, dict) or not all(isinstance(issue.get(key), str) for key in ('title', 'body', 'state'))
-            or not isinstance(issue.get('labels'), list)
-            or not all(isinstance(label, dict) and isinstance(label.get('name'), str) for label in issue['labels'])):
+    if not isinstance(issue, dict) or not all(isinstance(issue.get(key), str) for key in ('title', 'body', 'state')):
         raise ValueError('`gh` returned an unexpected answer; no run was created.')
     if issue['state'] != 'OPEN':
         raise ValueError('The issue is not open; no run was created.')
-    if not any(label['name'] == 'approved' for label in issue['labels']):
-        raise ValueError('The issue has no `approved` label; no run was created.')
-    # The section is read strictly, so no approved word is dropped or cut: only top-level bullets, one line each.
+    # The section is read strictly, so no word is dropped or cut: only top-level bullets, one line each.
     body = issue['body'].replace('\r\n', '\n').split('\n')
     heading = re.compile(r'#{1,6}[ \t]')
     first = next((index for index, line in enumerate(body) if re.fullmatch(r'#{1,6}[ \t]*Done when[ \t]*', line, re.I)), None)
@@ -915,7 +911,7 @@ def approved_issue(url):
         raise ValueError('The issue has no Done-when lines (a `Done when` heading with one `- ` line each); no run was created.')
     binding = {'url': url, 'title': issue['title'], 'sha256': digest(issue['body'].encode())}
     brief = (f"# Change brief\n\nSource: {url}\nIssue body sha256: {binding['sha256']}\nTitle: {issue['title']}\n\n"
-             'The approved issue below is this run\'s brief, unchanged. '
+             'The issue below is this run\'s brief, unchanged. '
              'Each Done-when line is one item in `checklist.json`.\n\n---\n\n' + issue['body'] + '\n')
     items = []
     for number, line in enumerate(lines, 1):
@@ -933,7 +929,7 @@ def create(args):
     path = run_path(args.run)
     if args.issue is not None and args.profile != 'light':
         raise ValueError('--issue creates a light run; a full run defines intent, spec and plan itself.')
-    issue = approved_issue(args.issue) if args.issue is not None else None
+    issue = issue_definition(args.issue) if args.issue is not None else None
     path.parent.mkdir(exist_ok=True)
     with locked(run_lock(args.run)):
         if path.exists():
@@ -956,7 +952,7 @@ def create(args):
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary)
-    print(f'Created {path} from the approved issue; brief.md and checklist.json hold its words. Next: record the human decision.'
+    print(f'Created {path} from the issue; brief.md and checklist.json hold its words. Next: record the human decision.'
           if issue else f'Created {path}. Next: define the change and obtain a human review.')
 
 
@@ -3282,7 +3278,7 @@ def main():
     new.add_argument('run')
     new.add_argument('--profile', choices=['light', 'full'], default='light')
     new.add_argument('--kind', choices=['feature', 'bug'], default='feature')
-    new.add_argument('--issue', metavar='URL', help='an open GitHub issue labeled approved; its words become the brief and checklist')
+    new.add_argument('--issue', metavar='URL', help='an open GitHub issue; its words become the brief and checklist')
     state = commands.add_parser('status')
     state.add_argument('run', nargs='?')
     state.add_argument('--json', action='store_true', help='read-only versioned machine interface')

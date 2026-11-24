@@ -846,7 +846,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result.stdout + result.stderr
 
-    def test_an_approved_issue_becomes_the_brief_and_the_checklist_unchanged(self):
+    def test_an_unlabeled_issue_becomes_the_brief_and_the_checklist_unchanged(self):
         url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
         # CRLF, as the GitHub web form stores it.
         body = ('### Goal\r\n\r\nShow the digest.\r\n\r\n### Done when\r\n\r\n- [ ] The screen shows the full SHA-256, for human and agent starts.\r\n'
@@ -857,8 +857,8 @@ class WorkflowTests(unittest.TestCase):
                 '- ` ` passes.\r\n'
                 '- `python3 scripts/full-check.py` passes on Linux.\r\n\r\n'
                 '### Context\r\n\r\n- Not a check.\r\n')
-        issue = {'title': 'TEST show the digest', 'body': body, 'state': 'OPEN', 'labels': [{'name': 'approved'}]}
-        self.assertIn('from the approved issue', self.issue_cli(issue, '--issue', url))
+        issue = {'title': 'TEST show the digest', 'body': body, 'state': 'OPEN'}
+        self.assertIn('from the issue', self.issue_cli(issue, '--issue', url))
         brief = (self.root / 'runs/example/brief.md').read_bytes().decode()
         self.assertIn(body, brief)
         self.assertIn(f'Source: {url}\nIssue body sha256: {hashlib.sha256(body.encode()).hexdigest()}\nTitle: TEST show the digest\n', brief)
@@ -887,7 +887,7 @@ class WorkflowTests(unittest.TestCase):
     def test_issue_command_must_run_and_cannot_be_marked(self):
         url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
         body = '### Done when\n\n- `test -f proof.txt` passes.\n- A person checks the result.\n'
-        self.issue_cli({'title': 'TEST proof', 'body': body, 'state': 'OPEN', 'labels': [{'name': 'approved'}]},
+        self.issue_cli({'title': 'TEST proof', 'body': body, 'state': 'OPEN'},
                        '--issue', url)
         self.approve()
         self.cli('mark', 'example', 'done-2', 'passed', '--evidence', 'TEST visual observation')
@@ -905,12 +905,11 @@ class WorkflowTests(unittest.TestCase):
         self.cli('verify', 'example')
         self.assertEqual(self.receipt()['checklist_items'], {'done-1': 'proven', 'done-2': 'attested'})
 
-    def test_an_issue_that_is_not_an_approved_contract_creates_no_run(self):
+    def test_an_issue_that_is_not_a_contract_creates_no_run(self):
         url = 'https://github.com/TEST-owner/TEST-repo/issues/7'
-        good = {'title': 'TEST', 'body': '### Done when\n\n- [ ] It works.\n', 'state': 'OPEN', 'labels': [{'name': 'approved'}]}
+        good = {'title': 'TEST', 'body': '### Done when\n\n- [ ] It works.\n', 'state': 'OPEN'}
         for why, issue, args in [
                 ('not open', {**good, 'state': 'CLOSED'}, ('--issue', url)),
-                ('no `approved` label', {**good, 'labels': [{'name': 'needs-approval'}]}, ('--issue', url)),
                 ('no Done-when lines', {**good, 'body': '### Goal\n\n- It works.\n'}, ('--issue', url)),
                 # A line the checklist would cut or drop refuses the whole issue.
                 ("found: 'continues here'", {**good, 'body': '### Done when\n\n- It works\n  continues here\n'}, ('--issue', url)),
