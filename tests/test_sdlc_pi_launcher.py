@@ -202,6 +202,33 @@ class PiLauncherTests(StageBase):
             self.assertIn(f'#{heading}', prompt)
             self.assertIn('\n## ' + heading.replace('-', ' ').capitalize(), guide.read_text())
 
+    def test_the_prompt_quotes_repository_rules_and_asks_the_report_to_answer_each(self):
+        # tinkery#1011: socratink's AGENTS.md required a tutor eval for a tutor change; the worker never said.
+        agents = self.root / 'AGENTS.md'
+        generated = agents.read_text()
+        rule = '- TEST rule: a tutor-behaviour change adds an evals/tutor scenario.'
+        agents.write_text(f'# TEST project\n\n{rule}\n\n{generated}')
+        self.prepare()
+        self.launch()
+        self.step('build', 'resume')
+        duty = ('Before you commit, find each rule there that your change triggers. Under "Repository rules" '
+                'in your report, name each one and how you met it, or write "None triggered."')
+        for prompt in [argv[-1] for argv in self.calls()]:
+            self.assertIn(f"{agents} holds this repository's own rules. Outside its generated blocks it says:\n"
+                          f'<repository-rules>\n# TEST project\n{rule}\n</repository-rules>\n {duty}', prompt)
+        # A long rules file is still quoted, up to its first 32000 bytes, with the same duty.
+        long = f'{rule} ' + 'x' * 40000
+        agents.write_text(f'{long}\n{generated}')
+        self.step('build', 'resume')
+        prompt = self.calls()[-1][-1]
+        self.assertIn(f"{agents} holds this repository's own rules. Outside its generated blocks it says "
+                      f'(cut at 32000 bytes; read the rest there):\n<repository-rules>\n{long[:32000]}\n'
+                      f'</repository-rules>\n {duty}', prompt)
+        # The router and stage rules alone are tink-sdlc's, not the repository's: no duty.
+        agents.write_text(generated)
+        self.step('build', 'resume')
+        self.assertNotIn('Repository rules', self.calls()[-1][-1])
+
     def test_pending_provisional_checks_and_proposals_are_named_on_launch_and_resume(self):
         records = [command(), provisional(), provisional('false'), {**DEFAULT[0], 'how_to_judge': 'Inspect'}]
         seed = confirmed(self.base / 'TEST-sessions', records)

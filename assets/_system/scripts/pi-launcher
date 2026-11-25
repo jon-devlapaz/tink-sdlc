@@ -230,6 +230,24 @@ def prompt(args, operation, checkout):
     if before:
         reading += (f' The previous step of this run, {before[0]}, ended {before[1]}; read what it left at '
                     f'{before[2]} before you start, and say in your report if it cannot be read.')
+    # tinkery#1011: a worker read the repository's rules and still skipped one its change triggered. Quote
+    # the lines outside the router and stage-rule blocks tink-sdlc generates; one prompt argument stays
+    # well under Linux's 128 KiB argument limit.
+    agents, kept, generated = checkout / 'AGENTS.md', [], False
+    for line in (agents.read_text(errors='replace').splitlines() if agents.is_file() else []):
+        generated |= '<!-- AI-Native SDLC Router -->' in line or 'tink:rules begin' in line
+        if not generated and line.strip():
+            kept.append(line)
+        if '<!-- End AI-Native SDLC Router -->' in line or 'tink:rules end' in line:
+            generated = False
+    rules = '\n'.join(kept)
+    if rules:
+        quoted = rules.encode()[:32000].decode(errors='ignore')
+        cut = ' (cut at 32000 bytes; read the rest there)' if quoted != rules else ''
+        reading += (f' {agents} holds this repository\'s own rules. Outside its generated blocks it says{cut}:\n'
+                    f'<repository-rules>\n{quoted}\n</repository-rules>\n Before you commit, find each '
+                    f'rule there that your change triggers. Under "Repository rules" in your report, name each '
+                    f'one and how you met it, or write "None triggered."')
     activation = ''
     if pending:
         activation = ('\nPending provisional seed checks:\n'
