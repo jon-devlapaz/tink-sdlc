@@ -202,6 +202,19 @@ class PiLauncherTests(StageBase):
             self.assertIn(f'#{heading}', prompt)
             self.assertIn('\n## ' + heading.replace('-', ' ').capitalize(), guide.read_text())
 
+    def test_the_prompt_asks_the_report_to_answer_each_repository_rule_the_change_triggers(self):
+        # tinkery#1011: socratink's AGENTS.md required a tutor eval for a tutor change; the worker never said.
+        agents = self.root / 'AGENTS.md'
+        with agents.open('a') as out:
+            out.write('\n- TEST rule: a tutor-behaviour change adds an evals/tutor scenario.\n')
+        self.prepare()
+        self.launch()
+        self.step('build', 'resume')
+        for prompt in [argv[-1] for argv in self.calls()]:
+            self.assertIn(f"{agents} holds this repository's own rules. Before you commit, find each rule there "
+                          'that your change triggers. Under "Repository rules" in your report, name each one '
+                          'and how you met it, or write "None triggered."', prompt)
+
     def test_pending_provisional_checks_and_proposals_are_named_on_launch_and_resume(self):
         records = [command(), provisional(), provisional('false'), {**DEFAULT[0], 'how_to_judge': 'Inspect'}]
         seed = confirmed(self.base / 'TEST-sessions', records)

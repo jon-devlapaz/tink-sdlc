@@ -230,6 +230,12 @@ def prompt(args, operation, checkout):
     if before:
         reading += (f' The previous step of this run, {before[0]}, ended {before[1]}; read what it left at '
                     f'{before[2]} before you start, and say in your report if it cannot be read.')
+    agents = checkout / 'AGENTS.md'
+    if agents.is_file():
+        # tinkery#1011: a worker read the repository's rules and still skipped one its change triggered.
+        reading += (f' {agents} holds this repository\'s own rules. Before you commit, find each rule there '
+                    f'that your change triggers. Under "Repository rules" in your report, name each one and '
+                    f'how you met it, or write "None triggered."')
     activation = ''
     if pending:
         activation = ('\nPending provisional seed checks:\n'
