@@ -2942,6 +2942,7 @@ NOT_FINISHED = 'The agent has not finished its latest turn on the pin (paused, s
 CAP_REACHED = 'not ended: reached its response cap'
 CAP_STOPPED = 'not ended: stopped at its response cap'
 RECORD_CAP_STOP = 'The worker reached its response cap. Record it with complete --stopped-by cap.'
+WORKER_GONE = 'not ended: no worker process is running'
 CAPPED_GROUP_PRESENT = 'The capped worker process is still present. Wait for it to exit, then read status again.'
 STEP_STATES = [word for word in WORDS['steps[].state'] if word != 'unreadable']
 FINISHED_STEPS = ('completed', 'stopped')
@@ -2997,24 +2998,29 @@ def end_process_group(record, contract):
 
 
 def probe_turn(record, contract, checkpoint):
-    """What the adapter's offline finished probe sees now, as (turn, words); never stored.
-    `active` alone cannot tell a running agent from an ended turn (tinkery#615)."""
+    """What the adapter's offline finished probe sees now, as (turn, words, why) with why 'cap', 'gone' or
+    None; never stored. `active` alone cannot tell a running agent from an ended turn (tinkery#615), and an
+    unended turn whose recorded process group has exited is not running (tinkery#1013). A group id that
+    is still taken, or none recorded, never claims the worker is gone."""
     if checkpoint:
-        return 'not-ended', CAP_STOPPED, True
+        return 'not-ended', CAP_STOPPED, 'cap'
     if cap_record(record, contract, '.cap-stopping'):
-        return 'not-ended', CAP_REACHED, True
+        return 'not-ended', CAP_REACHED, 'cap'
     try:
         step_paths(record)
         reply = step_adapter(record, 'finished', contract)
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
-        return 'unknown', f'unknown: {error}', False
+        return 'unknown', f'unknown: {error}', None
     if reply.get('response_cap_reached'):
-        return 'not-ended', CAP_REACHED, True
+        return 'not-ended', CAP_REACHED, 'cap'
     if reply['finished']:
         if capped_group_present(record):
-            return 'unknown', f'unknown: {CAPPED_GROUP_PRESENT}', False
-        return 'ended', 'ended: read the report, then complete the step', False
-    return 'not-ended', f'not ended: {NOT_FINISHED}', False
+            return 'unknown', f'unknown: {CAPPED_GROUP_PRESENT}', None
+        return 'ended', 'ended: read the report, then complete the step', None
+    group = record.get('process_group')
+    if type(group) is int and group > 1 and not group_alive(group):
+        return 'not-ended', WORKER_GONE, 'gone'
+    return 'not-ended', f'not ended: {NOT_FINISHED}', None
 
 
 def cap_record(record, contract, suffix):
@@ -3075,9 +3081,11 @@ def step_facts(path):
                     if state == 'stopped':
                         fact['stopped_by'] = 'cap'
         if state == 'active':
-            fact['turn'], fact['observed_turn'], cap_reached = probe_turn(record, contract, fact.get('cap_stop'))
-            if cap_reached:
+            fact['turn'], fact['observed_turn'], why = probe_turn(record, contract, fact.get('cap_stop'))
+            if why == 'cap':
                 fact['response_cap_reached'] = True
+            if why == 'gone':
+                fact['worker_gone'] = True
         facts.append(fact)
     return facts
 
@@ -3117,6 +3125,9 @@ def worker_action(slug, steps, newest=None, verification=None):
     if step.get('response_cap_reached'):
         return (f"The {step['name']} worker reached its response cap. Record the stop with "
                 f'{command} complete --stopped-by cap.')
+    if step.get('worker_gone'):
+        return (f"The {step['name']} worker is no longer running and did not end its turn. Read its report, if any, "
+                f'then record the stop with {command} complete --stopped-by operator.')
     if step['turn'] == 'ended':
         return f"The {step['name']} worker's turn ended: read its report, then run {command} complete."
     if step['turn'] == 'not-ended':
@@ -3214,7 +3225,7 @@ def step(args):
                     print(end_process_group(record, contract))
                     reason = args.stopped_by
                     if (reason == 'operator' and record.get('max_responses')
-                            and probe_turn(record, contract, cap_stop(record, contract))[2]):
+                            and probe_turn(record, contract, cap_stop(record, contract))[2] == 'cap'):
                         reason = 'cap'
                     contents = report.read_bytes() if report.is_file() else b''
                     record.update(state='stopped', stopped_by=reason,

@@ -35,6 +35,8 @@ elif a.operation != 'resolve':
     with (root / 'requests.log').open('a') as log:
         log.write(a.operation + ' ' + a.model + '\\n')
     reply['session'] = a.session or 'TEST-session'
+    if os.environ.get('TEST_GROUP'):
+        reply['process_group'] = int(os.environ['TEST_GROUP'])
     if os.environ.get('TEST_ADAPTER_FAIL'):
         raise SystemExit(1)
     if os.environ.get('TEST_WRITE_REPORT'):
@@ -213,6 +215,35 @@ class StepTests(StageBase):
         self.assertEqual(self.requests(), ['launch ' + self.model])
         self.contract.write_text('not JSON')
         self.assertEqual(status()['steps'], [{'name': 'build', 'state': 'unreadable'}])
+
+    def test_an_unended_turn_whose_worker_process_is_gone_says_so_and_names_the_stop(self):
+        # tinkery#1013: a step whose Pi had exited read as running until someone stopped it.
+        import subprocess
+        gone = subprocess.Popen(['true'], start_new_session=True)
+        gone.wait()
+        live = subprocess.Popen(['sleep', '30'], start_new_session=True)
+        self.addCleanup(live.wait)
+        self.addCleanup(live.kill)
+        command = 'python3 _system/scripts/sdlc.py step r build'
+        for group, worker_gone in ((live.pid, False), (gone.pid, True)):
+            with self.subTest(worker_gone=worker_gone):
+                self.contract.unlink(missing_ok=True)
+                self.prepare()
+                self.step('launch', env={'TEST_GROUP': str(group)})
+                run = json.loads(self.sdlc('status', 'r', '--json', env={'TEST_UNFINISHED': '1'}).stdout)['run']
+                step = run['steps'][0]
+                self.assertEqual((step['state'], step['turn']), ('active', 'not-ended'))
+                self.assertEqual(step.get('worker_gone', False), worker_gone, step)
+                if worker_gone:
+                    self.assertEqual(step['observed_turn'], 'not ended: no worker process is running')
+                    self.assertEqual(run['next_action'], 'The build worker is no longer running and did not end its turn. '
+                                     f'Read its report, if any, then record the stop with {command} complete --stopped-by operator.')
+                    shown = json.loads(self.step('show', env={'TEST_UNFINISHED': '1'}).stdout)
+                    self.assertEqual(shown['observed_turn'], 'not ended: no worker process is running')
+                else:
+                    self.assertTrue(run['next_action'].startswith('The build worker has not ended its turn.'), run)
+        self.assertIn('No process of this step was still running.',
+                      self.step('complete', '--stopped-by', 'operator', env={'TEST_UNFINISHED': '1'}).stdout)
 
     def test_capabilities_words_are_the_step_words_status_produces_and_step_accepts(self):
         words = json.loads(self.sdlc('capabilities', '--json').stdout)['words']
