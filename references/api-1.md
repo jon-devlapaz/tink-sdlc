@@ -98,6 +98,8 @@ shows from the main checkout. The run then adds `checkout` (that path), `next_ac
   `uncertain`, `completed`, or `unreadable`) and, when active, `turn` (`ended`, `not-ended`
   or `unknown`) with human-readable `observed_turn` words. Read `turn`; the words may change.
   An active step can include `response_cap_reached: true` before its evidence is available.
+  From scaffold 1.76.0 an active step can include `worker_gone: true`: its turn has not ended and the
+  process group its adapter recorded has exited. Record the stop; no worker is running it.
   Optional `cap_stop` means the launcher stopped this admission and saved a checkpoint.
   It contains `cap`, `changed_files` (project paths changed since preparation or still
   uncommitted, or null when unavailable), `omitted_files`,
