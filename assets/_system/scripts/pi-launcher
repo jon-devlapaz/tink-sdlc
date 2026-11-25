@@ -230,12 +230,14 @@ def prompt(args, operation, checkout):
     if before:
         reading += (f' The previous step of this run, {before[0]}, ended {before[1]}; read what it left at '
                     f'{before[2]} before you start, and say in your report if it cannot be read.')
-    agents = checkout / 'AGENTS.md'
-    if agents.is_file():
+    rules = project_rules(checkout / 'AGENTS.md')
+    if rules is not None:
         # tinkery#1011: a worker read the repository's rules and still skipped one its change triggered.
-        reading += (f' {agents} holds this repository\'s own rules. Before you commit, find each rule there '
-                    f'that your change triggers. Under "Repository rules" in your report, name each one and '
-                    f'how you met it, or write "None triggered."')
+        quoted = (f' Outside its generated blocks it says:\n<repository-rules>\n{rules}\n</repository-rules>\n'
+                  if len(rules) <= RULES_QUOTE_LIMIT else ' It is too long to quote here; read it.')
+        reading += (f' {checkout / "AGENTS.md"} holds this repository\'s own rules.{quoted} Before you commit, '
+                    f'find each rule there that your change triggers. Under "Repository rules" in your report, '
+                    f'name each one and how you met it, or write "None triggered."')
     activation = ''
     if pending:
         activation = ('\nPending provisional seed checks:\n'
@@ -259,6 +261,24 @@ def prompt(args, operation, checkout):
             f'and name any failure in the report: verify runs only committed work. '
             f'Never run sdlc.py step, stage or decide. Do not change the model or thinking level.'
             f'{reading}{activation}')
+
+
+RULES_QUOTE_LIMIT = 8000
+
+
+def project_rules(agents):
+    """The repository's own AGENTS.md lines, without the router and stage rules tink-sdlc generates.
+    None when the file is missing or holds nothing else; the caller decides whether it fits in the prompt."""
+    if not agents.is_file():
+        return None
+    kept, generated = [], False
+    for line in agents.read_text(errors='replace').splitlines():
+        generated |= '<!-- AI-Native SDLC Router -->' in line or 'tink:rules begin' in line
+        if not generated and line.strip():
+            kept.append(line)
+        if '<!-- End AI-Native SDLC Router -->' in line or 'tink:rules end' in line:
+            generated = False
+    return '\n'.join(kept) or None
 
 
 def previous_step(contract):
