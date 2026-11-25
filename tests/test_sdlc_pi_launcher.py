@@ -216,13 +216,14 @@ class PiLauncherTests(StageBase):
         for prompt in [argv[-1] for argv in self.calls()]:
             self.assertIn(f"{agents} holds this repository's own rules. Outside its generated blocks it says:\n"
                           f'<repository-rules>\n# TEST project\n{rule}\n</repository-rules>\n {duty}', prompt)
-        # A rules file too long to quote is still named, with the same duty.
-        agents.write_text(f'{rule}\n' * 200 + generated)
+        # A long rules file is still quoted, up to its first 32000 characters, with the same duty.
+        long = f'{rule} ' + 'x' * 40000
+        agents.write_text(f'{long}\n{generated}')
         self.step('build', 'resume')
         prompt = self.calls()[-1][-1]
-        self.assertIn(f"{agents} holds this repository's own rules. It is too long to quote here; read it. {duty}",
-                      prompt)
-        self.assertNotIn('<repository-rules>', prompt)
+        self.assertIn(f"{agents} holds this repository's own rules. Outside its generated blocks it says "
+                      f'(cut at 32000 characters; read the rest there):\n<repository-rules>\n{long[:32000]}\n'
+                      f'</repository-rules>\n {duty}', prompt)
         # The router and stage rules alone are tink-sdlc's, not the repository's: no duty.
         agents.write_text(generated)
         self.step('build', 'resume')
