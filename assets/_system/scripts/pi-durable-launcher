@@ -172,7 +172,8 @@ def admit(pi, args, operation):
     prompt = directory / f'{session_id}.{operation}-{stamp}.prompt'
     prompt.write_text(pi.prompt(args, operation, checkout))
     admitted = directory / f'{session_id}.{operation}-{stamp}.admitted'
-    argv = [node_command(), str(worker), '--operation', operation, '--session-dir', str(directory),
+    # Node 22 warns that SQLite is experimental; the log's first line must stay the session header Tinkery reads.
+    argv = [node_command(), '--disable-warning=ExperimentalWarning', str(worker), '--operation', operation, '--session-dir', str(directory),
             '--session-id', session_id, '--model', f'{provider}/{model_id}', '--thinking', thinking,
             '--cwd', str(checkout), '--prompt-file', str(prompt), '--admitted', str(admitted),
             '--contract', str(Path(args.contract).resolve())]
