@@ -1,0 +1,13 @@
+#!/bin/bash
+# The Pi Durable worker's shell for tool commands, used as `tool-shell -c COMMAND`.
+# Promises: COMMAND runs in bash; if the worker named by TINK_SDLC_WORKER_PID dies first, for example by
+# SIGKILL, this ends the command's whole process group within about a fifth of a second.
+# Refuses: to run without TINK_SDLC_WORKER_PID.
+watched=${TINK_SDLC_WORKER_PID:?tool-shell runs only under the Pi Durable worker}
+/bin/bash "$@" &
+child=$!
+while kill -0 "$child" 2>/dev/null; do
+  kill -0 "$watched" 2>/dev/null || kill -KILL 0
+  sleep 0.2
+done
+wait "$child"

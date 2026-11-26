@@ -49,7 +49,8 @@ intent, spec, and implementation plan; the light profile uses one reviewed brief
 For launcher-managed build agents, use [pinned build steps](assets/_system/SDLC.md#pinned-build-steps):
 explicit report destinations and exact provider/model pins survive launch/resume through
 a trusted offline-resolving adapter. Scaffold 1.41.0 bundles one for headless Pi,
-`_system/scripts/pi-launcher`; Herdr (including pi-herdr resume) is not claimed
+`_system/scripts/pi-launcher`. Scaffold 1.78.0 adds `_system/scripts/pi-durable-launcher`, which keeps a
+crashed step's pending run so `resume` continues it. Herdr (including pi-herdr resume) is not claimed
 compatible. Missing reports, or an agent that has not finished its turn, refuse step completion.
 
 Local status accepts unchanged candidate content after an evidence-only commit.

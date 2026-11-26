@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""Reviewed tink-sdlc-launcher protocol 1 adapter for Pi Durable build steps.
+
+Promises: the same pins, offline refusals, builder prompt, response cap watcher and cap-stop evidence as the
+bundled pi-launcher, whose code it runs only while that file's digest matches the one pinned here; every launch
+and resume runs pi-durable/worker.mjs from the install folder its pinned bundle digest names, with the exact
+provider/model and thinking level; the worker keeps one durable session per step, and resume continues a run a
+crash left pending (same submission, no second input) while an interrupted shell command is never rerun by the
+harness; launch records the session folder beside the step contract and replies with the worker's process group;
+resolve and finished read only local files, and start nothing but `node --version` (resolve); `install` is the only
+operation that downloads, and it installs exactly the pinned lockfile into the install folder.
+Refuses: a pi-launcher or bundle file whose digest differs from the pins here, a missing install, Node older than
+22.19, a resume while the step's recorded worker process group is still alive, and everything pi-launcher refuses
+(pins without a thinking level, models absent from Pi's local catalog cache, providers without stored credentials,
+missing sessions, a session already at its cap).
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import types
+import uuid
+
+HERE = Path(__file__).resolve().parent
+PROTOCOL = 'tink-sdlc-launcher'
+# The shared launcher code and the worker bundle; tests check these against the files.
+PI_LAUNCHER_SHA256 = 'aad1598fe87c8dd1cce552917a95d7f8734eae261cf1cb41a8964983069af456'
+BUNDLE = {
+    'tool-shell': '94710be00ed20f4cd001a59edfe52fdda426bccd8c8fe2540f039c76353e3118',
+    'package.json': '0ac5c11fde54e8f33b5b7e79f3036220459ed52826611af5a324d3ec93526de8',
+    'package-lock.json': '5dbb34c6f0281b9c87b9776629e98acc36911181b5b82dd516f7723d4ac870b9',
+    'worker.mjs': 'b109870f626232ecd5dfdd37c335a4d39eddff1e09a2b7ca1b6ee74dc02f4321',
+}
+NODE_MINIMUM = (22, 19)
+
+
+class Refusal(Exception):
+    pass
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def library():
+    """pi-launcher's code as a module, only while its bytes are the reviewed ones."""
+    path = HERE / 'pi-launcher'
+    source = path.read_bytes()
+    if digest(source) != PI_LAUNCHER_SHA256:
+        raise Refusal(f'{path} changed; this launcher runs only the pi-launcher it was reviewed with.')
+    module = types.ModuleType('pi_launcher')
+    module.__file__ = str(path)
+    exec(compile(source, str(path), 'exec'), module.__dict__)
+    module.Refusal = Refusal  # its functions look the name up when they raise, so one class covers both files
+    return module
+
+
+def bundle_files():
+    files = {}
+    for name, expected in BUNDLE.items():
+        data = (HERE / 'pi-durable' / name).read_bytes()
+        if digest(data) != expected:
+            raise Refusal(f'pi-durable/{name} changed; its digest is not the pinned one.')
+        files[name] = data
+    return files
+
+
+def home():
+    configured = os.environ.get('TINK_SDLC_PI_DURABLE_HOME')
+    return Path(configured).expanduser().absolute() if configured else Path.home() / '.local/share/tink-sdlc/pi-durable'
+
+
+def install_dir():
+    combined = digest(json.dumps(sorted(BUNDLE.items())).encode())
+    return home() / combined[:16]
+
+
+def node_command():
+    command = os.environ.get('TINK_SDLC_NODE') or shutil.which('node')
+    if not command:
+        raise Refusal('Node is not on PATH; Pi Durable needs Node 22.19 or later.')
+    try:
+        version = subprocess.run([command, '--version'], capture_output=True, text=True, timeout=10).stdout.strip()
+        found = tuple(int(part) for part in version.lstrip('v').split('.')[:2])
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        raise Refusal(f'Cannot read the version of {command}.') from None
+    if found < NODE_MINIMUM:
+        raise Refusal(f'{command} is Node {version}; Pi Durable needs 22.19 or later.')
+    return command
+
+
+def installed():
+    """The verified worker in the install folder, or a refusal that names the install command."""
+    files = bundle_files()
+    folder = install_dir()
+    if not (folder / '.installed').is_file():
+        raise Refusal(f'Pi Durable is not installed at {folder}. Run {Path(__file__).resolve()} install once.')
+    for name, data in files.items():
+        if (folder / name).read_bytes() != data:
+            raise Refusal(f'{folder / name} differs from the pinned bundle; remove {folder} and install again.')
+    return folder / 'worker.mjs'
+
+
+def install():
+    files = bundle_files()
+    folder = install_dir()
+    if (folder / '.installed').is_file():
+        installed()
+        return folder
+    npm = shutil.which('npm')
+    if not npm:
+        raise Refusal('npm is not on PATH; it installs the pinned Pi Durable packages.')
+    node_command()
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix='.install-', dir=folder.parent))
+    try:
+        for name, data in files.items():
+            (staging / name).write_bytes(data)
+        (staging / 'tool-shell').chmod(0o755)
+        result = subprocess.run([npm, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd=staging,
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
+        if result.returncode:
+            raise Refusal(f'npm ci failed: {result.stderr.strip()[-300:]}')
+        (staging / '.installed').write_text(json.dumps({'bundle': dict(BUNDLE)}) + '\n')
+        try:
+            staging.replace(folder)
+        except OSError as error:
+            raise Refusal(f'Cannot place the install at {folder}: {error}. Another install may be running.') from None
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return folder
+
+
+def session_dir(pi, contract, checkout):
+    """Recorded beside the contract at launch; a fresh step uses PI_CODING_AGENT_SESSION_DIR or the install home."""
+    recorded = Path(contract).with_suffix('.session-dir')
+    if recorded.is_file() or os.environ.get('PI_CODING_AGENT_SESSION_DIR'):
+        return pi.session_dir(contract, checkout)
+    safe = str(checkout).lstrip('/\\').replace('/', '-').replace('\\', '-').replace(':', '-')
+    return home() / 'sessions' / f'--{safe}--'
+
+
+def resolve(pi, args, operation):
+    installed()
+    node_command()
+    if operation == 'resume':
+        # Two workers on one store would both drive its pending run; only a gone worker is resumed.
+        group = pi.read_json(Path(args.contract), 'Step contract').get('process_group')
+        if type(group) is int and group > 1 and pi.alive(group):
+            raise Refusal(f'The step\'s worker (process group {group}) is still running; resume refused.')
+    return pi.resolve(args, operation)
+
+
+def admit(pi, args, operation):
+    provider, model_id, thinking, retained = resolve(pi, args, operation)  # recheck right before any request
+    worker = installed()
+    checkout = pi.checkout_of(args.contract)
+    directory = session_dir(pi, args.contract, checkout)
+    directory.mkdir(parents=True, exist_ok=True)
+    if operation == 'launch':
+        Path(args.contract).with_suffix('.session-dir').write_text(str(directory))
+        session_id = 'tsdlc-' + uuid.uuid4().hex
+    else:
+        session_id = args.session
+    stamp = int(time.time())
+    prompt = directory / f'{session_id}.{operation}-{stamp}.prompt'
+    prompt.write_text(pi.prompt(args, operation, checkout))
+    admitted = directory / f'{session_id}.{operation}-{stamp}.admitted'
+    # Node 22 warns that SQLite is experimental; the log's first line must stay the session header Tinkery reads.
+    argv = [node_command(), '--disable-warning=ExperimentalWarning', str(worker), '--operation', operation, '--session-dir', str(directory),
+            '--session-id', session_id, '--model', f'{provider}/{model_id}', '--thinking', thinking,
+            '--cwd', str(checkout), '--prompt-file', str(prompt), '--admitted', str(admitted),
+            '--contract', str(Path(args.contract).resolve())]
+    log = Path(args.contract).with_name(f'{Path(args.contract).stem}.{operation}-{stamp}.pi.log')
+    child_env = os.environ.copy()
+    child_env['TINK_SDLC_STEP_SESSION'] = '1'
+    with log.open('ab') as output:
+        process = subprocess.Popen(argv, cwd=checkout, env=child_env, stdin=subprocess.DEVNULL, stdout=output,
+                                   stderr=output, start_new_session=True)
+    window = pi.admission_seconds()
+    deadline = time.monotonic() + window
+    while time.monotonic() < deadline:
+        if admitted.is_file():
+            path = directory / f'{session_id}.jsonl'
+            return session_id, pi.watched(args, process, path, log)
+        if process.poll() is not None:
+            raise Refusal(f'The Pi Durable worker exited {process.returncode} before admission. Log: {log}')
+        time.sleep(0.1)
+    raise Refusal(f'Pi Durable admission was not confirmed in {window:g}s; process {process.pid} '
+                  f'may still run. Inspect {log} and the session before reconciling.')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('operation', choices=['install', 'resolve', 'launch', 'resume', 'finished'])
+    for flag in ('model', 'report', 'contract', 'session'):
+        parser.add_argument('--' + flag)
+    parser.add_argument('--for-operation', choices=['launch', 'resume'])
+    parser.add_argument('--max-responses', type=int)
+    args = parser.parse_args()
+    try:
+        if args.operation == 'install':
+            print(f'Pi Durable is installed at {install()}.')
+            return 0
+        pi = library()
+        operation = args.for_operation if args.operation == 'resolve' else args.operation
+        if not operation or not args.contract:
+            raise Refusal('resolve needs --for-operation and every operation needs --contract.')
+        if args.operation == 'resolve':
+            resolve(pi, args, operation)
+            session = args.session
+        elif args.operation == 'finished':
+            provider, model_id, _ = pi.parse_pin(args.model)
+            path = pi.retained_session(args, provider, model_id)
+            cap = pi.read_json(Path(args.contract), 'Step contract').get('max_responses')
+            if cap is not None and (type(cap) is not int or cap < 1):
+                raise Refusal('A response cap must be at least 1.')
+            rows = pi.entries(path)
+            reached_cap = pi.responses(rows) >= cap if cap is not None else None
+            done = pi.finished(rows, f'{provider}/{model_id}')
+            session = args.session
+        else:
+            session, group = admit(pi, args, operation)
+    except Refusal as error:
+        print(f'pi-durable-launcher: {error}', file=sys.stderr)
+        return 1
+    reply = {'protocol': PROTOCOL, 'api_version': 1, 'operation': operation, 'model': args.model}
+    if args.operation == 'finished':
+        reply['finished'] = done
+        if reached_cap is not None:
+            reply['response_cap_reached'] = reached_cap
+    if session:
+        reply['session'] = session
+    if args.operation in ('launch', 'resume'):
+        reply['process_group'] = group
+    print(json.dumps(reply))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
