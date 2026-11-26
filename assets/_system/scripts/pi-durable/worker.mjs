@@ -82,8 +82,9 @@ let parent = null;
 let last;
 if (existsSync(mirror)) {
   for (const line of readFileSync(mirror, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    const row = JSON.parse(line);
+    let row;
+    try { row = JSON.parse(line); } catch { continue; } // a torn last line from a crash
+
     if (row.id) parent = row.id;
     if (row.entry !== undefined) last = row.entry;
   }
@@ -128,21 +129,24 @@ watch.start(async (call) => { if (call.kind === 'value') await sync(); });
 
 const prompt = readFileSync(values['prompt-file'], 'utf8');
 const live = await harness.snapshot(LiveDoc, root.id, context);
+// The request ID is saved before its input is submitted. Submitting the same ID again returns the stored
+// submission, so a crash at any point leaves one input that resume can find.
+const saveRequest = (requestId) => {
+  writeFileSync(`${sidecar}.new`, JSON.stringify({ requestId }) + '\n');
+  renameSync(`${sidecar}.new`, sidecar);
+};
 let submission;
-if (operation === 'launch') {
-  submission = await root.submit({ type: 'input', content: prompt, requestId: id }, context);
-} else if (live?.run !== undefined && existsSync(sidecar)) {
+if (live?.run !== undefined) {
   // A crash left this run pending: continue it, with no second input.
-  submission = await harness.submission(JSON.parse(readFileSync(sidecar, 'utf8')).submission, context);
-  if (!submission) fail('The pending submission is missing from the session store.');
+  if (operation === 'launch' || !existsSync(sidecar)) fail('A run is pending but its request is unknown.');
+  const { requestId } = JSON.parse(readFileSync(sidecar, 'utf8'));
+  submission = await root.submit({ type: 'input', content: prompt, requestId }, context);
   harness.resume();
-} else if (live?.run !== undefined) {
-  fail('A run is pending but its submission is unknown; inspect the session store.');
 } else {
-  submission = await root.submit({ type: 'input', content: prompt, requestId: `${id}:${Date.now()}` }, context);
+  const requestId = operation === 'launch' ? id : `${id}:${Date.now()}`;
+  saveRequest(requestId);
+  submission = await root.submit({ type: 'input', content: prompt, requestId }, context);
 }
-writeFileSync(`${sidecar}.new`, JSON.stringify({ submission: submission.id }) + '\n');
-renameSync(`${sidecar}.new`, sidecar);
 writeFileSync(values.admitted, JSON.stringify({ session: id, submission: submission.id, pid: process.pid }) + '\n');
 
 const outcome = await submission.wait(context);

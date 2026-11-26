@@ -99,6 +99,11 @@ the same way.
 - Every committed message is mirrored in Pi's session format to `<session>.jsonl` in the session folder, and
   as `message_end` events in the step's `.pi.log`. `finished`, the cap count and cap-stop evidence read that
   mirror with `pi-launcher`'s code.
+- Resume refuses while the step's recorded process group is alive: two workers on one store would both drive its
+  pending run.
+- Trust limits: npm checks the packages' integrity at install, not at each launch. `TINK_SDLC_PI_DURABLE_STUB`
+  (tests only) replaces the provider with an offline module and, like `TINK_SDLC_PI`, trusts the caller's
+  environment.
 
 pi-herdr 0.6.0's `herdr_resume_agent` re-derives the model without the spawn-level pin
 (it falls back to the parent's model), so do not resume pinned steps through it.

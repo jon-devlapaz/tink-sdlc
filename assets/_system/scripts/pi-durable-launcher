@@ -7,10 +7,10 @@ and resume runs pi-durable/worker.mjs from the install folder its pinned bundle 
 provider/model and thinking level; the worker keeps one durable session per step, and resume continues a run a
 crash left pending (same submission, no second input) while an interrupted shell command is never rerun by the
 harness; launch records the session folder beside the step contract and replies with the worker's process group;
-resolve and finished read only local files and start nothing; `install` is the only operation that downloads, and
-it installs exactly the pinned lockfile into the install folder.
+resolve and finished read only local files, and start nothing but `node --version` (resolve); `install` is the only
+operation that downloads, and it installs exactly the pinned lockfile into the install folder.
 Refuses: a pi-launcher or bundle file whose digest differs from the pins here, a missing install, Node older than
-22.19, and everything pi-launcher refuses (pins without a thinking level, models absent from Pi's local catalog
+22.19, a resume while the step's recorded worker process group is still alive, and everything pi-launcher refuses (pins without a thinking level, models absent from Pi's local catalog
 cache, providers without stored credentials, missing sessions, a session already at its cap).
 """
 import argparse
@@ -34,7 +34,7 @@ BUNDLE = {
     'tool-shell': '94710be00ed20f4cd001a59edfe52fdda426bccd8c8fe2540f039c76353e3118',
     'package.json': '0ac5c11fde54e8f33b5b7e79f3036220459ed52826611af5a324d3ec93526de8',
     'package-lock.json': '5dbb34c6f0281b9c87b9776629e98acc36911181b5b82dd516f7723d4ac870b9',
-    'worker.mjs': 'f4df4ccf3eddb5683deccee7f702da2be5dbefde3a29f913e9e2257bb70cc2b2',
+    'worker.mjs': 'b109870f626232ecd5dfdd37c335a4d39eddff1e09a2b7ca1b6ee74dc02f4321',
 }
 NODE_MINIMUM = (22, 19)
 
@@ -127,7 +127,10 @@ def install():
         if result.returncode:
             raise Refusal(f'npm ci failed: {result.stderr.strip()[-300:]}')
         (staging / '.installed').write_text(json.dumps({'bundle': dict(BUNDLE)}) + '\n')
-        staging.replace(folder)
+        try:
+            staging.replace(folder)
+        except OSError as error:
+            raise Refusal(f'Cannot place the install at {folder}: {error}. Another install may be running.') from None
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return folder
@@ -145,6 +148,11 @@ def session_dir(pi, contract, checkout):
 def resolve(pi, args, operation):
     installed()
     node_command()
+    if operation == 'resume':
+        # Two workers on one store would both drive its pending run; only a gone worker is resumed.
+        group = pi.read_json(Path(args.contract), 'Step contract').get('process_group')
+        if type(group) is int and group > 1 and pi.alive(group):
+            raise Refusal(f'The step\'s worker (process group {group}) is still running; resume refused.')
     return pi.resolve(args, operation)
 
 

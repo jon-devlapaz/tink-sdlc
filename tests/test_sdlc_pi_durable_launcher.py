@@ -117,6 +117,10 @@ class PiDurableLauncherTests(StageBase):
         self.wait(lambda: shell.is_file(), 'the shell command')
         self.assertEqual(self.status_step()['turn'], 'not-ended')
         self.assertNotIn('worker_gone', self.status_step(), 'a live worker read as gone')
+        # tink-sdlc#225 review: a second worker on a live worker's store would drive its run twice.
+        self.assertIn('still running; resume refused', self.step('resume', ok=False).stderr)
+        self.assertEqual(self.contract()['state'], 'active')
+        self.assertEqual(len(self.requests()), 1, 'a live worker was resumed')
         os.killpg(group, signal.SIGKILL)
         self.wait(lambda: self.gone(group), 'the kill')
         # Pi Durable runs the command in a process group of its own; it must not outlive the worker.
