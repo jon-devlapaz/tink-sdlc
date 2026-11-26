@@ -30,6 +30,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up Node for the Pi Durable adapter
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19'
+
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -v
 

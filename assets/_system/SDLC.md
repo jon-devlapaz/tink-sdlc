@@ -240,6 +240,7 @@ Bundled adapters (their module comments state what each promises and refuses):
 | Adapter | Pin | Notes |
 |---|---|---|
 | `_system/scripts/pi-launcher` | `provider/model-id:thinking`, e.g. `openai-codex/gpt-5.6-luna:low` | The model must be in Pi's local catalog (run `pi update --models` yourself) with a stored credential. Enforces `--max-responses`. |
+| `_system/scripts/pi-durable-launcher` | the same | Pi Durable: a crash keeps the pending run, `resume` continues it and an interrupted command is not rerun by the harness. Same checks and cap as `pi-launcher`. Needs Node 22.19+; run `_system/scripts/pi-durable-launcher install` once per machine (it downloads the pinned packages). |
 
 Resume pinned steps only through `step … resume`: pi-herdr's resume drops the pin. Another launcher
 must implement the [launcher protocol](https://github.com/jon-devlapaz/tink-sdlc/blob/main/references/launcher-protocol.md)

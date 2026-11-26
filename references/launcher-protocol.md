@@ -77,5 +77,28 @@ and a pin that names its thinking level, such as `openai-codex/gpt-5.6-luna:low`
   Finish such a step with `complete --stopped-by cap`. Resume refuses a session that already holds N answers. An
   answer requested before the stop may still be charged; the cap counts recorded answers.
 
+## Bundled Pi Durable adapter
+
+`_system/scripts/pi-durable-launcher` takes the same pins and gives the same offline refusals, builder
+prompt, response cap watcher and cap-stop evidence as `pi-launcher`. It runs `pi-launcher`'s code only while
+that file's SHA-256 matches the one pinned in the adapter, and it pins its bundle in `_system/scripts/pi-durable/`
+the same way.
+
+- `install` is the only operation that downloads. It runs `npm ci --ignore-scripts` on the pinned lockfile
+  into `~/.local/share/tink-sdlc/pi-durable/<bundle digest>/` (`TINK_SDLC_PI_DURABLE_HOME` moves it).
+  `resolve` refuses until it has run, and refuses Node older than 22.19 (`TINK_SDLC_NODE` names another).
+- Launch and resume start `node worker.mjs` detached in the step checkout. The worker opens one SQLite session
+  per step with the exact pin and Pi's stored credentials, skills and project context files, read through Pi's
+  own package. Launch records the session folder beside the contract, as `pi-launcher` does.
+- Admission is the worker's durable submission: launch returns once the input is committed. Resume
+  continues a run that a crash left pending, with the same submission and no new input. Only an
+  ended or failed run gets the builder prompt again.
+- An interrupted tool call is not replayed. The model gets an `interrupted` result, and the system prompt
+  tells it to check a command's effects before running it again. Each command runs through `tool-shell`, which
+  ends the command's process group when the worker dies.
+- Every committed message is mirrored in Pi's session format to `<session>.jsonl` in the session folder, and
+  as `message_end` events in the step's `.pi.log`. `finished`, the cap count and cap-stop evidence read that
+  mirror with `pi-launcher`'s code.
+
 pi-herdr 0.6.0's `herdr_resume_agent` re-derives the model without the spawn-level pin
 (it falls back to the parent's model), so do not resume pinned steps through it.
