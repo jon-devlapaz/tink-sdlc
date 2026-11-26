@@ -10,8 +10,9 @@ harness; launch records the session folder beside the step contract and replies 
 resolve and finished read only local files, and start nothing but `node --version` (resolve); `install` is the only
 operation that downloads, and it installs exactly the pinned lockfile into the install folder.
 Refuses: a pi-launcher or bundle file whose digest differs from the pins here, a missing install, Node older than
-22.19, a resume while the step's recorded worker process group is still alive, and everything pi-launcher refuses (pins without a thinking level, models absent from Pi's local catalog
-cache, providers without stored credentials, missing sessions, a session already at its cap).
+22.19, a resume while the step's recorded worker process group is still alive, and everything pi-launcher refuses
+(pins without a thinking level, models absent from Pi's local catalog cache, providers without stored credentials,
+missing sessions, a session already at its cap).
 """
 import argparse
 import hashlib
