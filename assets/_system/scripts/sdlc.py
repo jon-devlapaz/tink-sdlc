@@ -809,8 +809,12 @@ def runner_env(config):
 
 
 def seed_timeout(config):
-    """The project's limit for each seed command: seed_timeout_seconds, else 120. Refuses any other value."""
-    timeout = config.get('seed_timeout_seconds', 120) if isinstance(config, dict) else 120
+    """The project's limit for each seed command: seed_timeout_seconds, else the longest project check's
+    limit and never under 120, so a seed that runs the project gate gets the gate's time. Refuses other values."""
+    policy = config if isinstance(config, dict) else {}
+    checks = policy['checks'] if isinstance(policy.get('checks'), list) else []
+    limits = [c['timeout_seconds'] for c in checks if isinstance(c, dict) and type(c.get('timeout_seconds')) is int]
+    timeout = policy.get('seed_timeout_seconds', max([120, *limits]))
     if type(timeout) is not int or timeout <= 0:
         raise ValueError('verification.json seed_timeout_seconds must be a positive whole number of seconds.')
     return timeout
