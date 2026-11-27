@@ -339,6 +339,17 @@ class SeedTimeout(StageBase):
         self.configure(seed_timeout_seconds=600)
         self.assertEqual(self.budget(), default + 480)
 
+    def test_without_a_project_timeout_seeds_get_the_longest_project_check_limit(self):
+        self.bind([command()])
+        self.approve_all()
+        gate = {**PASSING, 'timeout_seconds': 600}
+        self.set_checks([gate])
+        followed = self.budget()
+        self.set_checks([gate], seed_timeout_seconds=600)
+        self.assertEqual(self.budget(), followed)
+        self.set_checks([gate], seed_timeout_seconds=120)
+        self.assertEqual(self.budget(), followed - 480)
+
     def test_dry_run_of_seed_commands_needs_no_configured_checks(self):
         self.bind([command()], profile='full')
         for config in [{'require_tink': False, 'checks': []}, None]:

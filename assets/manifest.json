@@ -1,5 +1,5 @@
 {
-  "version": "1.78.0",
+  "version": "1.79.0",
   "files": {
     ".tink/skillsets/build-skillset.json": "8e4b6397b31e9d830a7baa6d887891505d1b3354a3482ef2c9a876dbdb291445",
     ".tink/skillsets/deployment-skillset.json": "9a89b7593f86f593afe3d81878d97b14ee0143d734eeb4fd0adca6ef8f7a6732",
@@ -12,14 +12,14 @@
     "_shared/intent-template.md": "e2676829d95b2bb42977db3116ef336ad9cbf3a1ae6661c3e8167d3df21c1164",
     "_shared/plan-template.md": "fe93363211dcc70b73843b0fa7827f8f9ca7b26e185db7a6b6e9d2adf5a42c00",
     "_shared/spec-template.md": "1d2ed67fa0611f0bb7fc2eac110346cc3a7d4184443324fded0eb8324b6eac28",
-    "_system/SDLC.md": "92c496b9d99922496f12f2720d72beb4eb5e560ef11de3735a4f31dee32f8391",
+    "_system/SDLC.md": "1b94243034df3daea6717911da2fdf7df4b0f80a390c75e066fffca01d4ac9ff",
     "_system/scripts/pi-durable/package-lock.json": "5dbb34c6f0281b9c87b9776629e98acc36911181b5b82dd516f7723d4ac870b9",
     "_system/scripts/pi-durable/package.json": "0ac5c11fde54e8f33b5b7e79f3036220459ed52826611af5a324d3ec93526de8",
     "_system/scripts/pi-durable/tool-shell": "94710be00ed20f4cd001a59edfe52fdda426bccd8c8fe2540f039c76353e3118",
     "_system/scripts/pi-durable/worker.mjs": "b109870f626232ecd5dfdd37c335a4d39eddff1e09a2b7ca1b6ee74dc02f4321",
     "_system/scripts/pi-durable-launcher": "c04cca4c05c2e66d29811897b570f2d312835bac4e09b42f7ff03ae25d3c7ef6",
     "_system/scripts/pi-launcher": "aad1598fe87c8dd1cce552917a95d7f8734eae261cf1cb41a8964983069af456",
-    "_system/scripts/sdlc.py": "1265ddc2d2a658946470c9cb2f83c7f1b1beb85ac1526a73923bd2f00a31173b",
+    "_system/scripts/sdlc.py": "06b4632829dc4a36e7dcdcb43a8a69c700d078bb84d36af949d2945c037d6cf3",
     "_system/verification.json": "1308d67c7c43c1a8f5c90cde99a69e217a7fa7c553cece572ecf3228b50fa937",
     "stages/01-plan/CONTEXT.md": "a2bb0ea20740f8d2debf7d7c3b4e09107fa49e50f7b06e86c0383a24a485540c",
     "stages/02-design/CONTEXT.md": "c23139482f386045b6a40d8efd3211e3a558393a2cfd21d4b3beb8f519182f94",
